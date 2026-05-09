@@ -7,6 +7,9 @@ The adapter intent mapper translates simple external text commands into
 interfaces such as OpenClaw, Slack, Telegram, desktop UI, web UI, or automation
 scripts.
 
+For how this mapper fits into the full adapter pipeline, see
+[adapter_pipeline_contract.md](adapter_pipeline_contract.md).
+
 ## Non-Goals
 
 - This is not OpenClaw integration.

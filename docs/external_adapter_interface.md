@@ -14,6 +14,9 @@ ProjectOps Kernel remains local-first and file-based. An adapter may provide a
 channel surface, user interface, or automation wrapper, but ProjectOps remains
 the source of truth for workspace state.
 
+For the recommended end-to-end local Python integration path, see
+[adapter_pipeline_contract.md](adapter_pipeline_contract.md).
+
 ## Adapter Responsibilities
 
 An adapter is responsible for:
@@ -227,6 +230,8 @@ The adapter event model for UI rendering is documented in
 [adapter_event_model.md](adapter_event_model.md).
 The plain-text renderer policy is documented in
 [adapter_renderer_policy.md](adapter_renderer_policy.md).
+The full adapter pipeline contract is documented in
+[adapter_pipeline_contract.md](adapter_pipeline_contract.md).
 Read-only actions are:
 
 - `status`

@@ -6,6 +6,9 @@ This document demonstrates how to use the internal ProjectOps adapter boundary
 locally. It shows how an external-style command can become an `AdapterRequest`,
 flow through `ProjectOpsServiceAdapter`, and return an `AdapterResponse`.
 
+For the recommended full local adapter pipeline, see
+[adapter_pipeline_contract.md](adapter_pipeline_contract.md).
+
 ## Non-Goals
 
 - This is not OpenClaw integration.

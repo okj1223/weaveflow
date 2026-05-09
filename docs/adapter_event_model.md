@@ -7,6 +7,9 @@ future external UIs. They let OpenClaw, Slack, Telegram, desktop UI, web UI, or
 automation scripts render ProjectOps adapter session turns without interpreting
 internal Python objects directly.
 
+For how events fit into the full adapter pipeline, see
+[adapter_pipeline_contract.md](adapter_pipeline_contract.md).
+
 ## Non-Goals
 
 - This is not OpenClaw integration.

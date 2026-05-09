@@ -7,6 +7,9 @@ adapter turns. It is a small in-memory helper for flows where a user sends one
 message that maps to a mutating action, then confirms or rejects that action in
 a later turn.
 
+For the complete adapter-facing pipeline, see
+[adapter_pipeline_contract.md](adapter_pipeline_contract.md).
+
 ## Non-Goals
 
 - This is not OpenClaw integration.

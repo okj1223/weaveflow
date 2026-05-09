@@ -7,6 +7,9 @@ plain text for future external UIs. The output is suitable for chat surfaces,
 logs, OpenClaw messages, Slack messages, Telegram messages, terminal logs, or
 simple UI previews.
 
+For how renderers fit into the full adapter pipeline, see
+[adapter_pipeline_contract.md](adapter_pipeline_contract.md).
+
 ## Non-Goals
 
 - This is not OpenClaw integration.
