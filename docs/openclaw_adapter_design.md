@@ -8,6 +8,13 @@ This is not OpenClaw integration. This does not import OpenClaw. This does not
 call OpenClaw APIs. This does not create a bot or server. This is a design
 contract for a future integration.
 
+This design is still based on the local placeholder skeleton until validated
+against real runtime APIs. See
+[openclaw_runtime_research.md](openclaw_runtime_research.md) for current
+runtime findings and
+[openclaw_integration_gap_analysis.md](openclaw_integration_gap_analysis.md)
+for the skeleton comparison.
+
 ## Intended Role Of OpenClaw
 
 OpenClaw should act as:

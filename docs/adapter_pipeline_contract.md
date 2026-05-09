@@ -13,6 +13,8 @@ integrations should consume this pipeline instead of directly editing
 
 For the future OpenClaw-specific adapter design, see
 [openclaw_adapter_design.md](openclaw_adapter_design.md).
+For factual research on the real OpenClaw runtime, see
+[openclaw_runtime_research.md](openclaw_runtime_research.md).
 For the local channel adapter contract and smoke flow that ties payload
 normalization, sessions, events, rendering, and response payloads together, see
 [channel_adapter_contract.md](channel_adapter_contract.md).

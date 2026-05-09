@@ -11,6 +11,11 @@ network protocol. This is not a bot. This is a local Python adapter contract
 and smoke flow. Future channel integrations should use this contract rather
 than directly editing `.projectops` files.
 
+This local contract must be checked against the real OpenClaw runtime before
+production use. See [openclaw_runtime_research.md](openclaw_runtime_research.md)
+and
+[openclaw_integration_gap_analysis.md](openclaw_integration_gap_analysis.md).
+
 ## Current Local Channel Adapter Flow
 
 ```text

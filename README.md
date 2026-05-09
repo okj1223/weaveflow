@@ -208,6 +208,9 @@ The advisory adapter permission policy is documented in
 [docs/adapter_permission_policy.md](docs/adapter_permission_policy.md).
 The future OpenClaw adapter design is documented in
 [docs/openclaw_adapter_design.md](docs/openclaw_adapter_design.md).
+Real OpenClaw runtime research and gap analysis are documented in
+[docs/openclaw_runtime_research.md](docs/openclaw_runtime_research.md) and
+[docs/openclaw_integration_gap_analysis.md](docs/openclaw_integration_gap_analysis.md).
 The placeholder OpenClaw adapter skeleton lives under
 `src/projectops/adapters/openclaw/`; it does not import or integrate real
 OpenClaw. The skeleton also includes local OpenClaw-like payload normalization
