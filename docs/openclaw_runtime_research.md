@@ -352,6 +352,11 @@ Recommended priority: Primary, paired with skill/tool integration.
 Recommended next path: build a narrow local stdio JSON bridge for the ProjectOps
 adapter pipeline, then wrap that bridge from a future OpenClaw plugin tool.
 
+The ProjectOps-side bridge protocol is documented in
+[stdio_bridge_protocol.md](stdio_bridge_protocol.md). It is not an
+OpenClaw-confirmed API; it is a local process boundary for future proof of
+concept work.
+
 Reasoning:
 
 - OpenClaw is Node/Gateway/plugin centered, while ProjectOps is Python.

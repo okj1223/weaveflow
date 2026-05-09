@@ -84,8 +84,12 @@ create a bot, add a server, or modify ProjectOps core workflow behavior.
 
 ## Recommended Next Phase
 
-Primary recommendation: PHASE 10-I should add a local stdio JSON bridge for the
-ProjectOps adapter pipeline.
+Primary recommendation: PHASE 10-I should add a local stdio JSON bridge, also
+called the stdio bridge, for the ProjectOps adapter pipeline.
+
+That bridge is now defined in
+[stdio_bridge_protocol.md](stdio_bridge_protocol.md). It is a local process
+bridge, not real OpenClaw integration.
 
 Why this path:
 

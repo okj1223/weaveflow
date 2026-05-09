@@ -211,6 +211,8 @@ The future OpenClaw adapter design is documented in
 Real OpenClaw runtime research and gap analysis are documented in
 [docs/openclaw_runtime_research.md](docs/openclaw_runtime_research.md) and
 [docs/openclaw_integration_gap_analysis.md](docs/openclaw_integration_gap_analysis.md).
+The local stdio JSON bridge protocol for future external process integrations
+is documented in [docs/stdio_bridge_protocol.md](docs/stdio_bridge_protocol.md).
 The placeholder OpenClaw adapter skeleton lives under
 `src/projectops/adapters/openclaw/`; it does not import or integrate real
 OpenClaw. The skeleton also includes local OpenClaw-like payload normalization

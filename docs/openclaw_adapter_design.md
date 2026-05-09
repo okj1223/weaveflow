@@ -14,6 +14,8 @@ against real runtime APIs. See
 runtime findings and
 [openclaw_integration_gap_analysis.md](openclaw_integration_gap_analysis.md)
 for the skeleton comparison.
+The local process bridge intended for future OpenClaw plugin proof-of-concept
+work is documented in [stdio_bridge_protocol.md](stdio_bridge_protocol.md).
 
 ## Intended Role Of OpenClaw
 

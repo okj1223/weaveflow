@@ -15,6 +15,8 @@ This local contract must be checked against the real OpenClaw runtime before
 production use. See [openclaw_runtime_research.md](openclaw_runtime_research.md)
 and
 [openclaw_integration_gap_analysis.md](openclaw_integration_gap_analysis.md).
+For a local process transport around this contract, see
+[stdio_bridge_protocol.md](stdio_bridge_protocol.md).
 
 ## Current Local Channel Adapter Flow
 
@@ -31,6 +33,9 @@ Raw external payload
 -> OpenClawResponse
 -> openclaw_response_to_payload
 ```
+
+The stdio bridge wraps the same flow in line-delimited JSON so an external
+process can call it without importing the Python package directly.
 
 Stage responsibilities:
 
