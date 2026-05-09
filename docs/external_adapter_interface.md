@@ -218,6 +218,8 @@ adapters should consume `AdapterResponse` instead of inventing a separate
 response format.
 The local demo in `examples/adapter_usage_demo.py` is documented in
 [adapter_usage_examples.md](adapter_usage_examples.md).
+The deterministic text intake prototype is documented in
+[adapter_intent_mapping.md](adapter_intent_mapping.md).
 Read-only actions are:
 
 - `status`

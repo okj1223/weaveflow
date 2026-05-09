@@ -24,6 +24,10 @@ The local demo shows:
 - Temporary workspace usage with `TemporaryDirectory`.
 - JSON-safe `AdapterResponse` objects.
 
+For text-command intake examples, see
+[adapter_intent_mapping.md](adapter_intent_mapping.md) and
+`examples/adapter_intent_mapping_demo.py`.
+
 ## How To Run
 
 ```bash

@@ -187,6 +187,8 @@ Its response shape is documented in
 [docs/adapter_response_contract.md](docs/adapter_response_contract.md).
 A local adapter demo is documented in
 [docs/adapter_usage_examples.md](docs/adapter_usage_examples.md).
+The deterministic text-command mapper is documented in
+[docs/adapter_intent_mapping.md](docs/adapter_intent_mapping.md).
 
 Accepted verification statuses are:
 
