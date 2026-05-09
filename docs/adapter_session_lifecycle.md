@@ -9,6 +9,8 @@ a later turn.
 
 For the complete adapter-facing pipeline, see
 [adapter_pipeline_contract.md](adapter_pipeline_contract.md).
+For future OpenClaw session ownership policy, see
+[openclaw_adapter_design.md](openclaw_adapter_design.md).
 
 ## Non-Goals
 

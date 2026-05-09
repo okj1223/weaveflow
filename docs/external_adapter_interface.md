@@ -16,6 +16,8 @@ the source of truth for workspace state.
 
 For the recommended end-to-end local Python integration path, see
 [adapter_pipeline_contract.md](adapter_pipeline_contract.md).
+For the future OpenClaw-specific design layer, see
+[openclaw_adapter_design.md](openclaw_adapter_design.md).
 
 ## Adapter Responsibilities
 
@@ -232,6 +234,8 @@ The plain-text renderer policy is documented in
 [adapter_renderer_policy.md](adapter_renderer_policy.md).
 The full adapter pipeline contract is documented in
 [adapter_pipeline_contract.md](adapter_pipeline_contract.md).
+The future OpenClaw adapter design is documented in
+[openclaw_adapter_design.md](openclaw_adapter_design.md).
 Read-only actions are:
 
 - `status`

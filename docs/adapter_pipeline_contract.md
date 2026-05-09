@@ -11,6 +11,9 @@ network protocol. This is a local Python integration contract. External
 integrations should consume this pipeline instead of directly editing
 `.projectops` files.
 
+For the future OpenClaw-specific adapter design, see
+[openclaw_adapter_design.md](openclaw_adapter_design.md).
+
 ## Recommended Boundary
 
 The preferred high-level boundary for future chat-like integrations is
