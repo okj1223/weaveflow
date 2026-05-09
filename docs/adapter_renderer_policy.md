@@ -11,6 +11,8 @@ For how renderers fit into the full adapter pipeline, see
 [adapter_pipeline_contract.md](adapter_pipeline_contract.md).
 For future OpenClaw channel rendering policy, see
 [openclaw_adapter_design.md](openclaw_adapter_design.md).
+For the full local channel adapter smoke flow, see
+[channel_adapter_contract.md](channel_adapter_contract.md).
 
 ## Non-Goals
 

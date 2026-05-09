@@ -202,6 +202,8 @@ That policy includes local channel-specific rendering choices for OpenClaw,
 Slack, Telegram, terminal, and log output.
 The full local adapter pipeline contract is documented in
 [docs/adapter_pipeline_contract.md](docs/adapter_pipeline_contract.md).
+The local channel adapter contract and smoke flow are documented in
+[docs/channel_adapter_contract.md](docs/channel_adapter_contract.md).
 The advisory adapter permission policy is documented in
 [docs/adapter_permission_policy.md](docs/adapter_permission_policy.md).
 The future OpenClaw adapter design is documented in

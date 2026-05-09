@@ -46,6 +46,8 @@ OpenClaw message
 
 The local adapter pipeline remains the ProjectOps-facing boundary. OpenClaw is
 only the channel-specific wrapper around that boundary.
+The local channel adapter contract and smoke flow are documented in
+[channel_adapter_contract.md](channel_adapter_contract.md).
 The advisory adapter permission policy is documented in
 [adapter_permission_policy.md](adapter_permission_policy.md).
 
@@ -357,6 +359,10 @@ Current responsibilities:
 Future production integration may split channel-specific rendering into a
 separate `renderer.py` and replace or extend `session_store.py` with a
 persistent store.
+
+For the end-to-end local skeleton flow from raw payload normalization through
+`OpenClawResponse` payload output, see
+[channel_adapter_contract.md](channel_adapter_contract.md).
 
 ## Minimal Future Tests
 

@@ -13,6 +13,9 @@ integrations should consume this pipeline instead of directly editing
 
 For the future OpenClaw-specific adapter design, see
 [openclaw_adapter_design.md](openclaw_adapter_design.md).
+For the local channel adapter contract and smoke flow that ties payload
+normalization, sessions, events, rendering, and response payloads together, see
+[channel_adapter_contract.md](channel_adapter_contract.md).
 The local placeholder `OpenClawAdapter` skeleton consumes this pipeline without
 importing or integrating real OpenClaw.
 It also accepts raw OpenClaw-like payload dictionaries through

@@ -6,6 +6,10 @@ This document defines the local adapter action permission policy for future
 external adapters. The policy classifies adapter actions and returns advisory
 permission decisions before an adapter executes a request.
 
+For the current channel adapter contract showing where this advisory policy
+fits in the local flow, see
+[channel_adapter_contract.md](channel_adapter_contract.md).
+
 ## Non-Goals
 
 - This is not authentication.
