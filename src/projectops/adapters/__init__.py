@@ -9,11 +9,14 @@ from projectops.adapters.confirmation import (
     reject_request,
 )
 from projectops.adapters.intent_mapper import IntentMappingResult, map_text_to_adapter_request
+from projectops.adapters.session import AdapterSession, AdapterTurnResult
 from projectops.adapters.service_adapter import ProjectOpsServiceAdapter
 
 __all__ = [
     "AdapterRequest",
     "AdapterResponse",
+    "AdapterSession",
+    "AdapterTurnResult",
     "ConfirmationState",
     "IntentMappingResult",
     "ProjectOpsServiceAdapter",

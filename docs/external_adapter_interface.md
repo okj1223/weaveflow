@@ -221,6 +221,8 @@ The local demo in `examples/adapter_usage_demo.py` is documented in
 [adapter_usage_examples.md](adapter_usage_examples.md).
 The deterministic text intake prototype is documented in
 [adapter_intent_mapping.md](adapter_intent_mapping.md).
+The in-memory confirmation/session prototype is documented in
+[adapter_session_lifecycle.md](adapter_session_lifecycle.md).
 Read-only actions are:
 
 - `status`
@@ -286,6 +288,7 @@ Recommended future flow:
 OpenClaw message
 -> OpenClaw adapter parses intent
 -> adapter prepares confirmation for mutating commands
+-> adapter carries pending confirmation state with AdapterSession if needed
 -> adapter calls ProjectOps service function
 -> ProjectOps writes task/artifact/status files
 -> adapter returns concise status/report to OpenClaw user

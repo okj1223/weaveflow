@@ -190,6 +190,8 @@ A local adapter demo is documented in
 The deterministic text-command mapper is documented in
 [docs/adapter_intent_mapping.md](docs/adapter_intent_mapping.md).
 That document also covers the confirmation flow for mutating adapter intents.
+The in-memory adapter session lifecycle is documented in
+[docs/adapter_session_lifecycle.md](docs/adapter_session_lifecycle.md).
 
 Accepted verification statuses are:
 

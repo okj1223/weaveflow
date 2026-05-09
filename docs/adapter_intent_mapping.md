@@ -85,6 +85,9 @@ This flow is deterministic. It does not use OpenClaw, does not use an LLM, and
 does not execute actions until an external caller passes a confirmed request to
 the adapter.
 
+For multi-turn in-memory confirmation state, see
+[adapter_session_lifecycle.md](adapter_session_lifecycle.md).
+
 ## Error Behavior
 
 Mapping failures return an `IntentMappingResult` with `ok: false` and no

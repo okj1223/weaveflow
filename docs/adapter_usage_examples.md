@@ -34,6 +34,13 @@ For confirmation flow examples around mutating text commands, run:
 python3 examples/adapter_confirmation_demo.py
 ```
 
+For a tiny in-memory session lifecycle demo, see
+[adapter_session_lifecycle.md](adapter_session_lifecycle.md) or run:
+
+```bash
+python3 examples/adapter_session_demo.py
+```
+
 ## How To Run
 
 ```bash
