@@ -194,6 +194,8 @@ The in-memory adapter session lifecycle is documented in
 [docs/adapter_session_lifecycle.md](docs/adapter_session_lifecycle.md).
 The adapter event model for external UI rendering is documented in
 [docs/adapter_event_model.md](docs/adapter_event_model.md).
+The adapter text renderer policy is documented in
+[docs/adapter_renderer_policy.md](docs/adapter_renderer_policy.md).
 
 Accepted verification statuses are:
 

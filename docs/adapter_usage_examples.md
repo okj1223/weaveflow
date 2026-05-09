@@ -48,6 +48,13 @@ For renderable event and transcript examples, see
 python3 examples/adapter_event_demo.py
 ```
 
+For plain-text renderer examples, see
+[adapter_renderer_policy.md](adapter_renderer_policy.md) or run:
+
+```bash
+python3 examples/adapter_renderer_demo.py
+```
+
 ## How To Run
 
 ```bash

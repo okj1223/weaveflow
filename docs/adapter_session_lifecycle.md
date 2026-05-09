@@ -35,6 +35,8 @@ request ID, the session generates one.
 
 For UI rendering, an `AdapterTurnResult` can be converted into an
 `AdapterEvent`. See [adapter_event_model.md](adapter_event_model.md).
+That event can then be converted to plain text with the renderer policy in
+[adapter_renderer_policy.md](adapter_renderer_policy.md).
 
 ## Safety Model
 

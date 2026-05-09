@@ -225,6 +225,8 @@ The in-memory confirmation/session prototype is documented in
 [adapter_session_lifecycle.md](adapter_session_lifecycle.md).
 The adapter event model for UI rendering is documented in
 [adapter_event_model.md](adapter_event_model.md).
+The plain-text renderer policy is documented in
+[adapter_renderer_policy.md](adapter_renderer_policy.md).
 Read-only actions are:
 
 - `status`
@@ -293,6 +295,7 @@ OpenClaw message
 -> adapter carries pending confirmation state with AdapterSession if needed
 -> adapter calls ProjectOps service function
 -> adapter converts AdapterTurnResult to AdapterEvent for UI rendering
+-> adapter renders AdapterEvent text for the external surface if needed
 -> ProjectOps writes task/artifact/status files
 -> adapter returns concise status/report to OpenClaw user
 ```

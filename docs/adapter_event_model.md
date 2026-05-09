@@ -32,6 +32,9 @@ AdapterSession.handle_text(...)
 Future UIs can render `AdapterEvent` values without knowing the internal
 session, confirmation, or service adapter model details.
 
+For plain-text presentation, use `render_event_as_text`. The renderer policy is
+documented in [adapter_renderer_policy.md](adapter_renderer_policy.md).
+
 ## Event Types
 
 - `turn_completed`: a turn completed successfully.
@@ -80,6 +83,14 @@ turn = session.handle_text("status")
 event = event_from_turn_result(turn)
 
 print(event.event_type, event.level, event.message)
+```
+
+To render that event for a chat-like surface:
+
+```python
+from projectops.adapters import render_event_as_text
+
+print(render_event_as_text(event, style="chat"))
 ```
 
 ## Demo
