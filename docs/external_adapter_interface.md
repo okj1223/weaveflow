@@ -216,6 +216,8 @@ The response contract is documented in
 [adapter_response_contract.md](adapter_response_contract.md). Future OpenClaw
 adapters should consume `AdapterResponse` instead of inventing a separate
 response format.
+The local demo in `examples/adapter_usage_demo.py` is documented in
+[adapter_usage_examples.md](adapter_usage_examples.md).
 Read-only actions are:
 
 - `status`

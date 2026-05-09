@@ -32,6 +32,9 @@ schemas/adapter_response.schema.json
 
 The schema uses JSON Schema Draft 2020-12.
 
+See [adapter_usage_examples.md](adapter_usage_examples.md) for a local demo that
+uses `ProjectOpsServiceAdapter` and returns `AdapterResponse` objects.
+
 ## Field Definitions
 
 Required top-level fields:

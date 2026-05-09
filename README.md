@@ -185,6 +185,8 @@ The minimal internal adapter boundary is `projectops.adapters`, documented in
 [docs/external_adapter_interface.md](docs/external_adapter_interface.md).
 Its response shape is documented in
 [docs/adapter_response_contract.md](docs/adapter_response_contract.md).
+A local adapter demo is documented in
+[docs/adapter_usage_examples.md](docs/adapter_usage_examples.md).
 
 Accepted verification statuses are:
 
