@@ -183,6 +183,8 @@ Normal workflow errors are raised as `ProjectOpsError` subclasses from
 `projectops.errors`, so adapters can render their own user-facing messages.
 The minimal internal adapter boundary is `projectops.adapters`, documented in
 [docs/external_adapter_interface.md](docs/external_adapter_interface.md).
+Its response shape is documented in
+[docs/adapter_response_contract.md](docs/adapter_response_contract.md).
 
 Accepted verification statuses are:
 

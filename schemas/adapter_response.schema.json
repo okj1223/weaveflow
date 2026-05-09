@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://projectops.local/schemas/adapter_response.schema.json",
+  "title": "ProjectOps AdapterResponse",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "ok",
+    "action",
+    "message",
+    "data",
+    "error_type",
+    "error_message",
+    "read_only",
+    "request_id"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "projectops.v1"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "action": {
+      "type": "string"
+    },
+    "message": {
+      "type": "string"
+    },
+    "data": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "error_type": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "error_message": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "read_only": {
+      "type": "boolean"
+    },
+    "request_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

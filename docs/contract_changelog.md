@@ -19,6 +19,7 @@ This version covers:
 - `ops status --json`
 - `ops task list --json`
 - `ops doctor --json`
+- `AdapterResponse` from `projectops.adapters`
 
 ## projectops.v1 Required Fields
 
@@ -46,6 +47,18 @@ This version covers:
 - `warn_count`
 - `error_count`
 - `checks`
+
+`AdapterResponse` requires these top-level fields:
+
+- `contract_version`
+- `ok`
+- `action`
+- `message`
+- `data`
+- `error_type`
+- `error_message`
+- `read_only`
+- `request_id`
 
 ## Backward-Compatible Changes Within projectops.v1
 
@@ -84,3 +97,4 @@ configured to accept them. Migration notes should be documented before release.
 - Initial adapter-facing JSON contract.
 - Added status, task list, and doctor schemas.
 - Added `contract_version: projectops.v1`.
+- Added `AdapterResponse` schema for the internal adapter boundary.

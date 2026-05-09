@@ -2,9 +2,9 @@
 
 ## Purpose
 
-These schemas define the stable machine-readable CLI output contracts for
-future ProjectOps adapters. Adapters such as OpenClaw, Slack, Telegram, desktop
-UI, web UI, or automation scripts should consume these JSON outputs instead of
+These schemas define stable machine-readable output contracts for future
+ProjectOps adapters. Adapters such as OpenClaw, Slack, Telegram, desktop UI,
+web UI, or automation scripts should consume structured outputs instead of
 parsing human-readable CLI text.
 
 The schemas use JSON Schema Draft 2020-12.
@@ -25,6 +25,7 @@ Adapters should check `contract_version` before consuming a payload.
 - `ops status --json`
 - `ops task list --json`
 - `ops doctor --json`
+- `AdapterResponse` from `projectops.adapters`
 
 See [contract_changelog.md](contract_changelog.md) for version history and
 compatibility rules.
@@ -45,9 +46,19 @@ compatibility rules.
 
 ## Schema Files
 
+CLI JSON schemas:
+
 - `schemas/status.schema.json`
 - `schemas/task_list.schema.json`
 - `schemas/doctor.schema.json`
+
+Internal adapter response schema:
+
+- `schemas/adapter_response.schema.json`
+
+The CLI JSON schemas are separate from the internal `AdapterResponse` schema.
+They share the same `contract_version` value but represent different integration
+surfaces.
 
 ## Example Outputs
 

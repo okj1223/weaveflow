@@ -212,6 +212,10 @@ OpenClaw integration yet, and it does not create a bot, server, network
 listener, or autonomous worker.
 
 The adapter accepts an `AdapterRequest` and returns an `AdapterResponse`.
+The response contract is documented in
+[adapter_response_contract.md](adapter_response_contract.md). Future OpenClaw
+adapters should consume `AdapterResponse` instead of inventing a separate
+response format.
 Read-only actions are:
 
 - `status`
