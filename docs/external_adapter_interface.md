@@ -205,6 +205,54 @@ High-risk or future-gated operations:
 - Do not expose absolute local paths to external users unless intended.
 - Preserve user control for destructive or irreversible actions.
 
+## Internal Adapter Skeleton
+
+`ProjectOpsServiceAdapter` is the current internal adapter boundary. It is not
+OpenClaw integration yet, and it does not create a bot, server, network
+listener, or autonomous worker.
+
+The adapter accepts an `AdapterRequest` and returns an `AdapterResponse`.
+Read-only actions are:
+
+- `status`
+- `list_tasks`
+- `doctor`
+- `show_task`
+
+Mutating actions require `allow_mutation=True`:
+
+- `init_workspace`
+- `create_task`
+- `create_plan`
+- `create_worker_brief`
+- `attach_result`
+- `verify_task`
+- `create_final_report`
+- `propose_memory_update`
+
+Future OpenClaw adapters should call this adapter or the service functions
+instead of mutating files, SQLite, or task state directly.
+
+```python
+from pathlib import Path
+from projectops.adapters import AdapterRequest, ProjectOpsServiceAdapter
+
+adapter = ProjectOpsServiceAdapter(Path("."))
+
+response = adapter.handle(AdapterRequest(action="status"))
+print(response.ok)
+print(response.data)
+
+response = adapter.handle(
+    AdapterRequest(
+        action="create_task",
+        params={"user_request": "Investigate auth bug"},
+        allow_mutation=True,
+    )
+)
+print(response.data)
+```
+
 ## Recommended OpenClaw Integration Shape
 
 This section describes a future shape only. It does not implement OpenClaw.
@@ -241,7 +289,7 @@ A future adapter package could look like this:
 src/projectops/adapters/
   __init__.py
   base.py
-  openclaw.py
+  service_adapter.py
 ```
 
 A possible `BaseAdapter` could be responsible for:
