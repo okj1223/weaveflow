@@ -189,6 +189,7 @@ A local adapter demo is documented in
 [docs/adapter_usage_examples.md](docs/adapter_usage_examples.md).
 The deterministic text-command mapper is documented in
 [docs/adapter_intent_mapping.md](docs/adapter_intent_mapping.md).
+That document also covers the confirmation flow for mutating adapter intents.
 
 Accepted verification statuses are:
 

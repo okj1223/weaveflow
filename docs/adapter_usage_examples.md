@@ -28,6 +28,12 @@ For text-command intake examples, see
 [adapter_intent_mapping.md](adapter_intent_mapping.md) and
 `examples/adapter_intent_mapping_demo.py`.
 
+For confirmation flow examples around mutating text commands, run:
+
+```bash
+python3 examples/adapter_confirmation_demo.py
+```
+
 ## How To Run
 
 ```bash

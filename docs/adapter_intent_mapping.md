@@ -69,6 +69,22 @@ OpenClaw message
 OpenClaw should not mutate `.projectops/` files directly and should not parse
 human-readable CLI output.
 
+## Confirmation flow
+
+Mutating commands map with `requires_confirmation: true` when
+`allow_mutation` is false. External adapters can use the confirmation helper to
+make that flow explicit:
+
+1. Call `prepare_confirmation(text)`.
+2. If confirmation is required, ask the user.
+3. If the user confirms, call `confirm_request(state)` and then pass the
+   confirmed request to `ProjectOpsServiceAdapter.handle`.
+4. If the user rejects, call `reject_request(state)` and do not execute.
+
+This flow is deterministic. It does not use OpenClaw, does not use an LLM, and
+does not execute actions until an external caller passes a confirmed request to
+the adapter.
+
 ## Error Behavior
 
 Mapping failures return an `IntentMappingResult` with `ok: false` and no

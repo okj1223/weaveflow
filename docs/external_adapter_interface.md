@@ -202,6 +202,7 @@ High-risk or future-gated operations:
 - Do not auto-verify tasks.
 - Do not auto-complete tasks without verification.
 - Do not hide doctor errors.
+- Use the confirmation helper for mutating text-command intents.
 - Do not expose absolute local paths to external users unless intended.
 - Preserve user control for destructive or irreversible actions.
 
@@ -284,6 +285,7 @@ Recommended future flow:
 ```text
 OpenClaw message
 -> OpenClaw adapter parses intent
+-> adapter prepares confirmation for mutating commands
 -> adapter calls ProjectOps service function
 -> ProjectOps writes task/artifact/status files
 -> adapter returns concise status/report to OpenClaw user
