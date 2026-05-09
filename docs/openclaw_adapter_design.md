@@ -241,6 +241,8 @@ useful. A future UI may use buttons, but text confirmation must remain possible.
 Initial default:
 
 - `render_event_as_text(style="chat")`
+- future OpenClaw adapter code should prefer
+  `render_event_for_channel(event, channel="openclaw")`
 
 For logs:
 
@@ -257,6 +259,9 @@ Future channel-specific policies:
 The renderer should not hide errors. The renderer should not expose unnecessary
 absolute paths. Renderer output is presentation only. Task state must be read
 from ProjectOps, not inferred from rendered text.
+
+The channel rendering policy is local-only. It does not import OpenClaw, call
+OpenClaw APIs, or send messages.
 
 ## Error Handling Policy
 

@@ -198,6 +198,8 @@ The adapter event model for external UI rendering is documented in
 [docs/adapter_event_model.md](docs/adapter_event_model.md).
 The adapter text renderer policy is documented in
 [docs/adapter_renderer_policy.md](docs/adapter_renderer_policy.md).
+That policy includes local channel-specific rendering choices for OpenClaw,
+Slack, Telegram, terminal, and log output.
 The full local adapter pipeline contract is documented in
 [docs/adapter_pipeline_contract.md](docs/adapter_pipeline_contract.md).
 The advisory adapter permission policy is documented in

@@ -46,6 +46,43 @@ with a transcript header and event count.
 
 Unknown styles raise `ValueError`.
 
+## Channel-Specific Rendering Policy
+
+`render_event_as_text` is the base renderer. `ChannelRenderPolicy` chooses how
+to adapt that text for a target surface.
+
+Supported channels:
+
+- `openclaw`
+- `slack`
+- `telegram`
+- `terminal`
+- `log`
+
+Use `render_event_for_channel(event, channel="openclaw")` to render one
+`AdapterEvent` for a named surface. Use
+`render_transcript_for_channel(transcript, channel="openclaw")` for a full
+`AdapterTranscript`.
+
+The channel policy controls:
+
+- base style, such as `chat` or `log`
+- whether markdown is allowed
+- whether emoji should be included
+- whether request IDs and error types are included
+- whether event metadata is included
+- maximum text length
+- multiline versus single-line output
+- simple absolute path redaction
+- confirmation hints
+
+This is not real OpenClaw, Slack, or Telegram integration. It does not send
+messages, call external APIs, create bots, or persist rendering configuration.
+It only returns plain text.
+
+Rendered text is not the source of truth. `.projectops` files and SQLite remain
+the source of truth for ProjectOps task state.
+
 ## Safety Rules
 
 - Rendered text is not source of truth.
@@ -63,7 +100,7 @@ Future flow:
 OpenClaw message
 -> AdapterSession.handle_text
 -> event_from_turn_result
--> render_event_as_text(style="chat")
+-> render_event_for_channel(channel="openclaw")
 -> send message back to OpenClaw user
 ```
 

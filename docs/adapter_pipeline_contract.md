@@ -41,6 +41,7 @@ Lower-level boundaries are still available when a caller needs them:
 - `ProjectOpsServiceAdapter` for direct structured calls
 - `event_from_turn_result` for UI event conversion
 - `render_event_as_text` for plain text output
+- `render_event_for_channel` for channel-specific presentation text
 
 ## Pipeline Stages
 
@@ -147,6 +148,20 @@ Responsibility:
 - never mutate state
 - never hide errors
 - provide presentation-only output
+
+### I. Channel-Specific Rendering
+
+Function: `render_event_for_channel`
+
+Responsibility:
+
+- choose a local rendering policy for surfaces such as OpenClaw, Slack,
+  Telegram, terminal, or log
+- adapt plain text with request IDs, confirmation hints, redaction, truncation,
+  and single-line log formatting
+- never send messages
+- never call external APIs
+- never mutate ProjectOps state
 
 ## Source Of Truth
 

@@ -1,6 +1,12 @@
 """Internal adapter boundary for ProjectOps integrations."""
 
 from projectops.adapters.base import AdapterRequest, AdapterResponse
+from projectops.adapters.channel_rendering import (
+    ChannelRenderPolicy,
+    get_channel_render_policy,
+    render_event_for_channel,
+    render_transcript_for_channel,
+)
 from projectops.adapters.confirmation import (
     ConfirmationState,
     confirm_request,
@@ -47,6 +53,7 @@ __all__ = [
     "AdapterSessionStore",
     "AdapterTranscript",
     "AdapterTurnResult",
+    "ChannelRenderPolicy",
     "ConfirmationState",
     "InMemoryAdapterSessionStore",
     "IntentMappingResult",
@@ -56,6 +63,7 @@ __all__ = [
     "evaluate_action_permission",
     "event_from_turn_result",
     "event_to_display_line",
+    "get_channel_render_policy",
     "get_action_policy",
     "is_confirmation_response",
     "is_mutating_action",
@@ -64,8 +72,10 @@ __all__ = [
     "is_supported_action",
     "map_text_to_adapter_request",
     "prepare_confirmation",
+    "render_event_for_channel",
     "render_event_as_text",
     "render_event_summary",
+    "render_transcript_for_channel",
     "render_transcript_as_text",
     "reject_request",
     "transcript_from_turns",
