@@ -22,6 +22,10 @@ from projectops.adapters.renderers import (
     render_transcript_as_text,
 )
 from projectops.adapters.session import AdapterSession, AdapterTurnResult
+from projectops.adapters.session_store import (
+    AdapterSessionStore,
+    InMemoryAdapterSessionStore,
+)
 from projectops.adapters.service_adapter import ProjectOpsServiceAdapter
 
 __all__ = [
@@ -29,9 +33,11 @@ __all__ = [
     "AdapterRequest",
     "AdapterResponse",
     "AdapterSession",
+    "AdapterSessionStore",
     "AdapterTranscript",
     "AdapterTurnResult",
     "ConfirmationState",
+    "InMemoryAdapterSessionStore",
     "IntentMappingResult",
     "ProjectOpsServiceAdapter",
     "confirm_request",

@@ -38,6 +38,25 @@ deterministic intent mapper plus the confirmation helper.
 Pending confirmations are keyed by `request_id`. If a caller does not provide a
 request ID, the session generates one.
 
+## Session Store Abstraction
+
+`AdapterSessionStore` stores `AdapterSession` objects by session key for
+future channel adapters that need to carry pending confirmations across turns.
+The current implementation is in-memory only.
+
+The store tracks:
+
+- session key to `AdapterSession`
+- latest pending request ID by session key
+
+It does not write files, use SQLite, call external APIs, or persist sessions.
+It should not be treated as the source of truth for ProjectOps task state.
+`.projectops` files and SQLite remain the source of truth for task state.
+
+Channel-specific adapters can use the same store boundary instead of inventing
+their own pending-confirmation storage. OpenClaw currently exposes
+`OpenClawSessionStore` as a local alias for this reusable in-memory behavior.
+
 For UI rendering, an `AdapterTurnResult` can be converted into an
 `AdapterEvent`. See [adapter_event_model.md](adapter_event_model.md).
 That event can then be converted to plain text with the renderer policy in

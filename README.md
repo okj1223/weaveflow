@@ -192,6 +192,8 @@ The deterministic text-command mapper is documented in
 That document also covers the confirmation flow for mutating adapter intents.
 The in-memory adapter session lifecycle is documented in
 [docs/adapter_session_lifecycle.md](docs/adapter_session_lifecycle.md).
+That lifecycle includes the reusable in-memory `AdapterSessionStore` for
+channel adapters that need pending confirmation state.
 The adapter event model for external UI rendering is documented in
 [docs/adapter_event_model.md](docs/adapter_event_model.md).
 The adapter text renderer policy is documented in

@@ -150,9 +150,12 @@ Tradeoff:
 - future implementation should start with `channel_id + user_id + thread_id`
   when `thread_id` exists
 
-Pending confirmations are currently in-memory only. A future OpenClaw adapter
-may need a persistent session store. ProjectOps task state remains in
-`.projectops` and SQLite, not OpenClaw memory.
+Pending confirmations are currently in-memory only. The skeleton uses the
+reusable `AdapterSessionStore` behavior through `OpenClawSessionStore`, which
+stores `AdapterSession` objects and latest pending request IDs by session key.
+A future OpenClaw adapter may need a persistent session store, but that should
+be explicit future work. ProjectOps task state remains in `.projectops` and
+SQLite, not OpenClaw memory.
 
 ## Permission And Mutation Policy
 
@@ -310,8 +313,8 @@ OpenClawMessage
 -> OpenClawResponse
 ```
 
-The skeleton uses an in-memory session store only. It is not a production
-OpenClaw integration.
+The skeleton uses the reusable in-memory session store abstraction only. It is
+not a production OpenClaw integration.
 
 Current responsibilities:
 
@@ -336,6 +339,7 @@ Current responsibilities:
 
 `session_store.py`:
 
+- OpenClaw-facing subclass of the generic `AdapterSessionStore`
 - in-memory `AdapterSession` and pending request tracking
 
 Future production integration may split channel-specific rendering into a

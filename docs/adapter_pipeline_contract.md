@@ -88,6 +88,16 @@ Responsibility:
 - hold mutating commands until confirmed
 - return `AdapterTurnResult`
 
+Store boundary: `AdapterSessionStore`
+
+Responsibility:
+
+- keep `AdapterSession` objects by session key
+- keep latest pending request IDs by session key
+- carry pending confirmations across turns for channel adapters
+- remain in-memory only
+- avoid acting as a task database or source of truth
+
 ### E. Service Adapter
 
 Class: `ProjectOpsServiceAdapter`
@@ -123,9 +133,10 @@ Responsibility:
 ## Source Of Truth
 
 `.projectops` files and SQLite remain the source of truth for task state.
-`AdapterSession` pending confirmations are in-memory only. `AdapterEvent` and
-`AdapterTranscript` are renderable records, not state authority. Rendered text
-is presentation-only.
+`AdapterSession` pending confirmations and `AdapterSessionStore` records are
+in-memory interaction state only. The session store is not a database.
+`AdapterEvent` and `AdapterTranscript` are renderable records, not state
+authority. Rendered text is presentation-only.
 
 External integrations must not infer task completion from rendered text alone.
 Use ProjectOps task files, SQLite state, service calls, or JSON contracts for
