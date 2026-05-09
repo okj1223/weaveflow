@@ -200,6 +200,9 @@ The full local adapter pipeline contract is documented in
 [docs/adapter_pipeline_contract.md](docs/adapter_pipeline_contract.md).
 The future OpenClaw adapter design is documented in
 [docs/openclaw_adapter_design.md](docs/openclaw_adapter_design.md).
+The placeholder OpenClaw adapter skeleton lives under
+`src/projectops/adapters/openclaw/`; it does not import or integrate real
+OpenClaw.
 
 Accepted verification statuses are:
 

@@ -237,18 +237,37 @@ OpenClaw should not be used as the primary task database.
 
 ## Minimal Future Module Sketch
 
-Future package sketch:
+Current placeholder package:
 
 ```text
 src/projectops/adapters/openclaw/
   __init__.py
   models.py
   adapter.py
-  renderer.py
   session_store.py
 ```
 
-Potential responsibilities:
+## Current Skeleton Implementation
+
+`src/projectops/adapters/openclaw/` contains placeholder models and a local
+adapter skeleton. It does not import real OpenClaw. It does not call OpenClaw
+APIs. It proves the local flow:
+The skeleton does not call OpenClaw APIs.
+
+```text
+OpenClawMessage
+-> OpenClawAdapter
+-> AdapterSession
+-> AdapterTurnResult
+-> AdapterEvent
+-> render_event_as_text(style="chat")
+-> OpenClawResponse
+```
+
+The skeleton uses an in-memory session store only. It is not a production
+OpenClaw integration.
+
+Current responsibilities:
 
 `models.py`:
 
@@ -257,20 +276,18 @@ Potential responsibilities:
 
 `adapter.py`:
 
-- normalize OpenClaw payload
+- route placeholder `OpenClawMessage` values through `AdapterSession`
 - route through `AdapterSession`
 - convert `AdapterTurnResult` to `AdapterEvent`
 - render response
 
-`renderer.py`:
-
-- channel-specific rendering policy if needed
-
 `session_store.py`:
 
-- future persistent or in-memory session store
+- in-memory `AdapterSession` and pending request tracking
 
-This is a future sketch only. Do not implement it in this phase.
+Future production integration may split channel-specific rendering into a
+separate `renderer.py` and replace or extend `session_store.py` with a
+persistent store.
 
 ## Minimal Future Tests
 

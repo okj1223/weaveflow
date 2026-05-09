@@ -13,6 +13,8 @@ integrations should consume this pipeline instead of directly editing
 
 For the future OpenClaw-specific adapter design, see
 [openclaw_adapter_design.md](openclaw_adapter_design.md).
+The local placeholder `OpenClawAdapter` skeleton consumes this pipeline without
+importing or integrating real OpenClaw.
 
 ## Recommended Boundary
 
