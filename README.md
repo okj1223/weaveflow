@@ -200,6 +200,8 @@ The adapter text renderer policy is documented in
 [docs/adapter_renderer_policy.md](docs/adapter_renderer_policy.md).
 The full local adapter pipeline contract is documented in
 [docs/adapter_pipeline_contract.md](docs/adapter_pipeline_contract.md).
+The advisory adapter permission policy is documented in
+[docs/adapter_permission_policy.md](docs/adapter_permission_policy.md).
 The future OpenClaw adapter design is documented in
 [docs/openclaw_adapter_design.md](docs/openclaw_adapter_design.md).
 The placeholder OpenClaw adapter skeleton lives under

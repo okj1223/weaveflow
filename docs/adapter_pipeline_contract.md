@@ -34,6 +34,8 @@ Use `AdapterSession` because it combines:
 Lower-level boundaries are still available when a caller needs them:
 
 - `map_text_to_adapter_request` for deterministic parsing only
+- `evaluate_action_permission` for advisory action classification and
+  permission decisions
 - `prepare_confirmation`, `confirm_request`, and `reject_request` for
   confirmation-only flows
 - `ProjectOpsServiceAdapter` for direct structured calls
@@ -63,7 +65,23 @@ Responsibility:
 - produce `AdapterRequest`
 - never execute actions
 
-### C. Confirmation
+### C. Advisory Permission Policy
+
+Function: `evaluate_action_permission`
+
+Responsibility:
+
+- classify actions as `read_only`, `safe_mutation`, `sensitive_mutation`,
+  `future_high_risk`, or `unknown`
+- explain whether `allow_mutation` or `explicit_confirmation` is needed
+- never authenticate users
+- never authorize roles
+- never execute actions
+
+The current policy is advisory. It is not runtime auth and is not enforced by
+`AdapterSession` or `OpenClawAdapter` in this phase.
+
+### D. Confirmation
 
 Functions:
 
@@ -77,7 +95,7 @@ Responsibility:
 - never execute actions by itself
 - preserve `request_id`
 
-### D. Session Lifecycle
+### E. Session Lifecycle
 
 Class: `AdapterSession`
 
@@ -98,7 +116,7 @@ Responsibility:
 - remain in-memory only
 - avoid acting as a task database or source of truth
 
-### E. Service Adapter
+### F. Service Adapter
 
 Class: `ProjectOpsServiceAdapter`
 
@@ -109,7 +127,7 @@ Responsibility:
 - return `AdapterResponse`
 - never expose raw stack traces for normal errors
 
-### F. Event Conversion
+### G. Event Conversion
 
 Function: `event_from_turn_result`
 
@@ -119,7 +137,7 @@ Responsibility:
 - preserve state, action, error, and response data
 - keep data JSON-safe
 
-### G. Rendering
+### H. Rendering
 
 Function: `render_event_as_text`
 

@@ -46,6 +46,8 @@ OpenClaw message
 
 The local adapter pipeline remains the ProjectOps-facing boundary. OpenClaw is
 only the channel-specific wrapper around that boundary.
+The advisory adapter permission policy is documented in
+[adapter_permission_policy.md](adapter_permission_policy.md).
 
 ## Proposed Message Wrapper
 
@@ -194,6 +196,11 @@ implementation:
 The future OpenClaw adapter must not execute mutating actions without
 confirmation. It must not auto-verify tasks. It must not auto-apply memory
 proposals. It must preserve user control.
+
+The current permission policy module is advisory only. A future OpenClaw
+adapter can use it as an enforcement layer to distinguish read-only actions,
+safe mutations, sensitive mutations, future high-risk actions, and unknown
+actions before routing requests into `AdapterSession`.
 
 ## Confirmation Flow
 

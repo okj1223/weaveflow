@@ -62,6 +62,12 @@ For UI rendering, an `AdapterTurnResult` can be converted into an
 That event can then be converted to plain text with the renderer policy in
 [adapter_renderer_policy.md](adapter_renderer_policy.md).
 
+Confirmation flow and permission policy are related but distinct. The session
+tracks pending confirmations and executes confirmed requests. The advisory
+permission policy in [adapter_permission_policy.md](adapter_permission_policy.md)
+classifies actions as read-only, safe mutating, sensitive mutating, future
+high-risk, or unknown; it is not enforced by `AdapterSession` in this phase.
+
 ## Safety Model
 
 - Mutating actions are not executed before confirmation.
