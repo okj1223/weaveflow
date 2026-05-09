@@ -202,7 +202,8 @@ The future OpenClaw adapter design is documented in
 [docs/openclaw_adapter_design.md](docs/openclaw_adapter_design.md).
 The placeholder OpenClaw adapter skeleton lives under
 `src/projectops/adapters/openclaw/`; it does not import or integrate real
-OpenClaw.
+OpenClaw. The skeleton also includes local OpenClaw-like payload normalization
+for raw dictionaries, still without real OpenClaw imports or API calls.
 
 Accepted verification statuses are:
 

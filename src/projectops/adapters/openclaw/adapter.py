@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from projectops.adapters.confirmation import is_confirmation_response
 from projectops.adapters.events import event_from_turn_result
+from projectops.adapters.openclaw.models import OpenClawMessage, OpenClawResponse
+from projectops.adapters.openclaw.normalization import (
+    OpenClawPayloadNormalizationError,
+    normalize_openclaw_message_payload,
+    normalization_error_payload,
+    openclaw_response_to_payload,
+)
+from projectops.adapters.openclaw.session_store import OpenClawSessionStore
 from projectops.adapters.renderers import render_event_as_text
 from projectops.adapters.session import AdapterTurnResult
-from projectops.adapters.openclaw.models import OpenClawMessage, OpenClawResponse
-from projectops.adapters.openclaw.session_store import OpenClawSessionStore
 
 
 class OpenClawAdapter:
@@ -72,6 +79,15 @@ class OpenClawAdapter:
                 "state": turn.state,
             },
         )
+
+    def handle_payload(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        try:
+            message = normalize_openclaw_message_payload(payload)
+        except OpenClawPayloadNormalizationError as exc:
+            return normalization_error_payload(exc, payload)
+
+        response = self.handle_message(message)
+        return openclaw_response_to_payload(response)
 
     def _pending_not_found_turn(self, request_id: str) -> AdapterTurnResult:
         message = "Pending confirmation not found."

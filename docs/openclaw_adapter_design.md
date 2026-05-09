@@ -66,6 +66,51 @@ This is a design model only. It does not need to match the OpenClaw runtime
 exactly yet. A future adapter should normalize OpenClaw-specific payloads into
 this shape before routing them into ProjectOps.
 
+## Payload Normalization
+
+The current skeleton includes a local payload normalization layer. It is still
+not real OpenClaw integration, and it does not import OpenClaw or call OpenClaw
+APIs.
+
+`normalize_openclaw_message_payload` converts generic external or OpenClaw-like
+payload dictionaries into `OpenClawMessage`. It supports aliases for common
+field names while preserving the internal canonical model.
+
+Required normalized fields:
+
+- `channel_id`
+- `user_id`
+- `message_id`
+- `text`
+- `timestamp`
+
+Supported examples include `channelId` for `channel_id`, `userId` for
+`user_id`, `messageId` for `message_id`, `content` for `text`, and `createdAt`
+for `timestamp`. Optional fields include `thread_id`,
+`reply_to_message_id`, and `metadata`.
+
+`OpenClawAdapter.handle_payload` is a convenience skeleton method for raw
+dictionary payloads:
+
+```text
+OpenClaw-like payload dict
+-> normalize_openclaw_message_payload
+-> OpenClawMessage
+-> OpenClawAdapter.handle_message
+-> OpenClawResponse
+-> openclaw_response_to_payload
+-> JSON-safe payload dict
+```
+
+Normalization failures return a JSON-safe error payload from `handle_payload`
+instead of exposing a Python stack trace. If `channel_id` cannot be normalized,
+the skeleton uses `"unknown"` as a placeholder channel value in that error
+payload.
+
+Real OpenClaw payload mapping may change after checking the actual OpenClaw
+runtime API. ProjectOps still owns task state; OpenClaw-like payloads are only
+message inputs.
+
 ## Proposed Response Wrapper
 
 Future conceptual model: `OpenClawResponse`
@@ -244,6 +289,7 @@ src/projectops/adapters/openclaw/
   __init__.py
   models.py
   adapter.py
+  normalization.py
   session_store.py
 ```
 
@@ -274,9 +320,16 @@ Current responsibilities:
 - `OpenClawMessage`
 - `OpenClawResponse`
 
+`normalization.py`:
+
+- normalize raw OpenClaw-like payload dictionaries to `OpenClawMessage`
+- convert `OpenClawResponse` values back to JSON-safe payload dictionaries
+- return clean normalization error payloads for `handle_payload`
+
 `adapter.py`:
 
 - route placeholder `OpenClawMessage` values through `AdapterSession`
+- route raw payload dictionaries through `handle_payload`
 - route through `AdapterSession`
 - convert `AdapterTurnResult` to `AdapterEvent`
 - render response
@@ -317,7 +370,7 @@ Future implementation tests should cover:
 ## Future Work
 
 - PHASE 10-B: OpenClaw adapter skeleton without real OpenClaw import
-- PHASE 10-C: OpenClaw message wrapper models
+- PHASE 10-C: OpenClaw-like payload normalization
 - PHASE 10-D: session store abstraction
 - PHASE 10-E: permission policy module
 - PHASE 10-F: channel-specific renderer policy

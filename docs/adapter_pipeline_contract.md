@@ -15,6 +15,9 @@ For the future OpenClaw-specific adapter design, see
 [openclaw_adapter_design.md](openclaw_adapter_design.md).
 The local placeholder `OpenClawAdapter` skeleton consumes this pipeline without
 importing or integrating real OpenClaw.
+It also accepts raw OpenClaw-like payload dictionaries through
+`OpenClawAdapter.handle_payload`, normalizes them locally, and returns
+JSON-safe payload dictionaries.
 
 ## Recommended Boundary
 
@@ -194,6 +197,18 @@ OpenClaw message
 -> event_from_turn_result
 -> render_event_as_text(style="chat")
 -> send rendered message back to OpenClaw user
+```
+
+Current local skeleton payload shape:
+
+```text
+Raw OpenClaw-like payload
+-> normalize_openclaw_message_payload
+-> OpenClawMessage
+-> OpenClawAdapter.handle_message
+-> OpenClawResponse
+-> openclaw_response_to_payload
+-> JSON-safe response payload
 ```
 
 OpenClaw should not:
