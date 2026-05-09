@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://projectops.local/schemas/task_list.schema.json",
+  "title": "ProjectOps Task List JSON Output",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "tasks",
+    "count"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "projectops.v1"
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/task"
+      }
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "$defs": {
+    "task": {
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "status",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^TASK-[0-9]{4}$"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "planned",
+            "briefed",
+            "result_attached",
+            "verifying",
+            "verified",
+            "completed",
+            "blocked",
+            "failed"
+          ]
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,35 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Test and type-check caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Packaging and build outputs
+dist/
+build/
+*.egg-info/
+
+# Virtual environments and local env files
+.venv/
+venv/
+.env
+.env.*
+
+# OS/editor noise
+.DS_Store
+
+# ProjectOps local runtime state
+.projectops/
+.projectops/state.sqlite
+.projectops/tasks/
+.projectops/memory/
+
+# Local dogfooding result artifacts
+examples/*_codex_result.md
+examples/codex_result.md

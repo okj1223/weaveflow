@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://projectops.local/schemas/doctor.schema.json",
+  "title": "ProjectOps Doctor JSON Output",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "healthy",
+    "ok_count",
+    "warn_count",
+    "error_count",
+    "checks"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "projectops.v1"
+    },
+    "healthy": {
+      "type": "boolean"
+    },
+    "ok_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "warn_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "error_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/check"
+      }
+    }
+  },
+  "$defs": {
+    "check": {
+      "type": "object",
+      "required": [
+        "level",
+        "name",
+        "message"
+      ],
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "warn",
+            "error"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}
