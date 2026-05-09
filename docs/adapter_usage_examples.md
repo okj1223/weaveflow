@@ -41,6 +41,13 @@ For a tiny in-memory session lifecycle demo, see
 python3 examples/adapter_session_demo.py
 ```
 
+For renderable event and transcript examples, see
+[adapter_event_model.md](adapter_event_model.md) or run:
+
+```bash
+python3 examples/adapter_event_demo.py
+```
+
 ## How To Run
 
 ```bash

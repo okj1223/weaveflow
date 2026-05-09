@@ -223,6 +223,8 @@ The deterministic text intake prototype is documented in
 [adapter_intent_mapping.md](adapter_intent_mapping.md).
 The in-memory confirmation/session prototype is documented in
 [adapter_session_lifecycle.md](adapter_session_lifecycle.md).
+The adapter event model for UI rendering is documented in
+[adapter_event_model.md](adapter_event_model.md).
 Read-only actions are:
 
 - `status`
@@ -290,6 +292,7 @@ OpenClaw message
 -> adapter prepares confirmation for mutating commands
 -> adapter carries pending confirmation state with AdapterSession if needed
 -> adapter calls ProjectOps service function
+-> adapter converts AdapterTurnResult to AdapterEvent for UI rendering
 -> ProjectOps writes task/artifact/status files
 -> adapter returns concise status/report to OpenClaw user
 ```

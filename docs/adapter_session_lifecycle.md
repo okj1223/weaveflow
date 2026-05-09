@@ -33,6 +33,9 @@ deterministic intent mapper plus the confirmation helper.
 Pending confirmations are keyed by `request_id`. If a caller does not provide a
 request ID, the session generates one.
 
+For UI rendering, an `AdapterTurnResult` can be converted into an
+`AdapterEvent`. See [adapter_event_model.md](adapter_event_model.md).
+
 ## Safety Model
 
 - Mutating actions are not executed before confirmation.
@@ -75,6 +78,15 @@ if turn.state == "pending_confirmation":
     turn = session.confirm("req-init")
 
 print(turn.ok, turn.state)
+```
+
+To render the turn consistently in a future UI:
+
+```python
+from projectops.adapters import event_from_turn_result
+
+event = event_from_turn_result(turn)
+print(event.event_type, event.level, event.message)
 ```
 
 ## Demo
