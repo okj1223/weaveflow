@@ -70,6 +70,11 @@ A future wrapper should:
 - show a clean summary if the health check fails
 - avoid sending mutating requests until bridge health passes
 
+`LocalBridgeWrapper` uses this health check pattern before normal routing. See
+[local_wrapper_flow.md](local_wrapper_flow.md) for the local wrapper smoke flow
+that combines bridge health check, permission preflight, and stdio bridge
+routing decisions.
+
 ## Relationship To Process Supervision
 
 [stdio_bridge_process_supervision.md](stdio_bridge_process_supervision.md)

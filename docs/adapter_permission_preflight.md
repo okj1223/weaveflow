@@ -112,6 +112,11 @@ Existing `OpenClawAdapter` and stdio bridge behavior remains unchanged in this
 phase. Future wrappers may call preflight before sending `handle_payload` to
 the bridge.
 
+`LocalBridgeWrapper` uses this preflight before deciding whether to route a raw
+payload to the stdio bridge, route only to establish pending confirmation, ask
+for explicit confirmation, or block. See
+[local_wrapper_flow.md](local_wrapper_flow.md).
+
 ## Future OpenClaw Wrapper Usage
 
 Future flow:

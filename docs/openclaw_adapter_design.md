@@ -224,6 +224,12 @@ routing raw payloads into the bridge where feasible. The preflight contract is
 documented in [adapter_permission_preflight.md](adapter_permission_preflight.md)
 and remains local-only and advisory in this phase.
 
+The local wrapper smoke flow is documented in
+[local_wrapper_flow.md](local_wrapper_flow.md). It is a prototype boundary for a
+future OpenClaw wrapper because it combines bridge health checks, permission
+preflight, routing decisions, and stdio bridge client usage without importing
+or calling OpenClaw.
+
 ## Confirmation Flow
 
 Example:

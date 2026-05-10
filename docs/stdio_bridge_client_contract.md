@@ -95,6 +95,9 @@ where feasible. The local preflight helper is documented in
 the intended action and returns whether the wrapper should route, ask for
 confirmation, require explicit confirmation, or block.
 
+The local wrapper flow in [local_wrapper_flow.md](local_wrapper_flow.md)
+demonstrates a small consumer of this client contract.
+
 ## Future OpenClaw Wrapper Responsibilities
 
 A future OpenClaw-side wrapper should:

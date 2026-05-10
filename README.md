@@ -208,6 +208,9 @@ The advisory adapter permission policy is documented in
 [docs/adapter_permission_policy.md](docs/adapter_permission_policy.md).
 The wrapper-facing permission preflight helper is documented in
 [docs/adapter_permission_preflight.md](docs/adapter_permission_preflight.md).
+The local wrapper smoke flow that combines health checks, preflight, and stdio
+routing decisions is documented in
+[docs/local_wrapper_flow.md](docs/local_wrapper_flow.md).
 The future OpenClaw adapter design is documented in
 [docs/openclaw_adapter_design.md](docs/openclaw_adapter_design.md).
 Real OpenClaw runtime research and gap analysis are documented in

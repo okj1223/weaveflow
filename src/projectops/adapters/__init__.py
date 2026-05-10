@@ -30,6 +30,7 @@ from projectops.adapters.events import (
     transcript_from_turns,
 )
 from projectops.adapters.intent_mapper import IntentMappingResult, map_text_to_adapter_request
+from projectops.adapters.local_wrapper import LocalBridgeWrapper, WrapperRouteResult
 from projectops.adapters.permissions import (
     AdapterActionPolicy,
     PermissionDecision,
@@ -75,9 +76,11 @@ __all__ = [
     "DiagnosticWriter",
     "InMemoryAdapterSessionStore",
     "IntentMappingResult",
+    "LocalBridgeWrapper",
     "PermissionDecision",
     "PermissionPreflightResult",
     "ProjectOpsServiceAdapter",
+    "WrapperRouteResult",
     "confirm_request",
     "create_diagnostic_event",
     "diagnostic_event_to_json_line",
