@@ -118,6 +118,11 @@ separate from normal `yes`/`no` pending confirmation. Normal confirmation lives
 inside `AdapterSession`; sensitive explicit confirmation belongs to the wrapper
 or channel session layer until the exact phrase matches.
 
+Channel wrappers should treat explicit confirmations as single-use. Once the
+exact phrase routes a sensitive payload, the same phrase/key should be blocked
+as stale replay in the running wrapper process. See
+[confirmation_replay_protection.md](confirmation_replay_protection.md).
+
 After wrapper or bridge restart, channel wrappers must not replay stale `yes`,
 `no`, or exact confirmation phrases. They should clear pending references and
 ask the user to repeat the command. See

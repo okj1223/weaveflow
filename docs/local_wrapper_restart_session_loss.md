@@ -11,6 +11,8 @@ including a future OpenClaw wrapper, before any real OpenClaw integration.
 
 For the structured user-facing notification contract, see
 [wrapper_notification_contract.md](wrapper_notification_contract.md).
+For in-memory explicit confirmation replay records, see
+[confirmation_replay_protection.md](confirmation_replay_protection.md).
 
 ## Non-Goals
 
@@ -40,6 +42,7 @@ Volatile interaction state lives only in memory:
 
 - `AdapterSession` pending normal confirmations
 - `LocalBridgeWrapper` pending explicit confirmations
+- `LocalBridgeWrapper` explicit confirmation replay records
 - stdio bridge process in-memory sessions
 - `request_id` pending maps
 - `bridge_request_id` pending maps
@@ -53,6 +56,7 @@ When the wrapper or bridge process restarts:
 
 - pending normal confirmations are lost
 - pending explicit confirmations are lost
+- explicit confirmation replay records are lost on restart
 - durable ProjectOps task state survives
 - read-only commands work after restart
 - mutating actions must be repeated and reconfirmed by the user

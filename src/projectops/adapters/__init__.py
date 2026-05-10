@@ -61,6 +61,15 @@ from projectops.adapters.permission_preflight import (
     preflight_openclaw_payload,
     preflight_text_command,
 )
+from projectops.adapters.replay_protection import (
+    CONFIRMATION_STATE_CONSUMED,
+    CONFIRMATION_STATE_PENDING,
+    CONFIRMATION_STATE_REJECTED,
+    CONFIRMATION_STATE_UNKNOWN,
+    ConfirmationReplayCheck,
+    ConfirmationReplayGuard,
+    ConfirmationReplayRecord,
+)
 from projectops.adapters.renderers import (
     render_event_as_text,
     render_event_summary,
@@ -94,7 +103,14 @@ __all__ = [
     "AdapterTurnResult",
     "ChannelRenderPolicy",
     "ConfirmationState",
+    "CONFIRMATION_STATE_CONSUMED",
+    "CONFIRMATION_STATE_PENDING",
+    "CONFIRMATION_STATE_REJECTED",
+    "CONFIRMATION_STATE_UNKNOWN",
     "DIAGNOSTIC_VERSION",
+    "ConfirmationReplayCheck",
+    "ConfirmationReplayGuard",
+    "ConfirmationReplayRecord",
     "DiagnosticEvent",
     "DiagnosticWriter",
     "ExplicitConfirmationCheck",

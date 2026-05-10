@@ -238,6 +238,11 @@ not accept plain `yes` for actions such as `verify_task`,
 original sensitive payload and exact-phrase prompt in memory, then routes that
 payload only after the phrase matches.
 
+The exact phrase is single-use within a running `LocalBridgeWrapper` process.
+A future OpenClaw wrapper should not allow stale exact phrase replays after a
+sensitive action has been routed. See
+[confirmation_replay_protection.md](confirmation_replay_protection.md).
+
 Future OpenClaw wrapper work must also handle restart/session-loss
 notification. Pending normal confirmations and pending explicit confirmations
 are lost if the wrapper or bridge process restarts; see

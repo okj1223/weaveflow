@@ -135,6 +135,11 @@ A future OpenClaw wrapper should:
 OpenClaw should remain the channel surface. ProjectOps `.projectops` files and
 SQLite remain the durable task source of truth.
 
+Stale explicit confirmation replays can be rendered later as a wrapper warning
+or wrapper error using the same notification shape. The replay-protection
+contract is documented in
+[confirmation_replay_protection.md](confirmation_replay_protection.md).
+
 ## Relationship To Existing Docs
 
 - [local_wrapper_restart_session_loss.md](local_wrapper_restart_session_loss.md)

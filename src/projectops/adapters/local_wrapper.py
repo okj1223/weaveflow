@@ -25,6 +25,12 @@ from projectops.adapters.permission_preflight import (
     preflight_openclaw_payload,
 )
 from projectops.adapters.permissions import FUTURE_HIGH_RISK, UNKNOWN
+from projectops.adapters.replay_protection import (
+    CONFIRMATION_STATE_CONSUMED,
+    CONFIRMATION_STATE_REJECTED,
+    ConfirmationReplayGuard,
+    ConfirmationReplayRecord,
+)
 from projectops.adapters.stdio_client import StdioBridgeClient
 from projectops.adapters.stdio_health import (
     BridgeHealthResult,
@@ -86,6 +92,7 @@ class LocalBridgeWrapper:
         self._health: Optional[BridgeHealthResult] = None
         self._counter = 0
         self._pending_explicit_confirmations: dict[str, PendingExplicitConfirmation] = {}
+        self._replay_guard = ConfirmationReplayGuard()
 
     def start(self) -> BridgeHealthResult:
         """Start the bridge subprocess and run a ping health check."""
@@ -199,6 +206,11 @@ class LocalBridgeWrapper:
 
     def list_pending_explicit_confirmations(self) -> list[PendingExplicitConfirmation]:
         return list(self._pending_explicit_confirmations.values())
+
+    def list_confirmation_replay_records(self) -> list[ConfirmationReplayRecord]:
+        """Return in-memory explicit confirmation replay records."""
+
+        return self._replay_guard.list_records()
 
     def handle_payload(
         self,
@@ -352,6 +364,15 @@ class LocalBridgeWrapper:
             request_id=request_id,
         )
         if pending is None or pending_key is None:
+            replay_record = self._find_consumed_or_rejected_confirmation(
+                bridge_request_id=bridge_request_id,
+                request_id=request_id,
+            )
+            if replay_record is not None:
+                return _stale_replay_result(
+                    replay_record,
+                    bridge_request_id=result_bridge_request_id,
+                )
             return _result(
                 ok=False,
                 bridge_request_id=result_bridge_request_id,
@@ -384,7 +405,42 @@ class LocalBridgeWrapper:
                 },
             )
 
+        replay_check = self._replay_guard.check_before_execute(
+            action=pending.action,
+            request_id=pending.request_id,
+            bridge_request_id=pending.bridge_request_id,
+        )
+        if not replay_check.can_execute:
+            return _result(
+                ok=False,
+                bridge_request_id=pending.bridge_request_id,
+                routed=False,
+                blocked=True,
+                route_reason="stale_confirmation_replay",
+                action=pending.action,
+                category=prompt.category,
+                requires_explicit_confirmation=True,
+                summary=replay_check.summary,
+                error_type=replay_check.error_type,
+                error_message=replay_check.error_message,
+                metadata={
+                    "pending_key": pending_key,
+                    "replay_detected": replay_check.replay_detected,
+                    "replay_state": replay_check.state,
+                },
+            )
+
         result = self._route_explicitly_confirmed_payload(pending)
+        self._replay_guard.mark_consumed(
+            action=pending.action,
+            request_id=pending.request_id,
+            bridge_request_id=pending.bridge_request_id,
+            metadata={
+                "pending_key": pending_key,
+                "routed": True,
+                "route_reason": result.route_reason,
+            },
+        )
         self.clear_pending_explicit_confirmation(pending_key)
         return result
 
@@ -393,12 +449,14 @@ class LocalBridgeWrapper:
 
         if self._client is None:
             self._pending_explicit_confirmations.clear()
+            self._replay_guard.clear()
             return None
         if not self._client.is_running():
             self._client.close()
             self._client = None
             self._health = None
             self._pending_explicit_confirmations.clear()
+            self._replay_guard.clear()
             return _result(
                 ok=True,
                 bridge_request_id=None,
@@ -441,6 +499,7 @@ class LocalBridgeWrapper:
             self._client = None
             self._health = None
             self._pending_explicit_confirmations.clear()
+            self._replay_guard.clear()
         return result
 
     def __enter__(self) -> "LocalBridgeWrapper":
@@ -498,6 +557,24 @@ class LocalBridgeWrapper:
                 "preflight": _preflight_payload(preflight),
             },
         )
+        replay_record = self._replay_guard.register_pending(
+            action=prompt.action,
+            request_id=prompt.request_id,
+            bridge_request_id=bridge_request_id,
+            metadata={
+                "pending_key": pending_key,
+                "source": "local_wrapper",
+            },
+        )
+        if replay_record.state in {
+            CONFIRMATION_STATE_CONSUMED,
+            CONFIRMATION_STATE_REJECTED,
+        }:
+            return _stale_replay_result(
+                replay_record,
+                bridge_request_id=bridge_request_id,
+            )
+
         self.set_pending_explicit_confirmation(pending_key, pending)
 
         return _result_from_preflight(
@@ -539,6 +616,24 @@ class LocalBridgeWrapper:
                     return key, pending
 
         return None, None
+
+    def _find_consumed_or_rejected_confirmation(
+        self,
+        *,
+        bridge_request_id: Optional[str],
+        request_id: Optional[str],
+    ) -> Optional[ConfirmationReplayRecord]:
+        for record in self._replay_guard.list_records():
+            if record.state not in {
+                CONFIRMATION_STATE_CONSUMED,
+                CONFIRMATION_STATE_REJECTED,
+            }:
+                continue
+            if bridge_request_id and record.bridge_request_id == bridge_request_id:
+                return record
+            if request_id and record.request_id == request_id:
+                return record
+        return None
 
     def _route_explicitly_confirmed_payload(
         self,
@@ -763,6 +858,39 @@ def _blocked_preflight_result(
         blocked=True,
         route_reason=route_reason,
         summary=f"Payload blocked: {preflight.reason}",
+    )
+
+
+def _stale_replay_result(
+    record: ConfirmationReplayRecord,
+    *,
+    bridge_request_id: Optional[str],
+) -> WrapperRouteResult:
+    if record.state == CONFIRMATION_STATE_REJECTED:
+        error_type = "RejectedConfirmationReplay"
+        message = "Explicit confirmation was rejected and cannot be replayed."
+    else:
+        error_type = "StaleConfirmationReplay"
+        message = "Explicit confirmation was already consumed and cannot be replayed."
+
+    return _result(
+        ok=False,
+        bridge_request_id=bridge_request_id or record.bridge_request_id,
+        routed=False,
+        blocked=True,
+        route_reason="stale_confirmation_replay",
+        action=record.action,
+        requires_explicit_confirmation=True,
+        summary=message,
+        error_type=error_type,
+        error_message=message,
+        metadata={
+            "replay_detected": True,
+            "replay_state": record.state,
+            "replay_key": record.key,
+            "request_id": record.request_id,
+            "bridge_request_id": record.bridge_request_id,
+        },
     )
 
 

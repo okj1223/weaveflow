@@ -118,6 +118,12 @@ Pending explicit confirmation prompts are lost on wrapper restart unless a
 future persistent session store is added. See
 [local_wrapper_restart_session_loss.md](local_wrapper_restart_session_loss.md).
 
+Exact confirmation phrases are single-use within one `LocalBridgeWrapper`
+process. After the wrapper routes the sensitive payload, it marks the
+confirmation as consumed so the same phrase/key cannot route again in that
+process. See
+[confirmation_replay_protection.md](confirmation_replay_protection.md).
+
 ## Examples
 
 For `verify_task` with request id `m-123`, the phrase is:

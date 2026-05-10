@@ -211,6 +211,9 @@ The wrapper-facing permission preflight helper is documented in
 The explicit confirmation UX contract for sensitive adapter actions is
 documented in
 [docs/adapter_explicit_confirmation.md](docs/adapter_explicit_confirmation.md).
+In-memory single-use replay protection for explicit confirmations is
+documented in
+[docs/confirmation_replay_protection.md](docs/confirmation_replay_protection.md).
 The local wrapper smoke flow that combines health checks, preflight, and stdio
 routing decisions is documented in
 [docs/local_wrapper_flow.md](docs/local_wrapper_flow.md).

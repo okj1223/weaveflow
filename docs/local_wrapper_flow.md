@@ -43,6 +43,8 @@ Restart and session-loss behavior is documented in
 Future wrappers can represent restart/session-loss notices with the structured
 notification contract in
 [wrapper_notification_contract.md](wrapper_notification_contract.md).
+Explicit confirmation replay protection is documented in
+[confirmation_replay_protection.md](confirmation_replay_protection.md).
 
 ## Routing Decisions
 
@@ -102,6 +104,11 @@ same request.
 Pending explicit confirmations are in-memory only. They are cleared after a
 successful route attempt, cleared on wrapper shutdown, and lost if the wrapper
 or bridge process restarts.
+
+After a sensitive payload is routed, the wrapper marks the explicit
+confirmation key as consumed. The same exact phrase/key is blocked as
+`StaleConfirmationReplay` in the same wrapper process. This replay protection is
+in-memory only and does not persist across restart.
 
 Normal pending confirmations are also in-memory only because they live inside
 the running bridge process and `AdapterSession`.
