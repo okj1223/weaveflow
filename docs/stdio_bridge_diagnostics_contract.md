@@ -6,8 +6,7 @@ This document defines the diagnostics contract for future stderr output from
 the ProjectOps stdio bridge and external wrappers.
 
 stdout remains the protocol channel. stderr is diagnostics-only. This is not
-real OpenClaw integration. This is not a server logging system. This does not
-implement runtime diagnostics yet.
+real OpenClaw integration. This is not a server logging system.
 
 In short: stdout is protocol-only, stderr is diagnostics-only.
 
@@ -25,7 +24,7 @@ In short: stdout is protocol-only, stderr is diagnostics-only.
 - no authorization runtime
 - no external APIs
 - no auto-running Codex
-- no runtime stderr logging implementation in this phase
+- no production stderr logging implementation in this phase
 
 ## stdout/stderr Boundary
 
@@ -98,8 +97,27 @@ Suggested event names:
 - `doctor_error`
 - `unexpected_error`
 
-This shape is proposed for future implementation. Not all events are emitted
-today. Future implementation should keep diagnostics JSON-safe.
+This shape is the runtime diagnostic shape introduced by PHASE 10-M. Only a
+small bridge lifecycle and request set is emitted today. Future implementation
+should keep diagnostics JSON-safe.
+
+## PHASE 10-M Implementation Status
+
+`DiagnosticEvent` and `DiagnosticWriter` now exist in
+`projectops.adapters.diagnostics`. Diagnostics can be emitted to stderr or to
+an injected stream, which keeps tests and future process wrappers from mixing
+diagnostics with protocol output.
+
+`run_stdio_bridge` can receive a `diagnostic_writer`. Diagnostics are optional:
+when no writer is provided, the bridge keeps the previous quiet behavior. When
+a writer is provided, the bridge may emit JSON lines such as `bridge_started`,
+`request_received`, `request_completed`, `protocol_error`,
+`normalization_error`, `shutdown_requested`, and `bridge_stopped`.
+
+stdout remains protocol-only. Diagnostic lines use
+`projectops.diagnostics.v1` and are separate from `StdioBridgeResponse` JSON.
+This is not production logging, and the lightweight path redaction is not a
+full secret redaction system.
 
 ## Correlation Policy
 

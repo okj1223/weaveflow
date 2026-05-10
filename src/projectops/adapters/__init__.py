@@ -14,6 +14,14 @@ from projectops.adapters.confirmation import (
     prepare_confirmation,
     reject_request,
 )
+from projectops.adapters.diagnostics import (
+    DIAGNOSTIC_VERSION,
+    DiagnosticEvent,
+    DiagnosticWriter,
+    create_diagnostic_event,
+    diagnostic_event_to_json_line,
+    sanitize_diagnostic_metadata,
+)
 from projectops.adapters.events import (
     AdapterEvent,
     AdapterTranscript,
@@ -55,11 +63,16 @@ __all__ = [
     "AdapterTurnResult",
     "ChannelRenderPolicy",
     "ConfirmationState",
+    "DIAGNOSTIC_VERSION",
+    "DiagnosticEvent",
+    "DiagnosticWriter",
     "InMemoryAdapterSessionStore",
     "IntentMappingResult",
     "PermissionDecision",
     "ProjectOpsServiceAdapter",
     "confirm_request",
+    "create_diagnostic_event",
+    "diagnostic_event_to_json_line",
     "evaluate_action_permission",
     "event_from_turn_result",
     "event_to_display_line",
@@ -78,5 +91,6 @@ __all__ = [
     "render_transcript_for_channel",
     "render_transcript_as_text",
     "reject_request",
+    "sanitize_diagnostic_metadata",
     "transcript_from_turns",
 ]

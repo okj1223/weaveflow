@@ -47,6 +47,9 @@ For the future structured stderr diagnostics shape, see
   diagnostics-only.
 - Future stderr diagnostics are not protocol responses and should be captured
   separately from stdout.
+- PHASE 10-M adds optional `DiagnosticWriter` support so diagnostics can be
+  emitted to stderr or an injected diagnostics stream while stdout remains
+  JSON-only protocol output.
 
 ## Request Schema
 

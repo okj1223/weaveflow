@@ -110,6 +110,9 @@ sanitized summary.
 
 Future timeout, restart, and session-loss diagnostics should follow the stderr
 diagnostics contract rather than changing the stdout protocol.
+PHASE 10-M adds an optional `DiagnosticWriter`; future wrappers may capture
+stderr diagnostics or an injected diagnostics stream when diagnostics are
+enabled. That diagnostics capture is separate from stdout protocol parsing.
 
 ## Error Handling Policy
 
