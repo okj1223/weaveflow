@@ -279,3 +279,82 @@ Stop the next POC implementation when:
 - No Codex auto-run, auth/RBAC, persistent sessions, or process supervisor has
   been added.
 - Any missing OpenClaw API detail is documented instead of guessed.
+
+## POC Implementation Result
+
+The first native OpenClaw tool-plugin POC now exists.
+
+Plugin location:
+
+```text
+integrations/openclaw-projectops-stdio-poc/
+```
+
+Tool name:
+
+```text
+projectops_stdio_poc
+```
+
+Implementation shape:
+
+- native OpenClaw manifest: `openclaw.plugin.json`
+- package metadata: `package.json` with `openclaw.extensions`
+- plugin entrypoint: `src/index.js`
+- bridge helper: `src/projectopsBridge.js`
+- local smoke script: `scripts/smoke.js`
+- Node tests: `tests/projectopsBridge.test.js`
+
+The POC uses ESM JavaScript instead of TypeScript so the smoke test can run
+without adding a build step, dependency install, or package lock. It still uses
+the documented native plugin entry helper:
+`definePluginEntry` from `openclaw/plugin-sdk/plugin-entry`.
+
+Commands run:
+
+```bash
+npm test --prefix integrations/openclaw-projectops-stdio-poc
+npm run smoke --prefix integrations/openclaw-projectops-stdio-poc
+openclaw --dev plugins install -l integrations/openclaw-projectops-stdio-poc
+openclaw --dev plugins inspect projectops-stdio-poc --json
+openclaw --dev plugins doctor
+```
+
+Smoke result:
+
+- `ping` succeeded.
+- `status` returned.
+- `create task` returned pending confirmation.
+- `yes` completed task creation.
+- `task list` completed and the created task existed in the temporary
+  ProjectOps workspace.
+- `shutdown` succeeded.
+- The smoke run used a temporary workspace and did not modify the repository
+  `.projectops` workspace.
+
+OpenClaw validation result:
+
+- `openclaw --dev plugins inspect projectops-stdio-poc --json` loaded the
+  plugin.
+- Inspect reported one optional tool: `projectops_stdio_poc`.
+- `openclaw --dev plugins doctor` reported no plugin issues.
+- The dev profile warned that `plugins.allow` is empty, so non-bundled plugins
+  may auto-load. That is an OpenClaw configuration hardening note, not a POC
+  load failure.
+
+Confirmed behavior:
+
+- A native OpenClaw plugin entry can register a ProjectOps POC tool.
+- OpenClaw can discover and inspect the local linked plugin.
+- Node-side POC code can spawn the existing Python stdio bridge.
+- The fixed bridge sequence works against an initialized temporary ProjectOps
+  workspace.
+
+Remaining unknowns:
+
+- The tool has not yet been invoked from a real OpenClaw chat session.
+- Optional tool allowlisting/user enablement still needs real UX validation.
+- Workspace root selection is still manual tool input.
+- The POC is one-shot; it starts and stops the bridge for one fixed sequence.
+- No long-lived process, persistent sessions, auth/RBAC, or process supervisor
+  has been added.

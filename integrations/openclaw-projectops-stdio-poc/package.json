@@ -1,0 +1,16 @@
+{
+  "name": "@projectops/projectops-stdio-poc",
+  "version": "0.0.0-poc",
+  "private": true,
+  "type": "module",
+  "description": "Minimal OpenClaw native tool plugin POC for the ProjectOps stdio bridge.",
+  "openclaw": {
+    "extensions": [
+      "./src/index.js"
+    ]
+  },
+  "scripts": {
+    "smoke": "node scripts/smoke.js",
+    "test": "node --test tests/*.test.js"
+  }
+}
