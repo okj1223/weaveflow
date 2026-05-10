@@ -138,6 +138,10 @@ lines are parsed as bridge responses, stderr lines are parsed as
 response while stderr receives a protocol diagnostic. This is subprocess smoke
 coverage, not production logging.
 
+The lightweight health-check helpers in
+[stdio_bridge_health_checks.md](stdio_bridge_health_checks.md) can validate
+stderr diagnostic JSON lines as part of a wrapper preflight.
+
 ## Correlation Policy
 
 `bridge_request_id` correlates stdio bridge request and response values.

@@ -104,6 +104,9 @@ Structured stderr diagnostics are also a prerequisite for robust wrapper
 supervision. See
 [stdio_bridge_diagnostics_contract.md](stdio_bridge_diagnostics_contract.md)
 for the diagnostics contract.
+Bridge health checks are another prerequisite for a future wrapper. See
+[stdio_bridge_health_checks.md](stdio_bridge_health_checks.md) for the local
+ping preflight and stdout/stderr validation helpers.
 
 Why this path:
 

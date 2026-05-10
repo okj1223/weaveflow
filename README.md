@@ -217,6 +217,8 @@ The local stdio bridge client-wrapper contract is documented in
 [docs/stdio_bridge_client_contract.md](docs/stdio_bridge_client_contract.md).
 The stdio bridge process supervision policy for future wrappers is documented
 in [docs/stdio_bridge_process_supervision.md](docs/stdio_bridge_process_supervision.md).
+The lightweight stdio bridge health-check helpers are documented in
+[docs/stdio_bridge_health_checks.md](docs/stdio_bridge_health_checks.md).
 The stdio bridge diagnostics contract for future stderr events is documented
 in [docs/stdio_bridge_diagnostics_contract.md](docs/stdio_bridge_diagnostics_contract.md).
 The bridge can optionally emit structured `DiagnosticEvent` JSON lines through

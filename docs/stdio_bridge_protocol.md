@@ -17,6 +17,8 @@ future wrapper should spawn the process, keep it alive, correlate
 `bridge_request_id`, and shut it down.
 For wrapper lifecycle, timeout, restart, stdout, and stderr policy, see
 [stdio_bridge_process_supervision.md](stdio_bridge_process_supervision.md).
+For lightweight ping health check helpers and JSON line validation, see
+[stdio_bridge_health_checks.md](stdio_bridge_health_checks.md).
 For the future structured stderr diagnostics shape, see
 [stdio_bridge_diagnostics_contract.md](stdio_bridge_diagnostics_contract.md).
 
@@ -84,6 +86,8 @@ Example:
 
 Health check for the bridge process. It does not touch ProjectOps workspace
 state.
+`ping` is the basic protocol health check; wrapper-level helpers validate the
+stdout `StdioBridgeResponse` shape and require `pong=true`.
 
 Response:
 

@@ -16,6 +16,8 @@ This client contract defines protocol usage; the supervision document defines
 lifecycle and restart policy.
 For future structured stderr diagnostics, see
 [stdio_bridge_diagnostics_contract.md](stdio_bridge_diagnostics_contract.md).
+For lightweight ping health check helpers, see
+[stdio_bridge_health_checks.md](stdio_bridge_health_checks.md).
 
 ## Non-Goals
 
@@ -82,6 +84,10 @@ Supported request types:
 
 `bridge_request_id` is the caller's correlation id. The bridge copies it into
 the response when the request can be parsed.
+
+Before normal request handling, a wrapper may run the health check helper to
+send `ping`, validate the stdout response shape, optionally validate stderr
+diagnostics, and produce a clean summary if the bridge is not ready.
 
 ## Future OpenClaw Wrapper Responsibilities
 

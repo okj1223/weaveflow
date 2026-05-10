@@ -11,6 +11,8 @@ is a policy and contract document for future external wrappers.
 
 For the future structured stderr diagnostic event shape, see
 [stdio_bridge_diagnostics_contract.md](stdio_bridge_diagnostics_contract.md).
+For lightweight bridge health check helpers, see
+[stdio_bridge_health_checks.md](stdio_bridge_health_checks.md).
 
 ## Non-Goals
 
@@ -51,6 +53,9 @@ python3 -m projectops.adapters.stdio_bridge --root <workspace-root>
 
 The wrapper verifies bridge health using `ping`. It should not treat process
 start alone as healthy until `ping` succeeds.
+The bridge health helper is the recommended preflight before normal request
+handling; it validates the ping response and JSON line shapes without becoming
+a process supervisor.
 
 When structured diagnostics are useful, the wrapper may opt in with:
 
