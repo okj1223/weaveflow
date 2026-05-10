@@ -247,6 +247,10 @@ It should render the stale confirmation or mismatch notification described in
 instead of silently failing or rerouting the payload.
 Wrapper result rendering for future OpenClaw user messages is documented in
 [wrapper_result_rendering.md](wrapper_result_rendering.md).
+Future OpenClaw smoke work can also use local transcript review artifacts to
+compare payloads, preflight decisions, route results, notifications, and
+rendered text before wiring a real runtime. See
+[wrapper_transcript_review.md](wrapper_transcript_review.md).
 
 Future OpenClaw wrapper work must also handle restart/session-loss
 notification. Pending normal confirmations and pending explicit confirmations

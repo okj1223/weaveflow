@@ -49,6 +49,10 @@ Stale confirmation notification behavior is documented in
 [stale_confirmation_notifications.md](stale_confirmation_notifications.md).
 Wrapper result rendering for future channel responses is documented in
 [wrapper_result_rendering.md](wrapper_result_rendering.md).
+Local wrapper transcript review artifacts are documented in
+[wrapper_transcript_review.md](wrapper_transcript_review.md). They capture the
+payload, preflight, route result, notification, and rendered text for local
+debugging, but they are not task state.
 
 ## Routing Decisions
 
@@ -125,6 +129,9 @@ the running bridge process and `AdapterSession`.
 Future channel wrappers should render `WrapperRouteResult` and
 `WrapperNotification` with the wrapper result rendering policy before sending a
 message to a user. Rendered text is presentation-only and not task state.
+If a future wrapper needs a local review artifact for an end-to-end smoke run,
+it can record a `WrapperTranscript` as described in
+[wrapper_transcript_review.md](wrapper_transcript_review.md).
 
 ## Health Check
 

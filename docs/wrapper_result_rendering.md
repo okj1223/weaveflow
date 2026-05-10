@@ -42,6 +42,11 @@ Rendering outputs are presentation-only:
 
 Rendered text must not be treated as source of truth.
 
+Wrapper transcript review artifacts can record rendered text alongside the
+original payload, preflight result, route result, and notification payload for
+local debugging. See
+[wrapper_transcript_review.md](wrapper_transcript_review.md).
+
 ## Rendering Cases
 
 Routed result:
@@ -108,6 +113,7 @@ Rendered text is presentation-only and is not the source of truth.
 
 `WrapperRouteResult` is a routing result. `WrapperNotification` is a
 user-facing warning or notice. Rendered text is a communication artifact only.
+`WrapperTranscript` is a local review artifact only; it is not task state.
 
 ## Future OpenClaw Usage
 

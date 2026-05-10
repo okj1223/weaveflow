@@ -129,6 +129,10 @@ Channel wrappers should render `WrapperRouteResult` and `WrapperNotification`
 through the policy in [wrapper_result_rendering.md](wrapper_result_rendering.md)
 before sending presentation text to OpenClaw, Slack, Telegram, terminal, or log
 surfaces.
+For local integration review, channel wrappers may also capture
+`WrapperTranscript` artifacts after rendering. See
+[wrapper_transcript_review.md](wrapper_transcript_review.md). These transcripts
+are review artifacts only and must not become the source of truth.
 
 After wrapper or bridge restart, channel wrappers must not replay stale `yes`,
 `no`, or exact confirmation phrases. They should clear pending references and

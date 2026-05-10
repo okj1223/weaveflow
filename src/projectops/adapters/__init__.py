@@ -106,6 +106,15 @@ from projectops.adapters.wrapper_rendering import (
     render_wrapper_result_payload,
     render_wrapper_result_summary,
 )
+from projectops.adapters.wrapper_transcript import (
+    WrapperTranscript,
+    WrapperTranscriptEntry,
+    create_wrapper_transcript_entry,
+    run_payloads_with_transcript,
+    sanitize_transcript_payload,
+    transcript_to_json,
+    transcript_to_markdown,
+)
 
 __all__ = [
     "AdapterEvent",
@@ -144,6 +153,8 @@ __all__ = [
     "STALE_CONFIRMATION_REPLAY_NOTIFICATION_TYPE",
     "WrapperRouteResult",
     "WrapperNotification",
+    "WrapperTranscript",
+    "WrapperTranscriptEntry",
     "build_explicit_confirmation_phrase",
     "check_explicit_confirmation",
     "confirm_request",
@@ -155,6 +166,7 @@ __all__ = [
     "create_stale_confirmation_replay_notification",
     "create_explicit_confirmation_prompt",
     "create_diagnostic_event",
+    "create_wrapper_transcript_entry",
     "diagnostic_event_to_json_line",
     "evaluate_action_permission",
     "event_from_turn_result",
@@ -184,10 +196,14 @@ __all__ = [
     "render_wrapper_result_payload",
     "render_wrapper_result_summary",
     "reject_request",
+    "run_payloads_with_transcript",
+    "sanitize_transcript_payload",
     "sanitize_diagnostic_metadata",
     "SESSION_LOSS_NOTIFICATION_TYPE",
     "summarize_explicit_confirmation_prompt",
     "transcript_from_turns",
+    "transcript_to_json",
+    "transcript_to_markdown",
     "is_retry_safe_after_session_loss",
     "wrapper_notification_to_payload",
     "wrapper_notification_to_text",

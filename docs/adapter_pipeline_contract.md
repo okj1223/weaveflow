@@ -178,6 +178,11 @@ Responsibility:
 in-memory interaction state only. The session store is not a database.
 `AdapterEvent` and `AdapterTranscript` are renderable records, not state
 authority. Rendered text is presentation-only.
+After wrapper-level rendering, a future external wrapper may create an optional
+local `WrapperTranscript` review artifact to capture payload, preflight, route
+result, notification, and rendered text for debugging. See
+[wrapper_transcript_review.md](wrapper_transcript_review.md). This transcript
+layer is not persistent storage and is not the source of truth.
 
 External integrations must not infer task completion from rendered text alone.
 Use ProjectOps task files, SQLite state, service calls, or JSON contracts for
