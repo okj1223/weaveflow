@@ -10,6 +10,12 @@ and receive line-delimited JSON responses.
 This keeps ProjectOps local-first while giving non-Python callers a narrow
 process boundary.
 
+For the external process-wrapper side of this protocol, see
+[stdio_bridge_client_contract.md](stdio_bridge_client_contract.md). This
+protocol defines request and response lines; the client contract defines how a
+future wrapper should spawn the process, keep it alive, correlate
+`bridge_request_id`, and shut it down.
+
 ## Non-Goals
 
 - This is not real OpenClaw integration.

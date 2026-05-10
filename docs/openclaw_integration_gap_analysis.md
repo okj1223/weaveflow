@@ -91,6 +91,12 @@ That bridge is now defined in
 [stdio_bridge_protocol.md](stdio_bridge_protocol.md). It is a local process
 bridge, not real OpenClaw integration.
 
+The next wrapper-facing step is documented in
+[stdio_bridge_client_contract.md](stdio_bridge_client_contract.md). It explains
+how a future OpenClaw Node process wrapper should spawn the ProjectOps bridge,
+send JSON lines, preserve `bridge_request_id`, and keep the process alive for
+in-memory sessions.
+
 Why this path:
 
 - It is useful even before real OpenClaw integration.
