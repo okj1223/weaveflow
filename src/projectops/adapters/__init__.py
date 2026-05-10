@@ -42,7 +42,6 @@ from projectops.adapters.intent_mapper import IntentMappingResult, map_text_to_a
 from projectops.adapters.local_wrapper import (
     LocalBridgeWrapper,
     PendingExplicitConfirmation,
-    SESSION_LOSS_MESSAGE,
     WrapperRouteResult,
 )
 from projectops.adapters.permissions import (
@@ -73,6 +72,16 @@ from projectops.adapters.session_store import (
     InMemoryAdapterSessionStore,
 )
 from projectops.adapters.service_adapter import ProjectOpsServiceAdapter
+from projectops.adapters.wrapper_notifications import (
+    SESSION_LOSS_MESSAGE,
+    SESSION_LOSS_NOTIFICATION_TYPE,
+    WrapperNotification,
+    create_pending_cleared_notification,
+    create_session_loss_notification,
+    is_retry_safe_after_session_loss,
+    wrapper_notification_to_payload,
+    wrapper_notification_to_text,
+)
 
 __all__ = [
     "AdapterEvent",
@@ -99,9 +108,12 @@ __all__ = [
     "ProjectOpsServiceAdapter",
     "SESSION_LOSS_MESSAGE",
     "WrapperRouteResult",
+    "WrapperNotification",
     "build_explicit_confirmation_phrase",
     "check_explicit_confirmation",
     "confirm_request",
+    "create_pending_cleared_notification",
+    "create_session_loss_notification",
     "create_explicit_confirmation_prompt",
     "create_diagnostic_event",
     "diagnostic_event_to_json_line",
@@ -129,6 +141,10 @@ __all__ = [
     "render_transcript_as_text",
     "reject_request",
     "sanitize_diagnostic_metadata",
+    "SESSION_LOSS_NOTIFICATION_TYPE",
     "summarize_explicit_confirmation_prompt",
     "transcript_from_turns",
+    "is_retry_safe_after_session_loss",
+    "wrapper_notification_to_payload",
+    "wrapper_notification_to_text",
 ]

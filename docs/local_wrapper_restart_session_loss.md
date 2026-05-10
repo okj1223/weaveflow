@@ -9,6 +9,9 @@ The behavior is intentional: pending confirmations are interaction state, not
 durable ProjectOps task state. This document is for future external wrappers,
 including a future OpenClaw wrapper, before any real OpenClaw integration.
 
+For the structured user-facing notification contract, see
+[wrapper_notification_contract.md](wrapper_notification_contract.md).
+
 ## Non-Goals
 
 - not real OpenClaw integration
@@ -68,6 +71,8 @@ The ProjectOps bridge restarted. Pending confirmations were cleared. Please repe
 
 Use this message when a wrapper restarts its bridge process, detects an
 unexpected bridge exit, or clears local pending confirmation references.
+`WrapperNotification` is the recommended result object for carrying this
+restart/session-loss notice to future external wrappers and UIs.
 
 ## Safe Retry Policy
 

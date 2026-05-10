@@ -30,14 +30,13 @@ from projectops.adapters.stdio_health import (
     BridgeHealthResult,
     validate_stdout_response_line,
 )
+from projectops.adapters.wrapper_notifications import (
+    SESSION_LOSS_MESSAGE,
+    WrapperNotification,
+    create_session_loss_notification,
+)
 from projectops.json_io import CONTRACT_VERSION, to_jsonable
 from projectops.models import utc_now_iso
-
-
-SESSION_LOSS_MESSAGE = (
-    "The ProjectOps bridge restarted. Pending confirmations were cleared. "
-    "Please repeat the command if needed."
-)
 
 
 class WrapperRouteResult(BaseModel):
@@ -140,6 +139,27 @@ class LocalBridgeWrapper:
         """Return the recommended user-facing restart/session-loss message."""
 
         return SESSION_LOSS_MESSAGE
+
+    def create_session_loss_notification(
+        self,
+        *,
+        request_id: Optional[str] = None,
+        bridge_request_id: Optional[str] = None,
+        session_key: Optional[str] = None,
+        action: Optional[str] = None,
+        retry_safe: bool = False,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> WrapperNotification:
+        """Create a structured restart/session-loss notification."""
+
+        return create_session_loss_notification(
+            request_id=request_id,
+            bridge_request_id=bridge_request_id,
+            session_key=session_key,
+            action=action,
+            retry_safe=retry_safe,
+            metadata=metadata,
+        )
 
     def prepare_explicit_confirmation(
         self,

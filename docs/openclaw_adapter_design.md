@@ -242,6 +242,9 @@ Future OpenClaw wrapper work must also handle restart/session-loss
 notification. Pending normal confirmations and pending explicit confirmations
 are lost if the wrapper or bridge process restarts; see
 [local_wrapper_restart_session_loss.md](local_wrapper_restart_session_loss.md).
+The future wrapper should render a `WrapperNotification` from
+[wrapper_notification_contract.md](wrapper_notification_contract.md) when it
+needs to tell a user that pending confirmations were cleared.
 
 ## Confirmation Flow
 

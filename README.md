@@ -216,6 +216,8 @@ routing decisions is documented in
 [docs/local_wrapper_flow.md](docs/local_wrapper_flow.md).
 Wrapper restart and session-loss behavior is documented in
 [docs/local_wrapper_restart_session_loss.md](docs/local_wrapper_restart_session_loss.md).
+Restart-aware wrapper notification payloads are documented in
+[docs/wrapper_notification_contract.md](docs/wrapper_notification_contract.md).
 The local wrapper explicit confirmation smoke demo is available at
 `python3 examples/local_wrapper_explicit_confirmation_demo.py`.
 The future OpenClaw adapter design is documented in

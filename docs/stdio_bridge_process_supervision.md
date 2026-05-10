@@ -15,6 +15,9 @@ For lightweight bridge health check helpers, see
 [stdio_bridge_health_checks.md](stdio_bridge_health_checks.md).
 For local wrapper restart and session-loss behavior, see
 [local_wrapper_restart_session_loss.md](local_wrapper_restart_session_loss.md).
+For structured wrapper notifications that can be rendered to users after
+restart/session loss, see
+[wrapper_notification_contract.md](wrapper_notification_contract.md).
 
 ## Non-Goals
 
@@ -170,6 +173,9 @@ Future wrappers should notify the user:
 ```text
 The ProjectOps bridge restarted. Pending confirmations were cleared. Please repeat the command if needed.
 ```
+
+Future wrappers should prefer a `WrapperNotification` for this user-facing
+restart notice when they need a structured result object.
 
 Read-only commands may be retried after restart. Mutating commands should not
 be automatically retried unless they were not executed and the user reconfirms.

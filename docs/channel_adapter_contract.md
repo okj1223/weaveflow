@@ -122,6 +122,9 @@ After wrapper or bridge restart, channel wrappers must not replay stale `yes`,
 `no`, or exact confirmation phrases. They should clear pending references and
 ask the user to repeat the command. See
 [local_wrapper_restart_session_loss.md](local_wrapper_restart_session_loss.md).
+Channel wrappers should use the notification contract in
+[wrapper_notification_contract.md](wrapper_notification_contract.md) for
+restart/session-loss user messages.
 
 ## Confirmation And Session Ownership
 

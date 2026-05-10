@@ -40,6 +40,9 @@ health check before normal routing, preflights raw payloads, and returns a
 
 Restart and session-loss behavior is documented in
 [local_wrapper_restart_session_loss.md](local_wrapper_restart_session_loss.md).
+Future wrappers can represent restart/session-loss notices with the structured
+notification contract in
+[wrapper_notification_contract.md](wrapper_notification_contract.md).
 
 ## Routing Decisions
 
