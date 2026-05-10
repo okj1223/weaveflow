@@ -56,6 +56,16 @@ python3 -m projectops.adapters.stdio_bridge --root /path/to/project
 This does not add an `ops` CLI command. The module entrypoint calls
 `run_stdio_bridge(root, sys.stdin, sys.stdout)`.
 
+Client wrappers may opt into structured stderr diagnostics with:
+
+```bash
+python3 -m projectops.adapters.stdio_bridge --root /path/to/project --diagnostics-stderr
+```
+
+When that flag is used, stdout and stderr must be consumed separately: stdout
+is still the request/response protocol, while stderr carries diagnostic JSON
+lines.
+
 ## Request And Response Flow
 
 The bridge protocol is documented in
@@ -98,6 +108,8 @@ Bridge stdout should remain JSON-only. A wrapper should parse stdout as JSON,
 show clean user-facing errors, and avoid exposing raw stack traces.
 Future client wrappers should capture stderr separately from stdout and should
 not parse stderr as the request/response protocol.
+If `--diagnostics-stderr` is enabled, those stderr lines should be parsed as
+diagnostics rather than protocol responses.
 
 ## Session Implications
 

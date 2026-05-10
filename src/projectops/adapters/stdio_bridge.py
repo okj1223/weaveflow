@@ -327,8 +327,21 @@ def main(argv: Optional[list[str]] = None) -> int:
         default=".",
         help="ProjectOps workspace root for bridge requests.",
     )
+    parser.add_argument(
+        "--diagnostics-stderr",
+        action="store_true",
+        help="Emit structured diagnostic JSON lines to stderr.",
+    )
     args = parser.parse_args(argv)
-    return run_stdio_bridge(Path(args.root), sys.stdin, sys.stdout)
+    diagnostic_writer = None
+    if args.diagnostics_stderr:
+        diagnostic_writer = DiagnosticWriter(stream=sys.stderr, enabled=True)
+    return run_stdio_bridge(
+        Path(args.root),
+        sys.stdin,
+        sys.stdout,
+        diagnostic_writer=diagnostic_writer,
+    )
 
 
 def _error_response(

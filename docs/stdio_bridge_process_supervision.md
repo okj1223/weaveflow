@@ -52,6 +52,15 @@ python3 -m projectops.adapters.stdio_bridge --root <workspace-root>
 The wrapper verifies bridge health using `ping`. It should not treat process
 start alone as healthy until `ping` succeeds.
 
+When structured diagnostics are useful, the wrapper may opt in with:
+
+```bash
+python3 -m projectops.adapters.stdio_bridge --root <workspace-root> --diagnostics-stderr
+```
+
+Wrappers should parse stdout as the protocol stream and capture stderr
+separately as diagnostics.
+
 ### B. Normal Request
 
 The wrapper sends one JSON line, waits for one JSON line response, correlates
@@ -113,6 +122,8 @@ diagnostics contract rather than changing the stdout protocol.
 PHASE 10-M adds an optional `DiagnosticWriter`; future wrappers may capture
 stderr diagnostics or an injected diagnostics stream when diagnostics are
 enabled. That diagnostics capture is separate from stdout protocol parsing.
+PHASE 10-N validates capturing stderr diagnostics from subprocess execution
+with `--diagnostics-stderr`; non-JSON stdout remains a protocol violation.
 
 ## Error Handling Policy
 

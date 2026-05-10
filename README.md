@@ -221,6 +221,8 @@ The stdio bridge diagnostics contract for future stderr events is documented
 in [docs/stdio_bridge_diagnostics_contract.md](docs/stdio_bridge_diagnostics_contract.md).
 The bridge can optionally emit structured `DiagnosticEvent` JSON lines through
 a `DiagnosticWriter` while keeping stdout reserved for protocol responses.
+The subprocess capture demo verifies stdout/stderr separation:
+`python3 examples/stdio_bridge_diagnostics_capture_demo.py`.
 The placeholder OpenClaw adapter skeleton lives under
 `src/projectops/adapters/openclaw/`; it does not import or integrate real
 OpenClaw. The skeleton also includes local OpenClaw-like payload normalization

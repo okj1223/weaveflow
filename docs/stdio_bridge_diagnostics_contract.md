@@ -119,6 +119,25 @@ stdout remains protocol-only. Diagnostic lines use
 This is not production logging, and the lightweight path redaction is not a
 full secret redaction system.
 
+## Subprocess Capture Validation
+
+PHASE 10-N adds subprocess validation for the module entrypoint:
+
+```bash
+python3 -m projectops.adapters.stdio_bridge --root <workspace-root> --diagnostics-stderr
+```
+
+`--diagnostics-stderr` enables structured diagnostic JSON lines on stderr.
+stdout remains protocol-only and continues to emit one `StdioBridgeResponse`
+JSON line per request. Diagnostics remain optional: without the flag, the
+bridge does not emit structured diagnostics by default.
+
+Tests validate stdout and stderr separation in real subprocess mode. stdout
+lines are parsed as bridge responses, stderr lines are parsed as
+`DiagnosticEvent` records, and invalid JSON still produces a stdout JSON error
+response while stderr receives a protocol diagnostic. This is subprocess smoke
+coverage, not production logging.
+
 ## Correlation Policy
 
 `bridge_request_id` correlates stdio bridge request and response values.
