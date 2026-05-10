@@ -34,6 +34,12 @@ from projectops.json_io import CONTRACT_VERSION, to_jsonable
 from projectops.models import utc_now_iso
 
 
+SESSION_LOSS_MESSAGE = (
+    "The ProjectOps bridge restarted. Pending confirmations were cleared. "
+    "Please repeat the command if needed."
+)
+
+
 class WrapperRouteResult(BaseModel):
     contract_version: str = CONTRACT_VERSION
     ok: bool
@@ -129,6 +135,11 @@ class LocalBridgeWrapper:
 
     def is_running(self) -> bool:
         return self._client is not None and self._client.is_running()
+
+    def session_loss_message(self) -> str:
+        """Return the recommended user-facing restart/session-loss message."""
+
+        return SESSION_LOSS_MESSAGE
 
     def prepare_explicit_confirmation(
         self,

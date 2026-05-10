@@ -42,6 +42,7 @@ from projectops.adapters.intent_mapper import IntentMappingResult, map_text_to_a
 from projectops.adapters.local_wrapper import (
     LocalBridgeWrapper,
     PendingExplicitConfirmation,
+    SESSION_LOSS_MESSAGE,
     WrapperRouteResult,
 )
 from projectops.adapters.permissions import (
@@ -96,6 +97,7 @@ __all__ = [
     "PermissionPreflightResult",
     "PendingExplicitConfirmation",
     "ProjectOpsServiceAdapter",
+    "SESSION_LOSS_MESSAGE",
     "WrapperRouteResult",
     "build_explicit_confirmation_phrase",
     "check_explicit_confirmation",

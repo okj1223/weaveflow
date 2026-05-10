@@ -114,6 +114,10 @@ wrapper owns pending prompt storage and routing. After
 stored payload through the stdio bridge. The pending prompt is not persisted and
 is cleared on shutdown or after the route attempt.
 
+Pending explicit confirmation prompts are lost on wrapper restart unless a
+future persistent session store is added. See
+[local_wrapper_restart_session_loss.md](local_wrapper_restart_session_loss.md).
+
 ## Examples
 
 For `verify_task` with request id `m-123`, the phrase is:

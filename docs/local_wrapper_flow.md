@@ -38,6 +38,9 @@ raw payload
 health check before normal routing, preflights raw payloads, and returns a
 `WrapperRouteResult` with the routing decision and any bridge response.
 
+Restart and session-loss behavior is documented in
+[local_wrapper_restart_session_loss.md](local_wrapper_restart_session_loss.md).
+
 ## Routing Decisions
 
 - Read-only actions route to the bridge.
@@ -96,6 +99,9 @@ same request.
 Pending explicit confirmations are in-memory only. They are cleared after a
 successful route attempt, cleared on wrapper shutdown, and lost if the wrapper
 or bridge process restarts.
+
+Normal pending confirmations are also in-memory only because they live inside
+the running bridge process and `AdapterSession`.
 
 ## Health Check
 

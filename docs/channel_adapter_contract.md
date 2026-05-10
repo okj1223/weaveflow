@@ -118,6 +118,11 @@ separate from normal `yes`/`no` pending confirmation. Normal confirmation lives
 inside `AdapterSession`; sensitive explicit confirmation belongs to the wrapper
 or channel session layer until the exact phrase matches.
 
+After wrapper or bridge restart, channel wrappers must not replay stale `yes`,
+`no`, or exact confirmation phrases. They should clear pending references and
+ask the user to repeat the command. See
+[local_wrapper_restart_session_loss.md](local_wrapper_restart_session_loss.md).
+
 ## Confirmation And Session Ownership
 
 Pending confirmations are stored by session key. The default session key should

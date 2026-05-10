@@ -214,6 +214,8 @@ documented in
 The local wrapper smoke flow that combines health checks, preflight, and stdio
 routing decisions is documented in
 [docs/local_wrapper_flow.md](docs/local_wrapper_flow.md).
+Wrapper restart and session-loss behavior is documented in
+[docs/local_wrapper_restart_session_loss.md](docs/local_wrapper_restart_session_loss.md).
 The local wrapper explicit confirmation smoke demo is available at
 `python3 examples/local_wrapper_explicit_confirmation_demo.py`.
 The future OpenClaw adapter design is documented in

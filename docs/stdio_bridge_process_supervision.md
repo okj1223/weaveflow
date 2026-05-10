@@ -13,6 +13,8 @@ For the future structured stderr diagnostic event shape, see
 [stdio_bridge_diagnostics_contract.md](stdio_bridge_diagnostics_contract.md).
 For lightweight bridge health check helpers, see
 [stdio_bridge_health_checks.md](stdio_bridge_health_checks.md).
+For local wrapper restart and session-loss behavior, see
+[local_wrapper_restart_session_loss.md](local_wrapper_restart_session_loss.md).
 
 ## Non-Goals
 
@@ -159,6 +161,9 @@ Rules:
 This is the session loss policy for process restart and crash recovery.
 Pending confirmations live only inside the running bridge process. If the
 process restarts, pending confirmations are gone.
+
+The local wrapper session-loss behavior is tested in
+[local_wrapper_restart_session_loss.md](local_wrapper_restart_session_loss.md).
 
 Future wrappers should notify the user:
 

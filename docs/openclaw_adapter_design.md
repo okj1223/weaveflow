@@ -238,6 +238,11 @@ not accept plain `yes` for actions such as `verify_task`,
 original sensitive payload and exact-phrase prompt in memory, then routes that
 payload only after the phrase matches.
 
+Future OpenClaw wrapper work must also handle restart/session-loss
+notification. Pending normal confirmations and pending explicit confirmations
+are lost if the wrapper or bridge process restarts; see
+[local_wrapper_restart_session_loss.md](local_wrapper_restart_session_loss.md).
+
 ## Confirmation Flow
 
 Example:
