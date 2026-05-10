@@ -15,6 +15,8 @@ This local contract must be checked against the real OpenClaw runtime before
 production use. See [openclaw_runtime_research.md](openclaw_runtime_research.md)
 and
 [openclaw_integration_gap_analysis.md](openclaw_integration_gap_analysis.md).
+The current readiness freeze and stop criteria before real OpenClaw work are
+documented in [integration_readiness_freeze.md](integration_readiness_freeze.md).
 For a local process transport around this contract, see
 [stdio_bridge_protocol.md](stdio_bridge_protocol.md).
 For the client-wrapper process model around that transport, see

@@ -15,6 +15,8 @@ For the future OpenClaw-specific adapter design, see
 [openclaw_adapter_design.md](openclaw_adapter_design.md).
 For factual research on the real OpenClaw runtime, see
 [openclaw_runtime_research.md](openclaw_runtime_research.md).
+For the integration readiness freeze and stop criteria before real OpenClaw
+work, see [integration_readiness_freeze.md](integration_readiness_freeze.md).
 For the outer line-delimited JSON transport that lets another process call the
 OpenClaw-like payload path, see
 [stdio_bridge_protocol.md](stdio_bridge_protocol.md).

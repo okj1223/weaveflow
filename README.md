@@ -220,6 +220,9 @@ Wrapper result rendering for future channel messages is documented in
 [docs/wrapper_result_rendering.md](docs/wrapper_result_rendering.md).
 Local wrapper transcript review artifacts are documented in
 [docs/wrapper_transcript_review.md](docs/wrapper_transcript_review.md).
+The integration readiness freeze and stop criteria before real OpenClaw work
+are documented in
+[docs/integration_readiness_freeze.md](docs/integration_readiness_freeze.md).
 The local wrapper smoke flow that combines health checks, preflight, and stdio
 routing decisions is documented in
 [docs/local_wrapper_flow.md](docs/local_wrapper_flow.md).

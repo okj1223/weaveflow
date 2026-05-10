@@ -8,6 +8,11 @@ from the real OpenClaw runtime research.
 The comparison is meant to guide the next implementation phase without
 implementing real OpenClaw integration.
 
+The current local architecture is frozen for readiness review in
+[integration_readiness_freeze.md](integration_readiness_freeze.md). That
+freeze defines the stop criteria and the smallest future real OpenClaw proof of
+concept.
+
 ## Current ProjectOps Skeleton
 
 Current local pieces:
@@ -82,7 +87,19 @@ create a bot, add a server, or modify ProjectOps core workflow behavior.
 | Process management | Medium | Medium | Add subprocess timeout, exit-code, and stderr policy in a bridge phase before real OpenClaw integration. |
 | Test environment complexity | Medium | Medium | Start with local bridge tests, then add a minimal OpenClaw plugin proof-of-concept test harness. |
 
-## Recommended Next Phase
+## Current Readiness Freeze
+
+PHASE 11-A freezes the local architecture-building loop before real OpenClaw
+work. See [integration_readiness_freeze.md](integration_readiness_freeze.md)
+for what exists, what is stable enough, what remains local-only, what is
+blocked, and what should not be built yet.
+
+The smallest future real proof of concept should spawn the stdio bridge, send
+`ping`, send `status`, create one task with confirmation, list tasks, and shut
+down. It should not add Codex auto-execution, persistent sessions, auth/RBAC,
+or external API actions.
+
+## Prior Recommended Next Phase
 
 Primary recommendation: PHASE 10-I should add a local stdio JSON bridge, also
 called the stdio bridge, for the ProjectOps adapter pipeline.
