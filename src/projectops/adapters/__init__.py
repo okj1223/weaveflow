@@ -39,7 +39,11 @@ from projectops.adapters.explicit_confirmation import (
     summarize_explicit_confirmation_prompt,
 )
 from projectops.adapters.intent_mapper import IntentMappingResult, map_text_to_adapter_request
-from projectops.adapters.local_wrapper import LocalBridgeWrapper, WrapperRouteResult
+from projectops.adapters.local_wrapper import (
+    LocalBridgeWrapper,
+    PendingExplicitConfirmation,
+    WrapperRouteResult,
+)
 from projectops.adapters.permissions import (
     AdapterActionPolicy,
     PermissionDecision,
@@ -90,6 +94,7 @@ __all__ = [
     "LocalBridgeWrapper",
     "PermissionDecision",
     "PermissionPreflightResult",
+    "PendingExplicitConfirmation",
     "ProjectOpsServiceAdapter",
     "WrapperRouteResult",
     "build_explicit_confirmation_phrase",

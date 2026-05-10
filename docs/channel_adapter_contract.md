@@ -113,6 +113,11 @@ Sensitive actions should use the exact confirmation phrase documented in
 [adapter_explicit_confirmation.md](adapter_explicit_confirmation.md), such as
 `confirm verify_task m-123`.
 
+Channel wrappers should keep sensitive explicit confirmation pending state
+separate from normal `yes`/`no` pending confirmation. Normal confirmation lives
+inside `AdapterSession`; sensitive explicit confirmation belongs to the wrapper
+or channel session layer until the exact phrase matches.
+
 ## Confirmation And Session Ownership
 
 Pending confirmations are stored by session key. The default session key should

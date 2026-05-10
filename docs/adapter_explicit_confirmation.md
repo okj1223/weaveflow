@@ -100,6 +100,20 @@ Existing runtime behavior remains unchanged unless a future wrapper calls these
 helpers. The stdio bridge does not enforce this explicit confirmation contract
 by default in this phase.
 
+## LocalBridgeWrapper Integration
+
+`LocalBridgeWrapper` now uses these helpers for the local wrapper smoke flow.
+When permission preflight detects a sensitive action, the wrapper creates an
+`ExplicitConfirmationPrompt`, stores that prompt with the original raw payload
+in memory, and returns a wrapper result with
+`route_reason="explicit_confirmation_required"`.
+
+The explicit confirmation helper still does not execute anything by itself. The
+wrapper owns pending prompt storage and routing. After
+`check_explicit_confirmation` matches the exact phrase, the wrapper routes the
+stored payload through the stdio bridge. The pending prompt is not persisted and
+is cleared on shutdown or after the route attempt.
+
 ## Examples
 
 For `verify_task` with request id `m-123`, the phrase is:

@@ -234,7 +234,9 @@ For sensitive actions, a future OpenClaw wrapper should use the explicit
 confirmation helper documented in
 [adapter_explicit_confirmation.md](adapter_explicit_confirmation.md). It should
 not accept plain `yes` for actions such as `verify_task`,
-`create_final_report`, or `attach_result`.
+`create_final_report`, or `attach_result`. The local wrapper flow now stores the
+original sensitive payload and exact-phrase prompt in memory, then routes that
+payload only after the phrase matches.
 
 ## Confirmation Flow
 

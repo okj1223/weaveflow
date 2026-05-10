@@ -48,8 +48,9 @@ health check before normal routing, preflights raw payloads, and returns a
   bridge routing until a stronger policy exists.
 - Invalid payloads block.
 
-The wrapper does not silently retry mutating actions and does not auto-confirm
-anything.
+The wrapper does not silently retry mutating actions and does not confirm a
+mutation before the user provides the normal confirmation response or the exact
+sensitive-action phrase.
 
 ## Why Safe Mutation Can Route
 
@@ -71,14 +72,30 @@ Sensitive mutation actions are held by default. A sensitive mutation such as
 need stronger explicit confirmation before they should be routed by a future
 wrapper.
 
-This phase does not implement a full explicit confirmation UX. Instead,
-`LocalBridgeWrapper` returns a `WrapperRouteResult` telling the caller that
-explicit confirmation is required.
+`LocalBridgeWrapper` now returns a `WrapperRouteResult` telling the caller that
+explicit confirmation is required and stores the original payload plus prompt in
+memory.
 
 Wrappers can use
 [adapter_explicit_confirmation.md](adapter_explicit_confirmation.md) to build a
 prompt, require the exact confirmation phrase, and then route the original
 payload with `explicit_confirmation=True`.
+
+## Sensitive Action Explicit Confirmation Flow
+
+Sensitive actions are held before routing. The wrapper creates an explicit
+confirmation prompt, stores the original raw payload and prompt in memory, and
+returns `route_reason="explicit_confirmation_required"`.
+
+Plain `yes` or `no` is not enough for sensitive actions. The user must provide
+the exact confirmation phrase, such as `confirm verify_task m-verify`. After the
+phrase matches, `LocalBridgeWrapper.handle_explicit_confirmation` routes the
+stored original payload and completes the bridge confirmation turn for that
+same request.
+
+Pending explicit confirmations are in-memory only. They are cleared after a
+successful route attempt, cleared on wrapper shutdown, and lost if the wrapper
+or bridge process restarts.
 
 ## Health Check
 
