@@ -235,6 +235,12 @@ The wrapper should control which users can trigger mutating operations and
 should use the permission policy before future enforcement. Secrets should not
 be sent through payload metadata. Rendered errors should be sanitized.
 
+Permission preflight can prevent unsafe requests before the wrapper interacts
+with the bridge. See
+[adapter_permission_preflight.md](adapter_permission_preflight.md) for the
+advisory helper that classifies text, raw payloads, and structured requests
+without executing them.
+
 ## Logging And Diagnostics Policy
 
 `bridge_request_id` should be used for bridge-level correlation. `request_id`

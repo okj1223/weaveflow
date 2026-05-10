@@ -89,6 +89,12 @@ Before normal request handling, a wrapper may run the health check helper to
 send `ping`, validate the stdout response shape, optionally validate stderr
 diagnostics, and produce a clean summary if the bridge is not ready.
 
+Before sending `handle_payload`, a wrapper may also run permission preflight
+where feasible. The local preflight helper is documented in
+[adapter_permission_preflight.md](adapter_permission_preflight.md); it classifies
+the intended action and returns whether the wrapper should route, ask for
+confirmation, require explicit confirmation, or block.
+
 ## Future OpenClaw Wrapper Responsibilities
 
 A future OpenClaw-side wrapper should:
@@ -97,6 +103,8 @@ A future OpenClaw-side wrapper should:
 - send line-delimited JSON requests
 - preserve `bridge_request_id`
 - route OpenClaw payloads into `handle_payload` requests
+- run permission preflight before routing unsafe or mutating payloads where
+  feasible
 - keep the process alive per workspace or configured scope
 - handle `shutdown`
 - restart the process only with clear user-visible session loss

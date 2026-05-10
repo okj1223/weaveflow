@@ -9,6 +9,9 @@ permission decisions before an adapter executes a request.
 For the current channel adapter contract showing where this advisory policy
 fits in the local flow, see
 [channel_adapter_contract.md](channel_adapter_contract.md).
+For the wrapper-facing helper that applies this policy to text commands, raw
+OpenClaw-like payloads, and structured adapter requests, see
+[adapter_permission_preflight.md](adapter_permission_preflight.md).
 
 ## Non-Goals
 
@@ -83,6 +86,11 @@ This module is advisory in PHASE 10-E. Existing `AdapterSession` and
 `OpenClawAdapter` behavior does not change yet. Future OpenClawAdapter
 enforcement may use this policy to decide whether to execute, ask for
 confirmation, ask for explicit confirmation, or block a request.
+
+`permission_preflight.py` applies this policy before a future external wrapper
+routes a payload into the stdio bridge or `OpenClawAdapter`. That preflight is
+still advisory in the current runtime; it does not change existing adapter
+execution behavior.
 
 ## Future OpenClaw Usage
 

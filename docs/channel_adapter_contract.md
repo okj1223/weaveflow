@@ -93,6 +93,8 @@ future channel adapter.
 Current state:
 
 - `permissions.py` is advisory.
+- `permission_preflight.py` can apply the policy before a wrapper routes raw
+  payloads into the stdio bridge or local adapter.
 - Existing runtime behavior is unchanged.
 - Future OpenClaw adapter code should consult the permission policy before
   executing or confirming sensitive actions.
@@ -103,6 +105,10 @@ Recommended future behavior:
 - `safe_mutation` actions require confirmation.
 - `sensitive_mutation` actions require explicit confirmation.
 - `future_high_risk` actions are blocked until a stronger policy exists.
+
+See [adapter_permission_preflight.md](adapter_permission_preflight.md) for the
+local-only permission preflight contract that future wrappers can use to decide
+whether to route, ask for confirmation, require explicit confirmation, or block.
 
 ## Confirmation And Session Ownership
 

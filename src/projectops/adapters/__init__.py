@@ -40,6 +40,13 @@ from projectops.adapters.permissions import (
     is_sensitive_action,
     is_supported_action,
 )
+from projectops.adapters.permission_preflight import (
+    PermissionPreflightResult,
+    permission_preflight_result_to_payload,
+    preflight_adapter_request,
+    preflight_openclaw_payload,
+    preflight_text_command,
+)
 from projectops.adapters.renderers import (
     render_event_as_text,
     render_event_summary,
@@ -69,6 +76,7 @@ __all__ = [
     "InMemoryAdapterSessionStore",
     "IntentMappingResult",
     "PermissionDecision",
+    "PermissionPreflightResult",
     "ProjectOpsServiceAdapter",
     "confirm_request",
     "create_diagnostic_event",
@@ -84,6 +92,10 @@ __all__ = [
     "is_sensitive_action",
     "is_supported_action",
     "map_text_to_adapter_request",
+    "permission_preflight_result_to_payload",
+    "preflight_adapter_request",
+    "preflight_openclaw_payload",
+    "preflight_text_command",
     "prepare_confirmation",
     "render_event_for_channel",
     "render_event_as_text",

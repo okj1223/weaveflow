@@ -117,6 +117,9 @@ Why this path:
   renderer outputs without guessing OpenClaw payload shapes.
 - It avoids implementing a Gateway WebSocket client before auth, scope, and
   reply mechanics are verified.
+- Permission preflight is a prerequisite for future wrapper safety because it
+  lets a wrapper classify actions and block future high-risk requests before
+  sending payloads to the bridge.
 
 Alternative: PHASE 10-I could be an OpenClaw skill/plugin API proof-of-concept
 design if the team wants to validate Node-side plugin shape first.

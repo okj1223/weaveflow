@@ -219,6 +219,11 @@ adapter can use it as an enforcement layer to distinguish read-only actions,
 safe mutations, sensitive mutations, future high-risk actions, and unknown
 actions before routing requests into `AdapterSession`.
 
+Future OpenClaw wrappers should call the permission preflight helper before
+routing raw payloads into the bridge where feasible. The preflight contract is
+documented in [adapter_permission_preflight.md](adapter_permission_preflight.md)
+and remains local-only and advisory in this phase.
+
 ## Confirmation Flow
 
 Example:

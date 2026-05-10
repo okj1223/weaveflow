@@ -206,6 +206,8 @@ The local channel adapter contract and smoke flow are documented in
 [docs/channel_adapter_contract.md](docs/channel_adapter_contract.md).
 The advisory adapter permission policy is documented in
 [docs/adapter_permission_policy.md](docs/adapter_permission_policy.md).
+The wrapper-facing permission preflight helper is documented in
+[docs/adapter_permission_preflight.md](docs/adapter_permission_preflight.md).
 The future OpenClaw adapter design is documented in
 [docs/openclaw_adapter_design.md](docs/openclaw_adapter_design.md).
 Real OpenClaw runtime research and gap analysis are documented in
