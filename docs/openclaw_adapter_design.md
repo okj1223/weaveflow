@@ -242,6 +242,9 @@ The exact phrase is single-use within a running `LocalBridgeWrapper` process.
 A future OpenClaw wrapper should not allow stale exact phrase replays after a
 sensitive action has been routed. See
 [confirmation_replay_protection.md](confirmation_replay_protection.md).
+It should render the stale confirmation or mismatch notification described in
+[stale_confirmation_notifications.md](stale_confirmation_notifications.md)
+instead of silently failing or rerouting the payload.
 
 Future OpenClaw wrapper work must also handle restart/session-loss
 notification. Pending normal confirmations and pending explicit confirmations

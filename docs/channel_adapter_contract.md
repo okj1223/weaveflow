@@ -122,6 +122,9 @@ Channel wrappers should treat explicit confirmations as single-use. Once the
 exact phrase routes a sensitive payload, the same phrase/key should be blocked
 as stale replay in the running wrapper process. See
 [confirmation_replay_protection.md](confirmation_replay_protection.md).
+Channel wrappers should surface stale replay, missing confirmation, and
+mismatch notifications from
+[stale_confirmation_notifications.md](stale_confirmation_notifications.md).
 
 After wrapper or bridge restart, channel wrappers must not replay stale `yes`,
 `no`, or exact confirmation phrases. They should clear pending references and

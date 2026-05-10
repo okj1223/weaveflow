@@ -40,6 +40,10 @@ shutdown or restart.
 There is no persistent replay protection in this phase. Cross-process replay
 protection is future work and would need explicit durable state.
 
+Wrapper-facing notification behavior for stale, rejected, missing, and
+mismatched explicit confirmations is documented in
+[stale_confirmation_notifications.md](stale_confirmation_notifications.md).
+
 ## Confirmation States
 
 - `pending`: an explicit confirmation prompt exists and may execute once.
@@ -60,6 +64,9 @@ record `consumed`.
 If the same phrase/key is submitted again, the wrapper blocks it with
 `StaleConfirmationReplay`. If a record is `rejected`, the wrapper blocks it
 with `RejectedConfirmationReplay`.
+
+Those wrapper errors now include JSON-safe notification metadata at
+`WrapperRouteResult.metadata["notification"]` when a notification is available.
 
 A wrong phrase does not consume the record. The prompt remains pending so the
 user can provide the correct exact phrase.

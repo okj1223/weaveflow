@@ -48,6 +48,10 @@ Supported notification types:
 - `pending_confirmation_cleared`
 - `wrapper_warning`
 - `wrapper_error`
+- `stale_confirmation_replay`
+- `rejected_confirmation_replay`
+- `missing_confirmation`
+- `explicit_confirmation_mismatch`
 
 Supported levels:
 
@@ -139,6 +143,8 @@ Stale explicit confirmation replays can be rendered later as a wrapper warning
 or wrapper error using the same notification shape. The replay-protection
 contract is documented in
 [confirmation_replay_protection.md](confirmation_replay_protection.md).
+The user-facing stale confirmation notification behavior is documented in
+[stale_confirmation_notifications.md](stale_confirmation_notifications.md).
 
 ## Relationship To Existing Docs
 
@@ -148,6 +154,8 @@ contract is documented in
   defines process lifecycle expectations.
 - [adapter_explicit_confirmation.md](adapter_explicit_confirmation.md) defines
   sensitive-action explicit confirmation prompts.
+- [stale_confirmation_notifications.md](stale_confirmation_notifications.md)
+  defines stale, rejected, missing, and mismatched confirmation notifications.
 - [channel_adapter_contract.md](channel_adapter_contract.md) defines the local
   channel adapter contract.
 

@@ -21,12 +21,22 @@ BRIDGE_RESTARTED_NOTIFICATION_TYPE = "bridge_restarted"
 PENDING_CONFIRMATION_CLEARED_NOTIFICATION_TYPE = "pending_confirmation_cleared"
 WRAPPER_WARNING_NOTIFICATION_TYPE = "wrapper_warning"
 WRAPPER_ERROR_NOTIFICATION_TYPE = "wrapper_error"
+STALE_CONFIRMATION_REPLAY_NOTIFICATION_TYPE = "stale_confirmation_replay"
+REJECTED_CONFIRMATION_REPLAY_NOTIFICATION_TYPE = "rejected_confirmation_replay"
+MISSING_CONFIRMATION_NOTIFICATION_TYPE = "missing_confirmation"
+EXPLICIT_CONFIRMATION_MISMATCH_NOTIFICATION_TYPE = "explicit_confirmation_mismatch"
 
 SESSION_LOSS_MESSAGE = (
     "The ProjectOps bridge restarted. Pending confirmations were cleared. "
     "Please repeat the command if needed."
 )
 SESSION_LOSS_SUGGESTED_ACTION = "Repeat the command if you still want to proceed."
+REPEAT_ORIGINAL_COMMAND_SUGGESTED_ACTION = (
+    "Repeat the original command if you still want to proceed."
+)
+EXACT_CONFIRMATION_PHRASE_SUGGESTED_ACTION = (
+    "Type the exact confirmation phrase shown."
+)
 
 ALLOWED_NOTIFICATION_TYPES = {
     SESSION_LOSS_NOTIFICATION_TYPE,
@@ -34,6 +44,10 @@ ALLOWED_NOTIFICATION_TYPES = {
     PENDING_CONFIRMATION_CLEARED_NOTIFICATION_TYPE,
     WRAPPER_WARNING_NOTIFICATION_TYPE,
     WRAPPER_ERROR_NOTIFICATION_TYPE,
+    STALE_CONFIRMATION_REPLAY_NOTIFICATION_TYPE,
+    REJECTED_CONFIRMATION_REPLAY_NOTIFICATION_TYPE,
+    MISSING_CONFIRMATION_NOTIFICATION_TYPE,
+    EXPLICIT_CONFIRMATION_MISMATCH_NOTIFICATION_TYPE,
 }
 ALLOWED_NOTIFICATION_LEVELS = {"info", "warning", "error"}
 
@@ -68,11 +82,15 @@ def create_session_loss_notification(
     return _create_notification(
         notification_type=SESSION_LOSS_NOTIFICATION_TYPE,
         level="warning",
+        message=SESSION_LOSS_MESSAGE,
+        suggested_action=SESSION_LOSS_SUGGESTED_ACTION,
         request_id=request_id,
         bridge_request_id=bridge_request_id,
         session_key=session_key,
         action=action,
+        pending_cleared=True,
         retry_safe=retry_safe,
+        requires_user_repetition=True,
         metadata=metadata,
     )
 
@@ -91,13 +109,170 @@ def create_pending_cleared_notification(
     return _create_notification(
         notification_type=PENDING_CONFIRMATION_CLEARED_NOTIFICATION_TYPE,
         level="warning",
+        message=SESSION_LOSS_MESSAGE,
+        suggested_action=SESSION_LOSS_SUGGESTED_ACTION,
         request_id=request_id,
         bridge_request_id=bridge_request_id,
         session_key=session_key,
         action=action,
+        pending_cleared=True,
         retry_safe=retry_safe,
+        requires_user_repetition=True,
         metadata=metadata,
     )
+
+
+def create_stale_confirmation_replay_notification(
+    *,
+    request_id: Optional[str] = None,
+    bridge_request_id: Optional[str] = None,
+    session_key: Optional[str] = None,
+    action: Optional[str] = None,
+    metadata: Optional[dict[str, Any]] = None,
+) -> WrapperNotification:
+    """Create a notification for an already-used explicit confirmation."""
+
+    return _create_notification(
+        notification_type=STALE_CONFIRMATION_REPLAY_NOTIFICATION_TYPE,
+        level="warning",
+        message="That explicit confirmation phrase was already used or is stale.",
+        suggested_action=REPEAT_ORIGINAL_COMMAND_SUGGESTED_ACTION,
+        request_id=request_id,
+        bridge_request_id=bridge_request_id,
+        session_key=session_key,
+        action=action,
+        pending_cleared=False,
+        retry_safe=False,
+        requires_user_repetition=True,
+        metadata=metadata,
+    )
+
+
+def create_rejected_confirmation_replay_notification(
+    *,
+    request_id: Optional[str] = None,
+    bridge_request_id: Optional[str] = None,
+    session_key: Optional[str] = None,
+    action: Optional[str] = None,
+    metadata: Optional[dict[str, Any]] = None,
+) -> WrapperNotification:
+    """Create a notification for replay of a rejected explicit confirmation."""
+
+    return _create_notification(
+        notification_type=REJECTED_CONFIRMATION_REPLAY_NOTIFICATION_TYPE,
+        level="warning",
+        message="That explicit confirmation was previously rejected.",
+        suggested_action=REPEAT_ORIGINAL_COMMAND_SUGGESTED_ACTION,
+        request_id=request_id,
+        bridge_request_id=bridge_request_id,
+        session_key=session_key,
+        action=action,
+        pending_cleared=False,
+        retry_safe=False,
+        requires_user_repetition=True,
+        metadata=metadata,
+    )
+
+
+def create_missing_confirmation_notification(
+    *,
+    request_id: Optional[str] = None,
+    bridge_request_id: Optional[str] = None,
+    session_key: Optional[str] = None,
+    action: Optional[str] = None,
+    metadata: Optional[dict[str, Any]] = None,
+) -> WrapperNotification:
+    """Create a notification for confirmation text without pending state."""
+
+    return _create_notification(
+        notification_type=MISSING_CONFIRMATION_NOTIFICATION_TYPE,
+        level="warning",
+        message="No pending confirmation was found for that request.",
+        suggested_action=REPEAT_ORIGINAL_COMMAND_SUGGESTED_ACTION,
+        request_id=request_id,
+        bridge_request_id=bridge_request_id,
+        session_key=session_key,
+        action=action,
+        pending_cleared=False,
+        retry_safe=False,
+        requires_user_repetition=True,
+        metadata=metadata,
+    )
+
+
+def create_explicit_confirmation_mismatch_notification(
+    *,
+    request_id: Optional[str] = None,
+    bridge_request_id: Optional[str] = None,
+    session_key: Optional[str] = None,
+    action: Optional[str] = None,
+    metadata: Optional[dict[str, Any]] = None,
+) -> WrapperNotification:
+    """Create a notification for a wrong exact confirmation phrase."""
+
+    return _create_notification(
+        notification_type=EXPLICIT_CONFIRMATION_MISMATCH_NOTIFICATION_TYPE,
+        level="warning",
+        message="The explicit confirmation phrase did not match.",
+        suggested_action=EXACT_CONFIRMATION_PHRASE_SUGGESTED_ACTION,
+        request_id=request_id,
+        bridge_request_id=bridge_request_id,
+        session_key=session_key,
+        action=action,
+        pending_cleared=False,
+        retry_safe=False,
+        requires_user_repetition=False,
+        metadata=metadata,
+    )
+
+
+def notification_from_wrapper_error(
+    *,
+    error_type: str,
+    request_id: Optional[str] = None,
+    bridge_request_id: Optional[str] = None,
+    session_key: Optional[str] = None,
+    action: Optional[str] = None,
+    metadata: Optional[dict[str, Any]] = None,
+) -> Optional[WrapperNotification]:
+    """Return a user-facing notification for known wrapper errors."""
+
+    error_metadata = dict(metadata or {})
+    error_metadata["error_type"] = error_type
+
+    if error_type == "StaleConfirmationReplay":
+        return create_stale_confirmation_replay_notification(
+            request_id=request_id,
+            bridge_request_id=bridge_request_id,
+            session_key=session_key,
+            action=action,
+            metadata=error_metadata,
+        )
+    if error_type == "RejectedConfirmationReplay":
+        return create_rejected_confirmation_replay_notification(
+            request_id=request_id,
+            bridge_request_id=bridge_request_id,
+            session_key=session_key,
+            action=action,
+            metadata=error_metadata,
+        )
+    if error_type in {"PendingExplicitConfirmationNotFound", "PendingConfirmationNotFound"}:
+        return create_missing_confirmation_notification(
+            request_id=request_id,
+            bridge_request_id=bridge_request_id,
+            session_key=session_key,
+            action=action,
+            metadata=error_metadata,
+        )
+    if error_type == "ExplicitConfirmationMismatch":
+        return create_explicit_confirmation_mismatch_notification(
+            request_id=request_id,
+            bridge_request_id=bridge_request_id,
+            session_key=session_key,
+            action=action,
+            metadata=error_metadata,
+        )
+    return None
 
 
 def wrapper_notification_to_text(
@@ -171,11 +346,15 @@ def _create_notification(
     *,
     notification_type: str,
     level: str,
+    message: str,
+    suggested_action: str,
     request_id: Optional[str],
     bridge_request_id: Optional[str],
     session_key: Optional[str],
     action: Optional[str],
+    pending_cleared: bool,
     retry_safe: bool,
+    requires_user_repetition: bool,
     metadata: Optional[dict[str, Any]],
 ) -> WrapperNotification:
     if notification_type not in ALLOWED_NOTIFICATION_TYPES:
@@ -186,15 +365,15 @@ def _create_notification(
     return WrapperNotification(
         notification_type=notification_type,
         level=level,
-        message=SESSION_LOSS_MESSAGE,
-        suggested_action=SESSION_LOSS_SUGGESTED_ACTION,
+        message=message,
+        suggested_action=suggested_action,
         request_id=request_id,
         bridge_request_id=bridge_request_id,
         session_key=session_key,
         action=action,
-        pending_cleared=True,
+        pending_cleared=pending_cleared,
         retry_safe=retry_safe,
-        requires_user_repetition=True,
+        requires_user_repetition=requires_user_repetition,
         metadata=sanitize_diagnostic_metadata(metadata or {}),
     )
 

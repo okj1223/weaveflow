@@ -45,6 +45,8 @@ notification contract in
 [wrapper_notification_contract.md](wrapper_notification_contract.md).
 Explicit confirmation replay protection is documented in
 [confirmation_replay_protection.md](confirmation_replay_protection.md).
+Stale confirmation notification behavior is documented in
+[stale_confirmation_notifications.md](stale_confirmation_notifications.md).
 
 ## Routing Decisions
 
@@ -109,6 +111,11 @@ After a sensitive payload is routed, the wrapper marks the explicit
 confirmation key as consumed. The same exact phrase/key is blocked as
 `StaleConfirmationReplay` in the same wrapper process. This replay protection is
 in-memory only and does not persist across restart.
+
+When a stale confirmation, missing pending confirmation, or exact-phrase
+mismatch occurs, the wrapper attaches a JSON-safe `WrapperNotification` payload
+to `WrapperRouteResult.metadata["notification"]` so a future channel wrapper can
+render a clear user-facing message.
 
 Normal pending confirmations are also in-memory only because they live inside
 the running bridge process and `AdapterSession`.

@@ -40,6 +40,8 @@ from projectops.adapters.wrapper_notifications import (
     SESSION_LOSS_MESSAGE,
     WrapperNotification,
     create_session_loss_notification,
+    notification_from_wrapper_error,
+    wrapper_notification_to_payload,
 )
 from projectops.json_io import CONTRACT_VERSION, to_jsonable
 from projectops.models import utc_now_iso
@@ -382,6 +384,13 @@ class LocalBridgeWrapper:
                 summary="Pending explicit confirmation was not found.",
                 error_type="PendingExplicitConfirmationNotFound",
                 error_message="Pending explicit confirmation was not found.",
+                metadata={
+                    "notification": _notification_payload_for_error(
+                        "PendingExplicitConfirmationNotFound",
+                        request_id=request_id,
+                        bridge_request_id=bridge_request_id,
+                    ),
+                },
             )
 
         prompt = ExplicitConfirmationPrompt(**pending.prompt)
@@ -402,6 +411,13 @@ class LocalBridgeWrapper:
                 metadata={
                     "pending_key": pending_key,
                     "explicit_confirmation_matched": False,
+                    "notification": _notification_payload_for_error(
+                        check.error_type or "ExplicitConfirmationMismatch",
+                        request_id=pending.request_id,
+                        bridge_request_id=pending.bridge_request_id,
+                        action=pending.action,
+                        metadata={"pending_key": pending_key},
+                    ),
                 },
             )
 
@@ -427,6 +443,16 @@ class LocalBridgeWrapper:
                     "pending_key": pending_key,
                     "replay_detected": replay_check.replay_detected,
                     "replay_state": replay_check.state,
+                    "notification": _notification_payload_for_error(
+                        replay_check.error_type or "StaleConfirmationReplay",
+                        request_id=pending.request_id,
+                        bridge_request_id=pending.bridge_request_id,
+                        action=pending.action,
+                        metadata={
+                            "pending_key": pending_key,
+                            "replay_state": replay_check.state,
+                        },
+                    ),
                 },
             )
 
@@ -890,8 +916,38 @@ def _stale_replay_result(
             "replay_key": record.key,
             "request_id": record.request_id,
             "bridge_request_id": record.bridge_request_id,
+            "notification": _notification_payload_for_error(
+                error_type,
+                request_id=record.request_id,
+                bridge_request_id=record.bridge_request_id,
+                action=record.action,
+                metadata={
+                    "replay_state": record.state,
+                    "replay_key": record.key,
+                },
+            ),
         },
     )
+
+
+def _notification_payload_for_error(
+    error_type: str,
+    *,
+    request_id: Optional[str] = None,
+    bridge_request_id: Optional[str] = None,
+    action: Optional[str] = None,
+    metadata: Optional[dict[str, Any]] = None,
+) -> Optional[dict[str, Any]]:
+    notification = notification_from_wrapper_error(
+        error_type=error_type,
+        request_id=request_id,
+        bridge_request_id=bridge_request_id,
+        action=action,
+        metadata=metadata,
+    )
+    if notification is None:
+        return None
+    return wrapper_notification_to_payload(notification)
 
 
 def _preflight_payload(
