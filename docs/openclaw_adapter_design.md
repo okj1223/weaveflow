@@ -20,6 +20,8 @@ The companion process-wrapper contract is documented in
 [stdio_bridge_client_contract.md](stdio_bridge_client_contract.md).
 Future wrapper process supervision policy is documented in
 [stdio_bridge_process_supervision.md](stdio_bridge_process_supervision.md).
+Future structured stderr diagnostics are documented in
+[stdio_bridge_diagnostics_contract.md](stdio_bridge_diagnostics_contract.md).
 
 ## Intended Role Of OpenClaw
 

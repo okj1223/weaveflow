@@ -9,6 +9,9 @@ This is not real OpenClaw integration. This is not a server API. This is not a
 network protocol. This does not implement a production process supervisor. This
 is a policy and contract document for future external wrappers.
 
+For the future structured stderr diagnostic event shape, see
+[stdio_bridge_diagnostics_contract.md](stdio_bridge_diagnostics_contract.md).
+
 ## Non-Goals
 
 - no real OpenClaw plugin
@@ -104,6 +107,9 @@ stderr:
 If stdout contains non-JSON, the wrapper should treat it as a protocol
 violation. If stderr contains diagnostics, the wrapper may store or display a
 sanitized summary.
+
+Future timeout, restart, and session-loss diagnostics should follow the stderr
+diagnostics contract rather than changing the stdout protocol.
 
 ## Error Handling Policy
 

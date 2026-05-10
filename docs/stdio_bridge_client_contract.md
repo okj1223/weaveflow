@@ -14,6 +14,8 @@ For process lifecycle, restart, timeout, stdout, and stderr policy, see
 [stdio_bridge_process_supervision.md](stdio_bridge_process_supervision.md).
 This client contract defines protocol usage; the supervision document defines
 lifecycle and restart policy.
+For future structured stderr diagnostics, see
+[stdio_bridge_diagnostics_contract.md](stdio_bridge_diagnostics_contract.md).
 
 ## Non-Goals
 
@@ -94,6 +96,8 @@ JSON error response. A malformed payload returns a JSON error response from the
 
 Bridge stdout should remain JSON-only. A wrapper should parse stdout as JSON,
 show clean user-facing errors, and avoid exposing raw stack traces.
+Future client wrappers should capture stderr separately from stdout and should
+not parse stderr as the request/response protocol.
 
 ## Session Implications
 

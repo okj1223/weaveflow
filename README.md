@@ -217,6 +217,8 @@ The local stdio bridge client-wrapper contract is documented in
 [docs/stdio_bridge_client_contract.md](docs/stdio_bridge_client_contract.md).
 The stdio bridge process supervision policy for future wrappers is documented
 in [docs/stdio_bridge_process_supervision.md](docs/stdio_bridge_process_supervision.md).
+The stdio bridge diagnostics contract for future stderr events is documented
+in [docs/stdio_bridge_diagnostics_contract.md](docs/stdio_bridge_diagnostics_contract.md).
 The placeholder OpenClaw adapter skeleton lives under
 `src/projectops/adapters/openclaw/`; it does not import or integrate real
 OpenClaw. The skeleton also includes local OpenClaw-like payload normalization

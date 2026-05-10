@@ -100,6 +100,10 @@ in-memory sessions.
 Process supervision is a prerequisite before real OpenClaw plugin work. See
 [stdio_bridge_process_supervision.md](stdio_bridge_process_supervision.md) for
 restart, timeout, stdout, stderr, and session-loss policy.
+Structured stderr diagnostics are also a prerequisite for robust wrapper
+supervision. See
+[stdio_bridge_diagnostics_contract.md](stdio_bridge_diagnostics_contract.md)
+for the diagnostics contract.
 
 Why this path:
 

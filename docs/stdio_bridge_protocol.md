@@ -17,6 +17,8 @@ future wrapper should spawn the process, keep it alive, correlate
 `bridge_request_id`, and shut it down.
 For wrapper lifecycle, timeout, restart, stdout, and stderr policy, see
 [stdio_bridge_process_supervision.md](stdio_bridge_process_supervision.md).
+For the future structured stderr diagnostics shape, see
+[stdio_bridge_diagnostics_contract.md](stdio_bridge_diagnostics_contract.md).
 
 ## Non-Goals
 
@@ -43,6 +45,8 @@ For wrapper lifecycle, timeout, restart, stdout, and stderr policy, see
   minimal and does not require stderr output.
 - A future process wrapper should treat stdout as protocol-only and stderr as
   diagnostics-only.
+- Future stderr diagnostics are not protocol responses and should be captured
+  separately from stdout.
 
 ## Request Schema
 
