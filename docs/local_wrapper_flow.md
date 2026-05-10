@@ -47,6 +47,8 @@ Explicit confirmation replay protection is documented in
 [confirmation_replay_protection.md](confirmation_replay_protection.md).
 Stale confirmation notification behavior is documented in
 [stale_confirmation_notifications.md](stale_confirmation_notifications.md).
+Wrapper result rendering for future channel responses is documented in
+[wrapper_result_rendering.md](wrapper_result_rendering.md).
 
 ## Routing Decisions
 
@@ -119,6 +121,10 @@ render a clear user-facing message.
 
 Normal pending confirmations are also in-memory only because they live inside
 the running bridge process and `AdapterSession`.
+
+Future channel wrappers should render `WrapperRouteResult` and
+`WrapperNotification` with the wrapper result rendering policy before sending a
+message to a user. Rendered text is presentation-only and not task state.
 
 ## Health Check
 

@@ -124,6 +124,9 @@ future wrapper response.
 Renderers should not expose raw metadata, secrets, or unnecessary absolute
 local paths to users.
 
+For channel-specific wrapper notification rendering, see
+[wrapper_result_rendering.md](wrapper_result_rendering.md).
+
 ## Future OpenClaw Usage
 
 A future OpenClaw wrapper should:

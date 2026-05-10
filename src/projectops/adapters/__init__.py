@@ -100,6 +100,12 @@ from projectops.adapters.wrapper_notifications import (
     wrapper_notification_to_payload,
     wrapper_notification_to_text,
 )
+from projectops.adapters.wrapper_rendering import (
+    render_wrapper_notification_for_channel,
+    render_wrapper_result_as_text,
+    render_wrapper_result_payload,
+    render_wrapper_result_summary,
+)
 
 __all__ = [
     "AdapterEvent",
@@ -173,6 +179,10 @@ __all__ = [
     "render_event_summary",
     "render_transcript_for_channel",
     "render_transcript_as_text",
+    "render_wrapper_notification_for_channel",
+    "render_wrapper_result_as_text",
+    "render_wrapper_result_payload",
+    "render_wrapper_result_summary",
     "reject_request",
     "sanitize_diagnostic_metadata",
     "SESSION_LOSS_NOTIFICATION_TYPE",

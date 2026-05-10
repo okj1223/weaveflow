@@ -65,6 +65,9 @@ WrapperRouteResult.metadata["notification"]
 The payload is a serialized `WrapperNotification`. Future wrappers can render
 the notification without parsing human-readable bridge output.
 
+Stale notifications can be rendered through the wrapper result rendering policy
+in [wrapper_result_rendering.md](wrapper_result_rendering.md).
+
 ## Future OpenClaw Usage
 
 A future OpenClaw wrapper should:

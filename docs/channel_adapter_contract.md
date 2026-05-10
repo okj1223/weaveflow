@@ -125,6 +125,10 @@ as stale replay in the running wrapper process. See
 Channel wrappers should surface stale replay, missing confirmation, and
 mismatch notifications from
 [stale_confirmation_notifications.md](stale_confirmation_notifications.md).
+Channel wrappers should render `WrapperRouteResult` and `WrapperNotification`
+through the policy in [wrapper_result_rendering.md](wrapper_result_rendering.md)
+before sending presentation text to OpenClaw, Slack, Telegram, terminal, or log
+surfaces.
 
 After wrapper or bridge restart, channel wrappers must not replay stale `yes`,
 `no`, or exact confirmation phrases. They should clear pending references and

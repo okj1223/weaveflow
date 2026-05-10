@@ -245,6 +245,8 @@ sensitive action has been routed. See
 It should render the stale confirmation or mismatch notification described in
 [stale_confirmation_notifications.md](stale_confirmation_notifications.md)
 instead of silently failing or rerouting the payload.
+Wrapper result rendering for future OpenClaw user messages is documented in
+[wrapper_result_rendering.md](wrapper_result_rendering.md).
 
 Future OpenClaw wrapper work must also handle restart/session-loss
 notification. Pending normal confirmations and pending explicit confirmations

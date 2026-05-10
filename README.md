@@ -216,6 +216,8 @@ documented in
 [docs/confirmation_replay_protection.md](docs/confirmation_replay_protection.md).
 Wrapper-facing stale confirmation notifications are documented in
 [docs/stale_confirmation_notifications.md](docs/stale_confirmation_notifications.md).
+Wrapper result rendering for future channel messages is documented in
+[docs/wrapper_result_rendering.md](docs/wrapper_result_rendering.md).
 The local wrapper smoke flow that combines health checks, preflight, and stdio
 routing decisions is documented in
 [docs/local_wrapper_flow.md](docs/local_wrapper_flow.md).
