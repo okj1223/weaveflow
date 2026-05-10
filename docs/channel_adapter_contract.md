@@ -109,6 +109,9 @@ Recommended future behavior:
 See [adapter_permission_preflight.md](adapter_permission_preflight.md) for the
 local-only permission preflight contract that future wrappers can use to decide
 whether to route, ask for confirmation, require explicit confirmation, or block.
+Sensitive actions should use the exact confirmation phrase documented in
+[adapter_explicit_confirmation.md](adapter_explicit_confirmation.md), such as
+`confirm verify_task m-123`.
 
 ## Confirmation And Session Ownership
 

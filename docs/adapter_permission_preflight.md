@@ -117,6 +117,10 @@ payload to the stdio bridge, route only to establish pending confirmation, ask
 for explicit confirmation, or block. See
 [local_wrapper_flow.md](local_wrapper_flow.md).
 
+Sensitive actions can use the explicit confirmation helper before routing. See
+[adapter_explicit_confirmation.md](adapter_explicit_confirmation.md) for the
+`confirm {action} {request_id}` phrase contract.
+
 ## Future OpenClaw Wrapper Usage
 
 Future flow:

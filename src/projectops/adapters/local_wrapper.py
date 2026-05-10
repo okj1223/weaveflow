@@ -10,6 +10,10 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 from projectops.adapters.confirmation import is_confirmation_response
+from projectops.adapters.explicit_confirmation import (
+    ExplicitConfirmationPrompt,
+    create_explicit_confirmation_prompt,
+)
 from projectops.adapters.openclaw.normalization import (
     OpenClawPayloadNormalizationError,
     normalize_openclaw_message_payload,
@@ -111,6 +115,21 @@ class LocalBridgeWrapper:
 
     def is_running(self) -> bool:
         return self._client is not None and self._client.is_running()
+
+    def prepare_explicit_confirmation(
+        self,
+        payload: dict[str, Any],
+        bridge_request_id: Optional[str] = None,
+    ) -> ExplicitConfirmationPrompt:
+        """Build an explicit confirmation prompt without routing a payload."""
+
+        preflight = preflight_openclaw_payload(
+            payload,
+            allow_mutation=True,
+            explicit_confirmation=False,
+            bridge_request_id=bridge_request_id,
+        )
+        return create_explicit_confirmation_prompt(preflight)
 
     def handle_payload(
         self,

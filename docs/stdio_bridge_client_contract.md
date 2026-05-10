@@ -97,6 +97,9 @@ confirmation, require explicit confirmation, or block.
 
 The local wrapper flow in [local_wrapper_flow.md](local_wrapper_flow.md)
 demonstrates a small consumer of this client contract.
+Before routing sensitive actions, external process wrappers should apply the
+explicit confirmation phrase contract in
+[adapter_explicit_confirmation.md](adapter_explicit_confirmation.md).
 
 ## Future OpenClaw Wrapper Responsibilities
 

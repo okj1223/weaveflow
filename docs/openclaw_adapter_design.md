@@ -230,6 +230,12 @@ future OpenClaw wrapper because it combines bridge health checks, permission
 preflight, routing decisions, and stdio bridge client usage without importing
 or calling OpenClaw.
 
+For sensitive actions, a future OpenClaw wrapper should use the explicit
+confirmation helper documented in
+[adapter_explicit_confirmation.md](adapter_explicit_confirmation.md). It should
+not accept plain `yes` for actions such as `verify_task`,
+`create_final_report`, or `attach_result`.
+
 ## Confirmation Flow
 
 Example:

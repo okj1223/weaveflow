@@ -75,6 +75,11 @@ This phase does not implement a full explicit confirmation UX. Instead,
 `LocalBridgeWrapper` returns a `WrapperRouteResult` telling the caller that
 explicit confirmation is required.
 
+Wrappers can use
+[adapter_explicit_confirmation.md](adapter_explicit_confirmation.md) to build a
+prompt, require the exact confirmation phrase, and then route the original
+payload with `explicit_confirmation=True`.
+
 ## Health Check
 
 The wrapper runs a ping health check before routing payloads. This confirms the
