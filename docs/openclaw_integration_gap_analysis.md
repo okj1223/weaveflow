@@ -97,6 +97,10 @@ how a future OpenClaw Node process wrapper should spawn the ProjectOps bridge,
 send JSON lines, preserve `bridge_request_id`, and keep the process alive for
 in-memory sessions.
 
+Process supervision is a prerequisite before real OpenClaw plugin work. See
+[stdio_bridge_process_supervision.md](stdio_bridge_process_supervision.md) for
+restart, timeout, stdout, stderr, and session-loss policy.
+
 Why this path:
 
 - It is useful even before real OpenClaw integration.

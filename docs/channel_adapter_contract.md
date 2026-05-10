@@ -19,6 +19,8 @@ For a local process transport around this contract, see
 [stdio_bridge_protocol.md](stdio_bridge_protocol.md).
 For the client-wrapper process model around that transport, see
 [stdio_bridge_client_contract.md](stdio_bridge_client_contract.md).
+Future wrappers should also follow the bridge process supervision policy in
+[stdio_bridge_process_supervision.md](stdio_bridge_process_supervision.md).
 
 ## Current Local Channel Adapter Flow
 
@@ -40,6 +42,8 @@ The stdio bridge wraps the same flow in line-delimited JSON so an external
 process can call it without importing the Python package directly.
 The stdio bridge client contract explains how that external process should keep
 the bridge subprocess alive, correlate requests, and shut it down cleanly.
+Bridge process supervision remains a future wrapper responsibility, not a
+channel adapter runtime behavior.
 
 Stage responsibilities:
 

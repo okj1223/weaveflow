@@ -15,6 +15,8 @@ For the external process-wrapper side of this protocol, see
 protocol defines request and response lines; the client contract defines how a
 future wrapper should spawn the process, keep it alive, correlate
 `bridge_request_id`, and shut it down.
+For wrapper lifecycle, timeout, restart, stdout, and stderr policy, see
+[stdio_bridge_process_supervision.md](stdio_bridge_process_supervision.md).
 
 ## Non-Goals
 
@@ -39,6 +41,8 @@ future wrapper should spawn the process, keep it alive, correlate
 - stdout must contain only JSON response lines.
 - stderr may be used later for diagnostics, but this phase keeps diagnostics
   minimal and does not require stderr output.
+- A future process wrapper should treat stdout as protocol-only and stderr as
+  diagnostics-only.
 
 ## Request Schema
 

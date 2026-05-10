@@ -18,6 +18,8 @@ The local process bridge intended for future OpenClaw plugin proof-of-concept
 work is documented in [stdio_bridge_protocol.md](stdio_bridge_protocol.md).
 The companion process-wrapper contract is documented in
 [stdio_bridge_client_contract.md](stdio_bridge_client_contract.md).
+Future wrapper process supervision policy is documented in
+[stdio_bridge_process_supervision.md](stdio_bridge_process_supervision.md).
 
 ## Intended Role Of OpenClaw
 

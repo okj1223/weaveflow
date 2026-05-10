@@ -10,6 +10,11 @@ network protocol. This is a local subprocess JSON-line contract. Future
 OpenClaw integration may use this pattern if an OpenClaw plugin or runtime
 needs to call Python ProjectOps locally.
 
+For process lifecycle, restart, timeout, stdout, and stderr policy, see
+[stdio_bridge_process_supervision.md](stdio_bridge_process_supervision.md).
+This client contract defines protocol usage; the supervision document defines
+lifecycle and restart policy.
+
 ## Non-Goals
 
 - no real OpenClaw import
