@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from projectops.cli import app
-from projectops.json_io import CONTRACT_VERSION
+from weaveflow.cli import app
+from weaveflow.json_io import CONTRACT_VERSION
 
 
 runner = CliRunner()
@@ -27,12 +27,12 @@ def test_status_json_before_init_is_valid_and_read_only(
     assert result.exit_code == 0, result.output
     assert payload["contract_version"] == CONTRACT_VERSION
     assert payload["workspace_exists"] is False
-    assert payload["workspace_path"] == str(tmp_path / ".projectops")
+    assert payload["workspace_path"] == str(tmp_path / ".weaveflow")
     assert payload["state_db_path"] is None
     assert payload["memory_path"] is None
     assert payload["task_count"] == 0
     assert payload["tasks"] == []
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
 
 
 def test_status_json_after_init(
@@ -47,9 +47,9 @@ def test_status_json_after_init(
     assert result.exit_code == 0, result.output
     assert payload["contract_version"] == CONTRACT_VERSION
     assert payload["workspace_exists"] is True
-    assert payload["workspace_path"] == str(tmp_path / ".projectops")
-    assert payload["state_db_path"] == str(tmp_path / ".projectops" / "state.sqlite")
-    assert payload["memory_path"] == str(tmp_path / ".projectops" / "memory")
+    assert payload["workspace_path"] == str(tmp_path / ".weaveflow")
+    assert payload["state_db_path"] == str(tmp_path / ".weaveflow" / "state.sqlite")
+    assert payload["memory_path"] == str(tmp_path / ".weaveflow" / "memory")
     assert payload["task_count"] == 0
     assert payload["tasks"] == []
 
@@ -82,7 +82,7 @@ def test_task_list_json_fails_cleanly_before_init(
     result = runner.invoke(app, ["task", "list", "--json"])
 
     assert result.exit_code != 0
-    assert "ProjectOps workspace not found. Run `ops init` first." in result.output
+    assert "Weaveflow workspace not found. Run `weaveflow init` first." in result.output
     assert "Traceback" not in result.output
 
 
@@ -145,7 +145,7 @@ def test_doctor_json_before_init_is_valid_and_read_only(
         check["level"] == "error" and "workspace missing" in check["message"]
         for check in payload["checks"]
     )
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
 
 
 def test_doctor_json_after_init(
@@ -172,7 +172,7 @@ def test_doctor_json_reports_broken_workspace_without_repair(
     assert runner.invoke(app, ["init"]).exit_code == 0
     assert runner.invoke(app, ["task", "create", "Broken JSON doctor"]).exit_code == 0
     assert runner.invoke(app, ["task", "plan", "TASK-0001"]).exit_code == 0
-    plan_path = tmp_path / ".projectops" / "tasks" / "TASK-0001" / "plan.yaml"
+    plan_path = tmp_path / ".weaveflow" / "tasks" / "TASK-0001" / "plan.yaml"
     plan_path.unlink()
 
     result = runner.invoke(app, ["doctor", "--json"])
@@ -197,7 +197,7 @@ def test_human_outputs_remain_readable(
     doctor = runner.invoke(app, ["doctor"])
 
     assert status.exit_code == 0, status.output
-    assert ".projectops exists: yes" in status.output
+    assert ".weaveflow exists: yes" in status.output
     assert task_list.exit_code == 0, task_list.output
     assert "No tasks found." in task_list.output
     assert doctor.exit_code == 0, doctor.output

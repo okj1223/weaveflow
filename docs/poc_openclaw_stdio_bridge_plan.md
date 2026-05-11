@@ -7,14 +7,14 @@
 - Freeze commit: `2b3d9b9 docs: freeze integration readiness`
 
 This branch is for real OpenClaw stdio bridge proof-of-concept research. It is
-not another ProjectOps local adapter-layer phase.
+not another Weaveflow local adapter-layer phase.
 
-## Current ProjectOps Bridge Command
+## Current Weaveflow Bridge Command
 
-The existing ProjectOps bridge can run as:
+The existing Weaveflow bridge can run as:
 
 ```bash
-python3 -m projectops.adapters.stdio_bridge --root <workspace-root>
+python3 -m weaveflow.adapters.stdio_bridge --root <workspace-root>
 ```
 
 It accepts line-delimited JSON on stdin and returns line-delimited JSON on
@@ -31,7 +31,7 @@ skip diagnostics unless debugging needs it.
 
 The smallest real POC should prove that an OpenClaw-side integration can:
 
-1. Spawn the ProjectOps stdio bridge.
+1. Spawn the Weaveflow stdio bridge.
 2. Send `ping` and receive `pong=true`.
 3. Send a `status` payload through `handle_payload`.
 4. Send a `create task` payload through `handle_payload`.
@@ -40,7 +40,7 @@ The smallest real POC should prove that an OpenClaw-side integration can:
 7. Send a `task list` payload.
 8. Send `shutdown` and close the bridge cleanly.
 
-The POC should use a temporary ProjectOps workspace root first.
+The POC should use a temporary Weaveflow workspace root first.
 
 ## OpenClaw Surfaces Inspected
 
@@ -112,37 +112,37 @@ No remote OpenClaw APIs were called for this plan.
 
 - The exact preferred packaging layout for an external local TypeScript plugin
   should be verified with a minimal plugin install.
-- The exact chat/user-visible flow for invoking a ProjectOps tool from a real
+- The exact chat/user-visible flow for invoking a Weaveflow tool from a real
   OpenClaw channel has not been tested.
 - The exact inbound message payload shape inside channel plugins remains
   irrelevant for the first POC, but still unknown.
 - The exact reply rendering path for tool results in a live OpenClaw chat turn
   still needs proof.
-- The exact config schema for ProjectOps plugin options is not defined yet.
+- The exact config schema for Weaveflow plugin options is not defined yet.
 - The exact workspace root selection policy is not defined yet.
 - It is not yet confirmed whether the first POC should live inside this repo,
   a sibling plugin repo, or a temporary local plugin package.
 
 ## Integration Surface Comparison
 
-### A. OpenClaw skill/tool that spawns ProjectOps stdio bridge
+### A. OpenClaw skill/tool that spawns Weaveflow stdio bridge
 
 Fit: high.
 
 An OpenClaw skill alone can teach usage, but execution should be a native
 plugin-registered tool. This path matches confirmed `api.registerTool(...)`
-docs and keeps ProjectOps behind the existing stdio bridge.
+docs and keeps Weaveflow behind the existing stdio bridge.
 
-### B. OpenClaw plugin that wraps ProjectOps bridge
+### B. OpenClaw plugin that wraps Weaveflow bridge
 
 Fit: highest for the real POC.
 
 This is the concrete form of A: a native non-channel OpenClaw plugin that
-registers one optional ProjectOps tool. The tool starts the Python stdio bridge,
+registers one optional Weaveflow tool. The tool starts the Python stdio bridge,
 sends the narrow POC sequence, returns concise text plus structured details,
 and shuts down.
 
-### C. Gateway client that talks to OpenClaw and ProjectOps separately
+### C. Gateway client that talks to OpenClaw and Weaveflow separately
 
 Fit: low for the first POC.
 
@@ -161,7 +161,7 @@ Use it only if plugin installation blocks the first implementation attempt.
 ## Recommended Integration Path
 
 Build the first real POC as a minimal native OpenClaw tool plugin that wraps the
-existing ProjectOps stdio bridge.
+existing Weaveflow stdio bridge.
 
 The plugin should:
 
@@ -169,7 +169,7 @@ The plugin should:
 - use `package.json` with `openclaw.extensions`
 - export `definePluginEntry(...)`
 - register one optional tool with `api.registerTool(...)`
-- spawn `python3 -m projectops.adapters.stdio_bridge --root <workspace-root>`
+- spawn `python3 -m weaveflow.adapters.stdio_bridge --root <workspace-root>`
 - send the fixed POC sequence:
   - `ping`
   - `handle_payload` with `status`
@@ -177,12 +177,12 @@ The plugin should:
   - `handle_payload` with `yes`
   - `handle_payload` with `task list`
   - `shutdown`
-- parse stdout as ProjectOps bridge JSON responses
+- parse stdout as Weaveflow bridge JSON responses
 - capture stderr separately
 - return a short tool result text and structured details
 
 This keeps the first proof narrow and evidence-driven. It does not require a
-new ProjectOps runtime feature.
+new Weaveflow runtime feature.
 
 ## Smallest Implementation Plan
 
@@ -191,15 +191,15 @@ new ProjectOps runtime feature.
    schema.
 3. Add `package.json` with `type: "module"` and `openclaw.extensions`.
 4. Add a TypeScript or JavaScript entrypoint using `definePluginEntry`.
-5. Register one optional tool, for example `projectops_poc`.
-6. Inside the tool, spawn the ProjectOps stdio bridge with a temp root or a
+5. Register one optional tool, for example `weaveflow_poc`.
+6. Inside the tool, spawn the Weaveflow stdio bridge with a temp root or a
    configured root.
 7. Implement a tiny line-delimited JSON bridge client in the plugin code.
 8. Execute only the fixed POC sequence.
 9. Return tool text summarizing status, create task pending confirmation, yes
    completion, and task list result.
 10. Install or link the plugin locally with OpenClaw.
-11. Run `openclaw plugins inspect <projectops-plugin-id> --json` to confirm the
+11. Run `openclaw plugins inspect <weaveflow-plugin-id> --json` to confirm the
     tool is registered.
 12. Run the smallest live OpenClaw invocation available for a tool call or, if
     live tool invocation is not yet clear, run the same bridge client as a
@@ -207,7 +207,7 @@ new ProjectOps runtime feature.
 
 ## Files Likely To Create Or Modify In The Next Phase
 
-The next phase should avoid changing ProjectOps core unless the real POC proves
+The next phase should avoid changing Weaveflow core unless the real POC proves
 it necessary.
 
 Likely new POC files:
@@ -219,14 +219,14 @@ Likely new POC files:
 - one POC test or smoke script
 - a short README for running the POC
 
-Possible ProjectOps repo files if the POC lives here:
+Possible Weaveflow repo files if the POC lives here:
 
 - `poc/openclaw-stdio-bridge/README.md`
 - `poc/openclaw-stdio-bridge/openclaw.plugin.json`
 - `poc/openclaw-stdio-bridge/package.json`
 - `poc/openclaw-stdio-bridge/index.ts`
 
-Do not modify the frozen ProjectOps adapter architecture unless the POC proves
+Do not modify the frozen Weaveflow adapter architecture unless the POC proves
 a concrete gap in the stdio bridge contract.
 
 ## Risks
@@ -245,7 +245,7 @@ a concrete gap in the stdio bridge contract.
 
 ## Explicit Non-Goals
 
-- no new ProjectOps adapter abstractions
+- no new Weaveflow adapter abstractions
 - no new confirmation systems
 - no new renderer systems
 - no new wrapper safety layers
@@ -266,15 +266,15 @@ a concrete gap in the stdio bridge contract.
 
 Stop the next POC implementation when:
 
-- OpenClaw can discover the local ProjectOps POC plugin, or the exact plugin
+- OpenClaw can discover the local Weaveflow POC plugin, or the exact plugin
   discovery blocker is documented.
-- One OpenClaw-side tool or local Node harness can spawn the ProjectOps stdio
+- One OpenClaw-side tool or local Node harness can spawn the Weaveflow stdio
   bridge.
 - The POC sends `ping`, `status`, `create task`, `yes`, `task list`, and
   `shutdown`.
-- stdout responses are parsed as ProjectOps bridge JSON.
+- stdout responses are parsed as Weaveflow bridge JSON.
 - stderr is captured separately.
-- The ProjectOps workspace created for the POC is temporary or explicitly
+- The Weaveflow workspace created for the POC is temporary or explicitly
   configured.
 - No Codex auto-run, auth/RBAC, persistent sessions, or process supervisor has
   been added.
@@ -287,13 +287,13 @@ The first native OpenClaw tool-plugin POC now exists.
 Plugin location:
 
 ```text
-integrations/openclaw-projectops-stdio-poc/
+integrations/openclaw-weaveflow-stdio-poc/
 ```
 
 Tool name:
 
 ```text
-projectops_stdio_poc
+weaveflow_stdio_poc
 ```
 
 Implementation shape:
@@ -301,9 +301,9 @@ Implementation shape:
 - native OpenClaw manifest: `openclaw.plugin.json`
 - package metadata: `package.json` with `openclaw.extensions`
 - plugin entrypoint: `src/index.js`
-- bridge helper: `src/projectopsBridge.js`
+- bridge helper: `src/weaveflowBridge.js`
 - local smoke script: `scripts/smoke.js`
-- Node tests: `tests/projectopsBridge.test.js`
+- Node tests: `tests/weaveflowBridge.test.js`
 
 The POC uses ESM JavaScript instead of TypeScript so the smoke test can run
 without adding a build step, dependency install, or package lock. It still uses
@@ -313,10 +313,10 @@ the documented native plugin entry helper:
 Commands run:
 
 ```bash
-npm test --prefix integrations/openclaw-projectops-stdio-poc
-npm run smoke --prefix integrations/openclaw-projectops-stdio-poc
-openclaw --dev plugins install -l integrations/openclaw-projectops-stdio-poc
-openclaw --dev plugins inspect projectops-stdio-poc --json
+npm test --prefix integrations/openclaw-weaveflow-stdio-poc
+npm run smoke --prefix integrations/openclaw-weaveflow-stdio-poc
+openclaw --dev plugins install -l integrations/openclaw-weaveflow-stdio-poc
+openclaw --dev plugins inspect weaveflow-stdio-poc --json
 openclaw --dev plugins doctor
 ```
 
@@ -327,16 +327,16 @@ Smoke result:
 - `create task` returned pending confirmation.
 - `yes` completed task creation.
 - `task list` completed and the created task existed in the temporary
-  ProjectOps workspace.
+  Weaveflow workspace.
 - `shutdown` succeeded.
 - The smoke run used a temporary workspace and did not modify the repository
-  `.projectops` workspace.
+  `.weaveflow` workspace.
 
 OpenClaw validation result:
 
-- `openclaw --dev plugins inspect projectops-stdio-poc --json` loaded the
+- `openclaw --dev plugins inspect weaveflow-stdio-poc --json` loaded the
   plugin.
-- Inspect reported one optional tool: `projectops_stdio_poc`.
+- Inspect reported one optional tool: `weaveflow_stdio_poc`.
 - `openclaw --dev plugins doctor` reported no plugin issues.
 - The dev profile warned that `plugins.allow` is empty, so non-bundled plugins
   may auto-load. That is an OpenClaw configuration hardening note, not a POC
@@ -344,10 +344,10 @@ OpenClaw validation result:
 
 Confirmed behavior:
 
-- A native OpenClaw plugin entry can register a ProjectOps POC tool.
+- A native OpenClaw plugin entry can register a Weaveflow POC tool.
 - OpenClaw can discover and inspect the local linked plugin.
 - Node-side POC code can spawn the existing Python stdio bridge.
-- The fixed bridge sequence works against an initialized temporary ProjectOps
+- The fixed bridge sequence works against an initialized temporary Weaveflow
   workspace.
 
 Remaining unknowns:

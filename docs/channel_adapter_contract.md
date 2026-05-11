@@ -9,7 +9,7 @@ scripts.
 This is not real OpenClaw integration. This is not a server API. This is not a
 network protocol. This is not a bot. This is a local Python adapter contract
 and smoke flow. Future channel integrations should use this contract rather
-than directly editing `.projectops` files.
+than directly editing `.weaveflow` files.
 
 This local contract must be checked against the real OpenClaw runtime before
 production use. See [openclaw_runtime_research.md](openclaw_runtime_research.md)
@@ -32,7 +32,7 @@ Raw external payload
 -> OpenClawMessage
 -> OpenClawAdapter.handle_message
 -> AdapterSession
--> ProjectOpsServiceAdapter
+-> WeaveflowServiceAdapter
 -> AdapterTurnResult
 -> AdapterEvent
 -> render_event_for_channel
@@ -59,7 +59,7 @@ Stage responsibilities:
   normalized message into session handling.
 - `AdapterSession`: handles text mapping, pending confirmation state, and
   execution through the service adapter.
-- `ProjectOpsServiceAdapter`: calls ProjectOps service functions and enforces
+- `WeaveflowServiceAdapter`: calls Weaveflow service functions and enforces
   mutation gating.
 - `AdapterTurnResult`: records the session turn state, response, and error
   fields.
@@ -83,8 +83,8 @@ OpenClaw runtime payload
 -> send response back to OpenClaw user
 ```
 
-OpenClaw should be the channel surface only. ProjectOps remains the source of
-truth. `.projectops` files and SQLite remain the task state authority.
+OpenClaw should be the channel surface only. Weaveflow remains the source of
+truth. `.weaveflow` files and SQLite remain the task state authority.
 `AdapterSession` state is interaction state only.
 
 ## Permission Policy Placement
@@ -190,7 +190,7 @@ Important error types:
 
 ## Source Of Truth
 
-`.projectops` files and SQLite are the source of truth for task state.
+`.weaveflow` files and SQLite are the source of truth for task state.
 `AdapterSessionStore` is not task storage. OpenClaw payloads are not task
 storage. `AdapterEvent` values are renderable records only. Channel messages are
 communication artifacts only.

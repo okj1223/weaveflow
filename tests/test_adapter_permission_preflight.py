@@ -3,9 +3,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from projectops.adapters.base import AdapterRequest
-from projectops.adapters.openclaw import OpenClawAdapter, OpenClawMessage
-from projectops.adapters.permission_preflight import (
+from weaveflow.adapters.base import AdapterRequest
+from weaveflow.adapters.openclaw import OpenClawAdapter, OpenClawMessage
+from weaveflow.adapters.permission_preflight import (
     PermissionPreflightResult,
     permission_preflight_result_to_payload,
     preflight_adapter_request,
@@ -169,7 +169,7 @@ def test_preflight_does_not_touch_files(tmp_path: Path) -> None:
     preflight_openclaw_payload(payload("list tasks"))
     preflight_adapter_request(AdapterRequest(action="create_task"))
 
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
 
 
 def test_permission_preflight_result_json_serializable() -> None:
@@ -177,7 +177,7 @@ def test_permission_preflight_result_json_serializable() -> None:
     payload_dict = permission_preflight_result_to_payload(result)
 
     json.dumps(payload_dict)
-    assert payload_dict["contract_version"] == "projectops.v1"
+    assert payload_dict["contract_version"] == "weaveflow.v1"
 
 
 def test_permission_preflight_demo_runs() -> None:

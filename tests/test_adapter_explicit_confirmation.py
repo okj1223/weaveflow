@@ -5,19 +5,19 @@ from pathlib import Path
 
 import pytest
 
-from projectops.adapters.explicit_confirmation import (
+from weaveflow.adapters.explicit_confirmation import (
     ExplicitConfirmationCheck,
     ExplicitConfirmationPrompt,
     build_explicit_confirmation_phrase,
     check_explicit_confirmation,
     create_explicit_confirmation_prompt,
 )
-from projectops.adapters.local_wrapper import LocalBridgeWrapper
-from projectops.adapters.permission_preflight import (
+from weaveflow.adapters.local_wrapper import LocalBridgeWrapper
+from weaveflow.adapters.permission_preflight import (
     preflight_openclaw_payload,
     preflight_text_command,
 )
-from projectops.json_io import to_jsonable
+from weaveflow.json_io import to_jsonable
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -149,7 +149,7 @@ def test_helper_does_not_touch_files(tmp_path: Path, monkeypatch: pytest.MonkeyP
     prompt = create_explicit_confirmation_prompt(sensitive_preflight("req-123"))
     check_explicit_confirmation(prompt.confirmation_phrase, prompt)
 
-    assert not tmp_path.joinpath(".projectops").exists()
+    assert not tmp_path.joinpath(".weaveflow").exists()
 
 
 def test_payload_permission_preflight_integration() -> None:

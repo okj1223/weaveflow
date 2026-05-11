@@ -2,15 +2,15 @@ import json
 import subprocess
 from pathlib import Path
 
-from projectops.adapters import (
+from weaveflow.adapters import (
     AdapterEvent,
     AdapterSession,
     AdapterTranscript,
-    ProjectOpsServiceAdapter,
+    WeaveflowServiceAdapter,
     event_from_turn_result,
     transcript_from_turns,
 )
-from projectops.json_io import CONTRACT_VERSION, to_jsonable
+from weaveflow.json_io import CONTRACT_VERSION, to_jsonable
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,7 +18,7 @@ DEMO_PATH = ROOT / "examples" / "adapter_event_demo.py"
 
 
 def make_session(root: Path) -> AdapterSession:
-    return AdapterSession(ProjectOpsServiceAdapter(root))
+    return AdapterSession(WeaveflowServiceAdapter(root))
 
 
 def test_adapter_event_imports() -> None:
@@ -157,11 +157,11 @@ def test_event_helper_does_not_touch_files(tmp_path: Path) -> None:
     session = make_session(tmp_path)
     turn = session.handle_text("status", request_id="req-status")
 
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
     event_from_turn_result(turn)
     transcript_from_turns("session-1", [turn])
 
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
 
 
 def test_adapter_event_demo_script_runs() -> None:

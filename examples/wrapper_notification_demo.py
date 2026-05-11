@@ -11,7 +11,7 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from projectops.adapters.wrapper_notifications import (  # noqa: E402
+from weaveflow.adapters.wrapper_notifications import (  # noqa: E402
     create_session_loss_notification,
     is_retry_safe_after_session_loss,
     wrapper_notification_to_payload,

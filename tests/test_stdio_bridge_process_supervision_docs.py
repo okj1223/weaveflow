@@ -56,7 +56,7 @@ def test_process_supervision_doc_mentions_required_terms() -> None:
         "session loss",
         "pending confirmations",
         "source of truth",
-        ".projectops",
+        ".weaveflow",
         "SQLite",
         "no server",
         "no network",

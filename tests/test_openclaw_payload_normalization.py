@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from projectops.adapters.openclaw import (
+from weaveflow.adapters.openclaw import (
     OpenClawAdapter,
     OpenClawPayloadNormalizationError,
     OpenClawResponse,
@@ -14,7 +14,7 @@ from projectops.adapters.openclaw import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OPENCLAW_SRC = ROOT / "src" / "projectops" / "adapters" / "openclaw"
+OPENCLAW_SRC = ROOT / "src" / "weaveflow" / "adapters" / "openclaw"
 
 
 def canonical_payload() -> dict[str, object]:
@@ -158,7 +158,7 @@ def test_openclaw_response_to_payload_is_json_safe() -> None:
 
     payload = openclaw_response_to_payload(response)
 
-    assert payload["contract_version"] == "projectops.v1"
+    assert payload["contract_version"] == "weaveflow.v1"
     assert payload["channel_id"] == "channel-1"
     assert payload["text"] == "Done"
     assert payload["event_type"] == "turn_completed"
@@ -178,7 +178,7 @@ def test_handle_payload_status_before_init(tmp_path: Path) -> None:
     assert response["ok"] is True
     assert response["event_type"] == "turn_completed"
     assert response["requires_confirmation"] is False
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
 
 
 def test_handle_payload_init_confirmation(tmp_path: Path) -> None:
@@ -188,7 +188,7 @@ def test_handle_payload_init_confirmation(tmp_path: Path) -> None:
 
     assert response["event_type"] == "pending_confirmation"
     assert response["requires_confirmation"] is True
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
 
 
 def test_handle_payload_yes_confirmation(tmp_path: Path) -> None:
@@ -199,7 +199,7 @@ def test_handle_payload_yes_confirmation(tmp_path: Path) -> None:
 
     assert response["ok"] is True
     assert response["event_type"] == "turn_completed"
-    assert (tmp_path / ".projectops").is_dir()
+    assert (tmp_path / ".weaveflow").is_dir()
 
 
 def test_handle_payload_missing_required_field_returns_json_safe_error(
@@ -214,7 +214,7 @@ def test_handle_payload_missing_required_field_returns_json_safe_error(
     assert response["event_type"] == "turn_error"
     assert response["requires_confirmation"] is False
     assert response["metadata"]["source"] == "normalization"
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
     json.dumps(response)
 
 

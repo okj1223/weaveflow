@@ -4,12 +4,12 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from projectops.cli import app
-from projectops.yaml_io import read_yaml
+from weaveflow.cli import app
+from weaveflow.yaml_io import read_yaml
 
 
 runner = CliRunner()
-WORKSPACE_ERROR = "ProjectOps workspace not found. Run `ops init` first."
+WORKSPACE_ERROR = "Weaveflow workspace not found. Run `weaveflow init` first."
 
 
 def task_status(db_path: Path, task_id: str) -> str:
@@ -42,10 +42,10 @@ def test_task_ids_files_and_sqlite_rows(
     assert "Created task: TASK-0001" in first.output
     assert "Created task: TASK-0002" in second.output
 
-    first_task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
+    first_task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
     assert (first_task_dir / "task_spec.yaml").is_file()
     assert (first_task_dir / "artifacts").is_dir()
-    assert task_status(tmp_path / ".projectops" / "state.sqlite", "TASK-0001") == "draft"
+    assert task_status(tmp_path / ".weaveflow" / "state.sqlite", "TASK-0001") == "draft"
 
 
 @pytest.mark.parametrize(
@@ -96,8 +96,8 @@ def test_task_list_includes_required_fields_and_preserves_status(
     assert runner.invoke(app, ["init"]).exit_code == 0
     assert runner.invoke(app, ["task", "create", "List this task"]).exit_code == 0
 
-    task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
-    db_path = tmp_path / ".projectops" / "state.sqlite"
+    task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
+    db_path = tmp_path / ".weaveflow" / "state.sqlite"
     yaml_status_before = read_yaml(task_dir / "task_spec.yaml")["status"]
     sqlite_status_before = task_status(db_path, "TASK-0001")
 
@@ -147,10 +147,10 @@ def test_brief_requires_existing_plan(
 
     result = runner.invoke(app, ["task", "brief", "TASK-0001", "--worker", "codex"])
 
-    task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
+    task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
     assert_clean_failure(
         result,
-        "Plan not found for TASK-0001. Run `ops task plan TASK-0001` first.",
+        "Plan not found for TASK-0001. Run `weaveflow task plan TASK-0001` first.",
     )
     assert not (task_dir / "worker_brief_codex.md").exists()
     assert read_yaml(task_dir / "task_spec.yaml")["status"] == "draft"
@@ -168,11 +168,11 @@ def test_attach_result_requires_existing_source_and_preserves_state(
         ["task", "attach-result", "TASK-0001", "missing.md"],
     )
 
-    task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
+    task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
     assert_clean_failure(result, "Result file not found: missing.md")
     assert not (task_dir / "artifacts.yaml").exists()
     assert read_yaml(task_dir / "task_spec.yaml")["status"] == "draft"
-    assert task_status(tmp_path / ".projectops" / "state.sqlite", "TASK-0001") == "draft"
+    assert task_status(tmp_path / ".weaveflow" / "state.sqlite", "TASK-0001") == "draft"
 
 
 def test_unsupported_worker_preserves_state(
@@ -185,12 +185,12 @@ def test_unsupported_worker_preserves_state(
 
     result = runner.invoke(app, ["task", "brief", "TASK-0001", "--worker", "claude"])
 
-    task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
+    task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
     assert_clean_failure(result, "Unsupported worker: claude. Supported workers: codex")
     assert not (task_dir / "worker_brief_claude.md").exists()
     assert not (task_dir / "worker_brief_codex.md").exists()
     assert read_yaml(task_dir / "task_spec.yaml")["status"] == "planned"
-    assert task_status(tmp_path / ".projectops" / "state.sqlite", "TASK-0001") == "planned"
+    assert task_status(tmp_path / ".weaveflow" / "state.sqlite", "TASK-0001") == "planned"
 
 
 def test_invalid_verification_status_preserves_state(
@@ -213,14 +213,14 @@ def test_invalid_verification_status_preserves_state(
         ],
     )
 
-    task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
+    task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
     assert_clean_failure(
         result,
         "Invalid verification status: maybe. Expected one of: passed, failed, blocked",
     )
     assert not (task_dir / "verification_record.yaml").exists()
     assert read_yaml(task_dir / "task_spec.yaml")["status"] == "draft"
-    assert task_status(tmp_path / ".projectops" / "state.sqlite", "TASK-0001") == "draft"
+    assert task_status(tmp_path / ".weaveflow" / "state.sqlite", "TASK-0001") == "draft"
 
 
 def test_plan_brief_and_status_transitions(
@@ -230,8 +230,8 @@ def test_plan_brief_and_status_transitions(
     assert runner.invoke(app, ["init"]).exit_code == 0
     assert runner.invoke(app, ["task", "create", "Plan this task"]).exit_code == 0
 
-    task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
-    db_path = tmp_path / ".projectops" / "state.sqlite"
+    task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
+    db_path = tmp_path / ".weaveflow" / "state.sqlite"
     assert read_yaml(task_dir / "task_spec.yaml")["status"] == "draft"
 
     plan_result = runner.invoke(app, ["task", "plan", "TASK-0001"])
@@ -264,8 +264,8 @@ def test_attach_result_and_verification_statuses(
     )
     assert attach.exit_code == 0, attach.output
 
-    task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
-    db_path = tmp_path / ".projectops" / "state.sqlite"
+    task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
+    db_path = tmp_path / ".weaveflow" / "state.sqlite"
     assert (task_dir / "artifacts" / "result.md").is_file()
     assert (task_dir / "artifacts.yaml").is_file()
     assert task_status(db_path, "TASK-0001") == "result_attached"
@@ -318,5 +318,5 @@ def test_failed_and_blocked_verification_statuses(
     )
 
     assert verify.exit_code == 0, verify.output
-    db_path = tmp_path / ".projectops" / "state.sqlite"
+    db_path = tmp_path / ".weaveflow" / "state.sqlite"
     assert task_status(db_path, "TASK-0001") == expected_task_status

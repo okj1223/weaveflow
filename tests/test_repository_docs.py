@@ -22,9 +22,9 @@ def test_gitignore_exists_with_local_state_policy() -> None:
     text = read_text(".gitignore")
 
     for expected in [
-        ".projectops/",
-        ".projectops/state.sqlite",
-        ".projectops/tasks/",
+        ".weaveflow/",
+        ".weaveflow/state.sqlite",
+        ".weaveflow/tasks/",
         "examples/*_codex_result.md",
         "__pycache__/",
         ".pytest_cache/",

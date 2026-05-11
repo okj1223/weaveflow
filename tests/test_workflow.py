@@ -4,8 +4,8 @@ import sqlite3
 import pytest
 from typer.testing import CliRunner
 
-from projectops.cli import app
-from projectops.yaml_io import read_yaml
+from weaveflow.cli import app
+from weaveflow.yaml_io import read_yaml
 
 
 runner = CliRunner()
@@ -72,7 +72,7 @@ def test_full_mvp_workflow_creates_report_and_memory_diff(
     report = runner.invoke(app, ["task", "report", "TASK-0001"])
     memory = runner.invoke(app, ["memory", "propose", "TASK-0001"])
 
-    task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
+    task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
     assert report.exit_code == 0, report.output
     assert memory.exit_code == 0, memory.output
     assert (task_dir / "final_report.md").is_file()
@@ -92,8 +92,8 @@ def test_status_consistency_across_workflow_states(
     assert runner.invoke(app, ["init"]).exit_code == 0
     assert runner.invoke(app, ["task", "create", "Check status consistency"]).exit_code == 0
 
-    task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
-    db_path = tmp_path / ".projectops" / "state.sqlite"
+    task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
+    db_path = tmp_path / ".weaveflow" / "state.sqlite"
     assert_status(task_dir, db_path, "draft")
 
     assert runner.invoke(app, ["task", "plan", "TASK-0001"]).exit_code == 0
@@ -145,8 +145,8 @@ def test_status_consistency_for_failed_and_blocked_verification(
     assert runner.invoke(app, ["init"]).exit_code == 0
     assert runner.invoke(app, ["task", "create", "Check terminal status"]).exit_code == 0
 
-    task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
-    db_path = tmp_path / ".projectops" / "state.sqlite"
+    task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
+    db_path = tmp_path / ".weaveflow" / "state.sqlite"
     result = runner.invoke(
         app,
         [
@@ -173,8 +173,8 @@ def test_safe_reruns_do_not_duplicate_or_corrupt_task(
 
     for _ in range(2):
         assert runner.invoke(app, ["task", "plan", "TASK-0001"]).exit_code == 0
-    task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
-    db_path = tmp_path / ".projectops" / "state.sqlite"
+    task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
+    db_path = tmp_path / ".weaveflow" / "state.sqlite"
     assert_status(task_dir, db_path, "planned")
 
     for _ in range(2):

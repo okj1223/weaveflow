@@ -2,16 +2,16 @@
 
 ## Purpose
 
-This document defines how external adapters should interact with ProjectOps
+This document defines how external adapters should interact with Weaveflow
 Kernel without depending on human-readable CLI output.
 
 Human-readable CLI output is for humans. JSON CLI output and Python service
 functions are for adapters. External adapters should not parse human-readable
-text, and they should not directly mutate `.projectops/` files unless that
-behavior is explicitly designed through ProjectOps service functions.
+text, and they should not directly mutate `.weaveflow/` files unless that
+behavior is explicitly designed through Weaveflow service functions.
 
-ProjectOps Kernel remains local-first and file-based. An adapter may provide a
-channel surface, user interface, or automation wrapper, but ProjectOps remains
+Weaveflow remains local-first and file-based. An adapter may provide a
+channel surface, user interface, or automation wrapper, but Weaveflow remains
 the source of truth for workspace state.
 
 For the recommended end-to-end local Python integration path, see
@@ -24,12 +24,12 @@ For the future OpenClaw-specific design layer, see
 An adapter is responsible for:
 
 - Receiving user input from an external surface.
-- Mapping that input to supported ProjectOps operations.
-- Calling ProjectOps through either Python service functions or CLI JSON
+- Mapping that input to supported Weaveflow operations.
+- Calling Weaveflow through either Python service functions or CLI JSON
   commands.
 - Rendering results back to the user.
 - Showing clean errors.
-- Preserving ProjectOps state integrity.
+- Preserving Weaveflow state integrity.
 - Avoiding unexpected destructive actions.
 - Avoiding invented task state.
 - Avoiding validation bypasses.
@@ -39,7 +39,7 @@ commands are acceptable for shell-based adapters.
 
 ## Kernel Responsibilities
 
-ProjectOps Kernel is responsible for:
+Weaveflow is responsible for:
 
 - Workspace initialization.
 - Task creation.
@@ -74,19 +74,19 @@ Adapters should not:
 
 ### Mode A: Python Service Mode
 
-An in-process adapter should import ProjectOps service functions:
+An in-process adapter should import Weaveflow service functions:
 
 ```python
 from pathlib import Path
 
-from projectops import service
-from projectops.errors import ProjectOpsError
+from weaveflow import service
+from weaveflow.errors import WeaveflowError
 
 root = Path.cwd()
 
 try:
     status = service.get_status(root)
-except ProjectOpsError as error:
+except WeaveflowError as error:
     render_error(str(error))
 ```
 
@@ -107,15 +107,15 @@ Supported service functions include:
 
 This mode is preferred for adapters running in the same Python environment. It
 receives structured Python objects or dictionaries and should catch
-`ProjectOpsError` subclasses for normal workflow errors.
+`WeaveflowError` subclasses for normal workflow errors.
 
 ### Mode B: CLI JSON Mode
 
 A shell-based adapter may call:
 
-- `ops status --json`
-- `ops task list --json`
-- `ops doctor --json`
+- `weaveflow status --json`
+- `weaveflow task list --json`
+- `weaveflow doctor --json`
 
 This mode is useful for simple scripts or tools that do not import Python code.
 Adapters using CLI JSON mode must validate `contract_version`, should validate
@@ -125,22 +125,22 @@ For now, only status, task list, and doctor have JSON output.
 
 ## Current Machine-Readable Commands
 
-| Command | Purpose | Exit behavior | Schema | Version | Before `ops init` | Mutates workspace |
+| Command | Purpose | Exit behavior | Schema | Version | Before `weaveflow init` | Mutates workspace |
 | --- | --- | --- | --- | --- | --- | --- |
-| `ops status --json` | Read workspace status and task summaries. | Exits `0`, including before init. | `schemas/status.schema.json` | `projectops.v1` | Returns `workspace_exists: false`. | No |
-| `ops task list --json` | Read all indexed tasks. | Exits non-zero if the workspace is missing. | `schemas/task_list.schema.json` | `projectops.v1` | Fails cleanly. | No |
-| `ops doctor --json` | Diagnose workspace health. | Exits `0` when healthy or warnings-only; exits `1` when errors exist. | `schemas/doctor.schema.json` | `projectops.v1` | Prints valid JSON with an error check. | No |
+| `weaveflow status --json` | Read workspace status and task summaries. | Exits `0`, including before init. | `schemas/status.schema.json` | `weaveflow.v1` | Returns `workspace_exists: false`. | No |
+| `weaveflow task list --json` | Read all indexed tasks. | Exits non-zero if the workspace is missing. | `schemas/task_list.schema.json` | `weaveflow.v1` | Fails cleanly. | No |
+| `weaveflow doctor --json` | Diagnose workspace health. | Exits `0` when healthy or warnings-only; exits `1` when errors exist. | `schemas/doctor.schema.json` | `weaveflow.v1` | Prints valid JSON with an error check. | No |
 
-`ops doctor --json` is read-only. It reports errors and warnings but does not
+`weaveflow doctor --json` is read-only. It reports errors and warnings but does not
 repair anything.
 
 ## Adapter Command Mapping
 
 | User intent | Adapter action | Safety |
 | --- | --- | --- |
-| Show workspace status | Call `get_status(root)` or `ops status --json`. | Read-only |
-| List tasks | Call `list_tasks(root)` or `ops task list --json`. | Read-only |
-| Check workspace health | Call `doctor_workspace(root)` or `ops doctor --json`. | Read-only |
+| Show workspace status | Call `get_status(root)` or `weaveflow status --json`. | Read-only |
+| List tasks | Call `list_tasks(root)` or `weaveflow task list --json`. | Read-only |
+| Check workspace health | Call `doctor_workspace(root)` or `weaveflow doctor --json`. | Read-only |
 | Create a task | Call `create_task(root, user_request)`. | Mutates workspace, but safe |
 | Generate a plan | Call `create_plan(root, task_id)`. | Mutates task files and status |
 | Generate Codex brief | Call `create_worker_brief(root, task_id, worker="codex")`. | Mutates task files and status |
@@ -151,7 +151,7 @@ repair anything.
 
 ## Error Handling Policy
 
-Python adapters should catch `ProjectOpsError` from `projectops.errors`. Known
+Python adapters should catch `WeaveflowError` from `weaveflow.errors`. Known
 normal workflow errors include:
 
 - `WorkspaceNotFoundError`
@@ -172,9 +172,9 @@ Read-only operations:
 - `get_status`
 - `list_tasks`
 - `doctor_workspace`
-- `ops status --json`
-- `ops task list --json`
-- `ops doctor --json`
+- `weaveflow status --json`
+- `weaveflow task list --json`
+- `weaveflow doctor --json`
 
 Workspace-mutating operations:
 
@@ -213,7 +213,7 @@ High-risk or future-gated operations:
 
 ## Internal Adapter Skeleton
 
-`ProjectOpsServiceAdapter` is the current internal adapter boundary. It is not
+`WeaveflowServiceAdapter` is the current internal adapter boundary. It is not
 OpenClaw integration yet, and it does not create a bot, server, network
 listener, or autonomous worker.
 
@@ -259,9 +259,9 @@ instead of mutating files, SQLite, or task state directly.
 
 ```python
 from pathlib import Path
-from projectops.adapters import AdapterRequest, ProjectOpsServiceAdapter
+from weaveflow.adapters import AdapterRequest, WeaveflowServiceAdapter
 
-adapter = ProjectOpsServiceAdapter(Path("."))
+adapter = WeaveflowServiceAdapter(Path("."))
 
 response = adapter.handle(AdapterRequest(action="status"))
 print(response.ok)
@@ -290,10 +290,10 @@ OpenClaw should act as:
 
 OpenClaw should not be:
 
-- The source of truth for ProjectOps state.
+- The source of truth for Weaveflow state.
 - The owner of task files.
 - The direct SQLite mutator.
-- The verifier of Codex results without ProjectOps verification records.
+- The verifier of Codex results without Weaveflow verification records.
 
 Recommended future flow:
 
@@ -302,10 +302,10 @@ OpenClaw message
 -> OpenClaw adapter parses intent
 -> adapter prepares confirmation for mutating commands
 -> adapter carries pending confirmation state with AdapterSession if needed
--> adapter calls ProjectOps service function
+-> adapter calls Weaveflow service function
 -> adapter converts AdapterTurnResult to AdapterEvent for UI rendering
 -> adapter renders AdapterEvent text for the external surface if needed
--> ProjectOps writes task/artifact/status files
+-> Weaveflow writes task/artifact/status files
 -> adapter returns concise status/report to OpenClaw user
 ```
 
@@ -314,7 +314,7 @@ OpenClaw message
 A future adapter package could look like this:
 
 ```text
-src/projectops/adapters/
+src/weaveflow/adapters/
   __init__.py
   base.py
   service_adapter.py
@@ -325,7 +325,7 @@ A possible `BaseAdapter` could be responsible for:
 - Handling an input message.
 - Calling service functions.
 - Rendering a response.
-- Handling `ProjectOpsError`.
+- Handling `WeaveflowError`.
 - Enforcing read-only versus mutating operation policies.
 
 This skeleton is only a preview. Phase 9-A does not implement adapter runtime

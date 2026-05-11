@@ -1,8 +1,8 @@
 import subprocess
 from pathlib import Path
 
-from projectops.adapters import ProjectOpsServiceAdapter
-from projectops.adapters.confirmation import (
+from weaveflow.adapters import WeaveflowServiceAdapter
+from weaveflow.adapters.confirmation import (
     ConfirmationState,
     confirm_request,
     is_confirmation_response,
@@ -100,17 +100,17 @@ def test_request_id_preserved_after_confirmation() -> None:
 
 
 def test_rejection_prevents_mutation(tmp_path: Path) -> None:
-    adapter = ProjectOpsServiceAdapter(tmp_path)
+    adapter = WeaveflowServiceAdapter(tmp_path)
     state = prepare_confirmation("init workspace")
     rejected = reject_request(state)
 
     assert rejected.request is None
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
     assert adapter
 
 
 def test_confirmed_request_executes_through_adapter(tmp_path: Path) -> None:
-    adapter = ProjectOpsServiceAdapter(tmp_path)
+    adapter = WeaveflowServiceAdapter(tmp_path)
     state = prepare_confirmation("init workspace")
     confirmed = confirm_request(state)
 
@@ -118,11 +118,11 @@ def test_confirmed_request_executes_through_adapter(tmp_path: Path) -> None:
     response = adapter.handle(confirmed.request)
 
     assert response.ok is True
-    assert (tmp_path / ".projectops").is_dir()
+    assert (tmp_path / ".weaveflow").is_dir()
 
 
 def test_confirmed_create_task_executes_through_adapter(tmp_path: Path) -> None:
-    adapter = ProjectOpsServiceAdapter(tmp_path)
+    adapter = WeaveflowServiceAdapter(tmp_path)
     init_state = confirm_request(prepare_confirmation("init workspace"))
     assert init_state.request is not None
     assert adapter.handle(init_state.request).ok is True
@@ -135,7 +135,7 @@ def test_confirmed_create_task_executes_through_adapter(tmp_path: Path) -> None:
     assert response.data is not None
     assert response.data["id"] == "TASK-0001"
     assert (
-        tmp_path / ".projectops" / "tasks" / "TASK-0001" / "task_spec.yaml"
+        tmp_path / ".weaveflow" / "tasks" / "TASK-0001" / "task_spec.yaml"
     ).is_file()
 
 
@@ -151,7 +151,7 @@ def test_confirmation_helper_does_not_touch_files(tmp_path: Path) -> None:
     state = prepare_confirmation("init workspace")
 
     assert state.required is True
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
 
 
 def test_confirmation_demo_script_runs() -> None:

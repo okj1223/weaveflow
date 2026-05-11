@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://projectops.local/schemas/adapter_response.schema.json",
-  "title": "ProjectOps AdapterResponse",
+  "$id": "https://weaveflow.local/schemas/adapter_response.schema.json",
+  "title": "Weaveflow AdapterResponse",
   "type": "object",
   "required": [
     "contract_version",
@@ -17,7 +17,7 @@
   "properties": {
     "contract_version": {
       "type": "string",
-      "const": "projectops.v1"
+      "const": "weaveflow.v1"
     },
     "ok": {
       "type": "boolean"

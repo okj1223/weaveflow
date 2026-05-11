@@ -7,7 +7,7 @@ health checks, permission preflight, and stdio bridge routing decisions.
 
 The flow is intended to show how a future external wrapper, such as a future
 OpenClaw Node/Gateway wrapper, can decide whether a raw channel payload should
-be routed into the ProjectOps stdio bridge.
+be routed into the Weaveflow stdio bridge.
 
 This is local-only. It is not real OpenClaw integration.
 
@@ -155,11 +155,11 @@ OpenClaw payload
 ```
 
 OpenClaw should remain the channel surface. The wrapper should own user-facing
-decisions, while ProjectOps remains the local task kernel.
+decisions, while Weaveflow remains the local task kernel.
 
 ## Source Of Truth
 
-`.projectops` files and SQLite remain the task source of truth. The bridge
+`.weaveflow` files and SQLite remain the task source of truth. The bridge
 process owns in-memory session state while it is running. Wrapper results are
 routing records only and must not be treated as task state.
 

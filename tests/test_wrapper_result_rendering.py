@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from projectops.adapters.local_wrapper import LocalBridgeWrapper, WrapperRouteResult
-from projectops.adapters.wrapper_notifications import create_session_loss_notification
-from projectops.adapters.wrapper_rendering import (
+from weaveflow.adapters.local_wrapper import LocalBridgeWrapper, WrapperRouteResult
+from weaveflow.adapters.wrapper_notifications import create_session_loss_notification
+from weaveflow.adapters.wrapper_rendering import (
     render_wrapper_notification_for_channel,
     render_wrapper_result_as_text,
     render_wrapper_result_payload,
@@ -52,7 +52,7 @@ def create_task(wrapper: LocalBridgeWrapper, root: Path) -> None:
     assert pending.route_reason == "route_to_establish_pending_confirmation"
     confirmed = wrapper.handle_payload(payload("yes", "m-create-yes"))
     assert confirmed.ok is True
-    assert root.joinpath(".projectops", "tasks", "TASK-0001", "task_spec.yaml").exists()
+    assert root.joinpath(".weaveflow", "tasks", "TASK-0001", "task_spec.yaml").exists()
 
 
 def setup_workspace_and_task(tmp_path: Path) -> LocalBridgeWrapper:
@@ -92,7 +92,7 @@ def test_create_task_pending_render(tmp_path: Path) -> None:
         assert "pending_confirmation" in rendered or "confirmation" in rendered
         assert "completed" not in rendered.lower()
         assert not tmp_path.joinpath(
-            ".projectops",
+            ".weaveflow",
             "tasks",
             "TASK-0001",
             "task_spec.yaml",
@@ -111,7 +111,7 @@ def test_yes_confirmation_render(tmp_path: Path) -> None:
 
         assert "Routed" in rendered or "completed" in rendered.lower()
         assert tmp_path.joinpath(
-            ".projectops",
+            ".weaveflow",
             "tasks",
             "TASK-0001",
             "task_spec.yaml",
@@ -284,7 +284,7 @@ def test_renderer_does_not_touch_files(tmp_path: Path) -> None:
 
     render_wrapper_result_as_text(result)
 
-    assert not tmp_path.joinpath(".projectops").exists()
+    assert not tmp_path.joinpath(".weaveflow").exists()
 
 
 def test_demo_script_runs() -> None:

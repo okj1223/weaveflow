@@ -3,10 +3,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from projectops.adapters.local_wrapper import LocalBridgeWrapper
-from projectops.adapters.permission_preflight import preflight_openclaw_payload
-from projectops.adapters.wrapper_rendering import render_wrapper_result_as_text
-from projectops.adapters.wrapper_transcript import (
+from weaveflow.adapters.local_wrapper import LocalBridgeWrapper
+from weaveflow.adapters.permission_preflight import preflight_openclaw_payload
+from weaveflow.adapters.wrapper_rendering import render_wrapper_result_as_text
+from weaveflow.adapters.wrapper_transcript import (
     WrapperTranscript,
     WrapperTranscriptEntry,
     create_wrapper_transcript_entry,
@@ -54,7 +54,7 @@ def create_task(wrapper: LocalBridgeWrapper, root: Path) -> None:
     assert pending.route_reason == "route_to_establish_pending_confirmation"
     confirmed = wrapper.handle_payload(payload("yes", "m-create-yes"))
     assert confirmed.ok is True
-    assert root.joinpath(".projectops", "tasks", "TASK-0001", "task_spec.yaml").exists()
+    assert root.joinpath(".weaveflow", "tasks", "TASK-0001", "task_spec.yaml").exists()
 
 
 def setup_workspace_and_task(tmp_path: Path) -> LocalBridgeWrapper:
@@ -241,7 +241,7 @@ def test_run_payloads_with_transcript_basic_flow(tmp_path: Path) -> None:
         assert len(transcript.entries) == 7
         assert any(bridge_event_type(entry) == "pending_confirmation" for entry in transcript.entries)
         assert any(bridge_event_type(entry) == "turn_completed" for entry in transcript.entries)
-        assert tmp_path.joinpath(".projectops", "tasks", "TASK-0001", "task_spec.yaml").exists()
+        assert tmp_path.joinpath(".weaveflow", "tasks", "TASK-0001", "task_spec.yaml").exists()
     finally:
         wrapper.shutdown()
 
@@ -275,7 +275,7 @@ def test_transcript_helper_does_not_auto_confirm(tmp_path: Path) -> None:
 
         assert len(transcript.entries) == 3
         assert bridge_event_type(transcript.entries[-1]) == "pending_confirmation"
-        assert not tmp_path.joinpath(".projectops", "tasks", "TASK-0001").exists()
+        assert not tmp_path.joinpath(".weaveflow", "tasks", "TASK-0001").exists()
     finally:
         wrapper.shutdown()
 

@@ -2,9 +2,9 @@
 
 ## Purpose
 
-This document demonstrates how to use the internal ProjectOps adapter boundary
+This document demonstrates how to use the internal Weaveflow adapter boundary
 locally. It shows how an external-style command can become an `AdapterRequest`,
-flow through `ProjectOpsServiceAdapter`, and return an `AdapterResponse`.
+flow through `WeaveflowServiceAdapter`, and return an `AdapterResponse`.
 
 For the recommended full local adapter pipeline, see
 [adapter_pipeline_contract.md](adapter_pipeline_contract.md).
@@ -65,7 +65,7 @@ python3 examples/adapter_usage_demo.py
 ```
 
 The script uses a temporary workspace and does not write into the repository's
-real `.projectops/` directory.
+real `.weaveflow/` directory.
 
 ## Future OpenClaw Usage Shape
 
@@ -74,9 +74,9 @@ A future OpenClaw adapter should:
 - Receive a user message.
 - Map it to an `AdapterRequest`.
 - Decide whether mutation is allowed.
-- Call `ProjectOpsServiceAdapter.handle`.
+- Call `WeaveflowServiceAdapter.handle`.
 - Render `AdapterResponse` back to the user.
-- Never mutate `.projectops/` files directly.
+- Never mutate `.weaveflow/` files directly.
 - Never parse human-readable CLI output.
 
 ## Example Mapping
@@ -94,5 +94,5 @@ A future OpenClaw adapter should:
 - `MutationNotAllowed` responses are expected safety behavior.
 - `request_id` can be used by future adapters for tracing.
 - `AdapterResponse` is JSON-safe and versioned with
-  `contract_version: projectops.v1`.
+  `contract_version: weaveflow.v1`.
 - External adapters should check `contract_version`.

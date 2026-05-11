@@ -1,11 +1,11 @@
-"""Local ProjectOps adapter usage demo.
+"""Local Weaveflow adapter usage demo.
 
 Run with:
 
     python3 examples/adapter_usage_demo.py
 
 The demo uses a temporary workspace and does not modify the repository's real
-.projectops directory.
+.weaveflow directory.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from projectops.adapters import AdapterRequest, AdapterResponse, ProjectOpsServiceAdapter  # noqa: E402
+from weaveflow.adapters import AdapterRequest, AdapterResponse, WeaveflowServiceAdapter  # noqa: E402
 
 
 def render(label: str, response: AdapterResponse) -> str:
@@ -44,7 +44,7 @@ def render(label: str, response: AdapterResponse) -> str:
 def main() -> None:
     with TemporaryDirectory() as temp_dir:
         root = Path(temp_dir)
-        adapter = ProjectOpsServiceAdapter(root)
+        adapter = WeaveflowServiceAdapter(root)
 
         response = adapter.handle(AdapterRequest(action="status"))
         print(render("status before init", response))

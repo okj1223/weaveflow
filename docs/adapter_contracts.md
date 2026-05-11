@@ -3,7 +3,7 @@
 ## Purpose
 
 These schemas define stable machine-readable output contracts for future
-ProjectOps adapters. Adapters such as OpenClaw, Slack, Telegram, desktop UI,
+Weaveflow adapters. Adapters such as OpenClaw, Slack, Telegram, desktop UI,
 web UI, or automation scripts should consume structured outputs instead of
 parsing human-readable CLI text.
 
@@ -15,26 +15,26 @@ All current JSON outputs include:
 
 ```json
 {
-  "contract_version": "projectops.v1"
+  "contract_version": "weaveflow.v1"
 }
 ```
 
 Adapters should check `contract_version` before consuming a payload.
-`projectops.v1` is the current adapter contract version and covers:
+`weaveflow.v1` is the current adapter contract version and covers:
 
-- `ops status --json`
-- `ops task list --json`
-- `ops doctor --json`
-- `AdapterResponse` from `projectops.adapters`
+- `weaveflow status --json`
+- `weaveflow task list --json`
+- `weaveflow doctor --json`
+- `AdapterResponse` from `weaveflow.adapters`
 
 See [contract_changelog.md](contract_changelog.md) for version history and
 compatibility rules.
 
 ## Supported JSON Commands
 
-- `ops status --json`
-- `ops task list --json`
-- `ops doctor --json`
+- `weaveflow status --json`
+- `weaveflow task list --json`
+- `weaveflow doctor --json`
 
 ## Non-Goals
 
@@ -62,15 +62,15 @@ surfaces.
 
 ## Example Outputs
 
-`ops status --json`:
+`weaveflow status --json`:
 
 ```json
 {
-  "contract_version": "projectops.v1",
+  "contract_version": "weaveflow.v1",
   "workspace_exists": true,
-  "workspace_path": "/repo/.projectops",
-  "state_db_path": "/repo/.projectops/state.sqlite",
-  "memory_path": "/repo/.projectops/memory",
+  "workspace_path": "/repo/.weaveflow",
+  "state_db_path": "/repo/.weaveflow/state.sqlite",
+  "memory_path": "/repo/.weaveflow/memory",
   "task_count": 1,
   "tasks": [
     {
@@ -84,11 +84,11 @@ surfaces.
 }
 ```
 
-`ops task list --json`:
+`weaveflow task list --json`:
 
 ```json
 {
-  "contract_version": "projectops.v1",
+  "contract_version": "weaveflow.v1",
   "tasks": [
     {
       "id": "TASK-0001",
@@ -102,11 +102,11 @@ surfaces.
 }
 ```
 
-`ops doctor --json`:
+`weaveflow doctor --json`:
 
 ```json
 {
-  "contract_version": "projectops.v1",
+  "contract_version": "weaveflow.v1",
   "healthy": true,
   "ok_count": 12,
   "warn_count": 0,
@@ -115,8 +115,8 @@ surfaces.
     {
       "level": "ok",
       "name": "workspace_exists",
-      "message": "workspace exists: .projectops",
-      "path": ".projectops"
+      "message": "workspace exists: .weaveflow",
+      "path": ".weaveflow"
     }
   ]
 }
@@ -127,17 +127,17 @@ surfaces.
 - Adapters should consume `--json` output instead of parsing human-readable text.
 - Adapters should check `contract_version` before consuming the payload.
 - Default CLI output remains optimized for humans.
-- `ops doctor --json` exits with code `1` when errors are found, but it still
+- `weaveflow doctor --json` exits with code `1` when errors are found, but it still
   prints a valid JSON report to stdout.
-- `ops status --json` works before `ops init` and reports
+- `weaveflow status --json` works before `weaveflow init` and reports
   `"workspace_exists": false`.
-- `ops task list --json` requires the workspace to exist. If the workspace is
+- `weaveflow task list --json` requires the workspace to exist. If the workspace is
   missing, it exits non-zero with the existing clean user-facing error.
 
 ## Stability Policy
 
 - Adding optional fields is allowed.
-- Adding optional fields within `projectops.v1` is allowed.
+- Adding optional fields within `weaveflow.v1` is allowed.
 - Removing required fields is a breaking change.
 - Changing field types is a breaking change.
 - Renaming fields is a breaking change.

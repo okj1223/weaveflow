@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from projectops.adapters.local_wrapper import LocalBridgeWrapper
-from projectops.adapters.wrapper_notifications import (
+from weaveflow.adapters.local_wrapper import LocalBridgeWrapper
+from weaveflow.adapters.wrapper_notifications import (
     SESSION_LOSS_NOTIFICATION_TYPE,
     WrapperNotification,
     create_session_loss_notification,
@@ -14,7 +14,7 @@ from projectops.adapters.wrapper_notifications import (
     wrapper_notification_to_payload,
     wrapper_notification_to_text,
 )
-from projectops.json_io import CONTRACT_VERSION
+from weaveflow.json_io import CONTRACT_VERSION
 
 
 ROOT = Path(__file__).resolve().parents[1]

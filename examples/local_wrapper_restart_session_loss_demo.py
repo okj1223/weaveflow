@@ -11,7 +11,7 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from projectops.adapters.local_wrapper import (  # noqa: E402
+from weaveflow.adapters.local_wrapper import (  # noqa: E402
     LocalBridgeWrapper,
     WrapperRouteResult,
 )
@@ -57,7 +57,7 @@ def main() -> None:
         wrapper = start(root)
         confirm_safe(wrapper, "init workspace", "m-init")
         confirm_safe(wrapper, "create task Durable restart task", "m-create-durable")
-        durable_task = root / ".projectops" / "tasks" / "TASK-0001" / "task_spec.yaml"
+        durable_task = root / ".weaveflow" / "tasks" / "TASK-0001" / "task_spec.yaml"
         print(f"durable task before restart: exists={durable_task.exists()}")
         wrapper.shutdown()
 
@@ -74,7 +74,7 @@ def main() -> None:
         wrapper = start(root)
         yes_after_restart = wrapper.handle_payload(payload("yes", "m-yes-after-restart"))
         print_result("yes after restart", yes_after_restart)
-        lost_task = root / ".projectops" / "tasks" / "TASK-0002" / "task_spec.yaml"
+        lost_task = root / ".weaveflow" / "tasks" / "TASK-0002" / "task_spec.yaml"
         print(f"lost pending task after restart: exists={lost_task.exists()}")
 
         pending_explicit = wrapper.handle_payload(
@@ -91,7 +91,7 @@ def main() -> None:
             bridge_request_id="b-verify",
         )
         print_result("exact phrase after restart", exact_after_restart)
-        verification = root / ".projectops" / "tasks" / "TASK-0001" / "verification_record.yaml"
+        verification = root / ".weaveflow" / "tasks" / "TASK-0001" / "verification_record.yaml"
         print(f"verification after restart: exists={verification.exists()}")
         print_result("doctor", wrapper.handle_payload(payload("doctor", "m-doctor")))
         print(wrapper.session_loss_message())

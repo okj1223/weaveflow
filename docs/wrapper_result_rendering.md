@@ -109,7 +109,7 @@ Rendered text is presentation-only and is not the source of truth.
 
 ## Source Of Truth
 
-`.projectops` files and SQLite remain the task source of truth.
+`.weaveflow` files and SQLite remain the task source of truth.
 
 `WrapperRouteResult` is a routing result. `WrapperNotification` is a
 user-facing warning or notice. Rendered text is a communication artifact only.

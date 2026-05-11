@@ -3,7 +3,7 @@
 ## Purpose
 
 This document defines the recommended process supervision policy for future
-wrappers around the ProjectOps stdio bridge.
+wrappers around the Weaveflow stdio bridge.
 
 This is not real OpenClaw integration. This is not a server API. This is not a
 network protocol. This does not implement a production process supervisor. This
@@ -38,11 +38,11 @@ restart/session loss, see
 ## Process Ownership
 
 A future external process wrapper owns the bridge process. The wrapper writes
-requests to stdin and reads responses from stdout. The ProjectOps stdio bridge
+requests to stdin and reads responses from stdout. The Weaveflow stdio bridge
 owns one in-memory `OpenClawAdapter` instance per running process.
 
 Keeping the process alive preserves in-memory pending confirmations. Killing or
-restarting the process loses pending confirmations. `.projectops` files and
+restarting the process loses pending confirmations. `.weaveflow` files and
 SQLite remain the source of truth for durable task state. `AdapterSession` and
 pending confirmations are interaction state only.
 
@@ -53,7 +53,7 @@ pending confirmations are interaction state only.
 The wrapper starts the bridge process with:
 
 ```bash
-python3 -m projectops.adapters.stdio_bridge --root <workspace-root>
+python3 -m weaveflow.adapters.stdio_bridge --root <workspace-root>
 ```
 
 The wrapper verifies bridge health using `ping`. It should not treat process
@@ -65,7 +65,7 @@ a process supervisor.
 When structured diagnostics are useful, the wrapper may opt in with:
 
 ```bash
-python3 -m projectops.adapters.stdio_bridge --root <workspace-root> --diagnostics-stderr
+python3 -m weaveflow.adapters.stdio_bridge --root <workspace-root> --diagnostics-stderr
 ```
 
 Wrappers should parse stdout as the protocol stream and capture stderr
@@ -147,7 +147,7 @@ The wrapper should handle:
 - request timeout
 - shutdown timeout
 - normalization errors
-- ProjectOps workspace errors
+- Weaveflow workspace errors
 - pending confirmation lost after restart
 
 Rules:
@@ -171,7 +171,7 @@ The local wrapper session-loss behavior is tested in
 Future wrappers should notify the user:
 
 ```text
-The ProjectOps bridge restarted. Pending confirmations were cleared. Please repeat the command if needed.
+The Weaveflow bridge restarted. Pending confirmations were cleared. Please repeat the command if needed.
 ```
 
 Future wrappers should prefer a `WrapperNotification` for this user-facing
@@ -217,7 +217,7 @@ Never auto-retry in the current system:
 
 ## Health Check Policy
 
-`ping` checks bridge process responsiveness. `doctor` checks ProjectOps
+`ping` checks bridge process responsiveness. `doctor` checks Weaveflow
 workspace health.
 
 The wrapper should use both:

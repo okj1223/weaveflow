@@ -79,7 +79,7 @@ A future OpenClaw wrapper should:
 - keep the exact confirmation prompt visible when mismatch occurs
 - not treat this as authentication
 
-OpenClaw should remain the channel surface. ProjectOps remains the local task
+OpenClaw should remain the channel surface. Weaveflow remains the local task
 kernel and durable source of truth.
 
 ## Relationship To Replay Protection

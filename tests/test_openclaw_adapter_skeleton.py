@@ -1,17 +1,17 @@
 import json
 from pathlib import Path
 
-from projectops.adapters.openclaw import (
+from weaveflow.adapters.openclaw import (
     OpenClawAdapter,
     OpenClawMessage,
     OpenClawResponse,
     OpenClawSessionStore,
 )
-from projectops.json_io import to_jsonable
+from weaveflow.json_io import to_jsonable
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OPENCLAW_SRC = ROOT / "src" / "projectops" / "adapters" / "openclaw"
+OPENCLAW_SRC = ROOT / "src" / "weaveflow" / "adapters" / "openclaw"
 
 
 def msg(
@@ -56,7 +56,7 @@ def test_status_message_before_init(tmp_path: Path) -> None:
     assert "status" in response.text or "Completed" in response.text
     assert response.event_type == "turn_completed"
     assert response.requires_confirmation is False
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
 
 
 def test_init_workspace_requires_confirmation(tmp_path: Path) -> None:
@@ -65,7 +65,7 @@ def test_init_workspace_requires_confirmation(tmp_path: Path) -> None:
 
     assert response.event_type == "pending_confirmation"
     assert response.requires_confirmation is True
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
 
 
 def test_yes_confirms_pending_init(tmp_path: Path) -> None:
@@ -74,7 +74,7 @@ def test_yes_confirms_pending_init(tmp_path: Path) -> None:
     response = adapter.handle_message(msg("yes", "m-yes"))
 
     assert response.ok is True
-    assert (tmp_path / ".projectops").is_dir()
+    assert (tmp_path / ".weaveflow").is_dir()
     assert response.event_type == "turn_completed"
 
 
@@ -84,7 +84,7 @@ def test_no_rejects_pending_init(tmp_path: Path) -> None:
     response = adapter.handle_message(msg("no", "m-no"))
 
     assert response.event_type == "turn_rejected"
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
 
 
 def test_yes_without_pending_returns_clean_error(tmp_path: Path) -> None:
@@ -104,12 +104,12 @@ def test_confirmation_isolated_by_user(tmp_path: Path) -> None:
 
     assert user_b.ok is False
     assert user_b.error_type == "PendingConfirmationNotFound"
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
 
     user_a = adapter.handle_message(msg("yes", "a-yes", user="user-a"))
 
     assert user_a.ok is True
-    assert (tmp_path / ".projectops").is_dir()
+    assert (tmp_path / ".weaveflow").is_dir()
 
 
 def test_confirmation_isolated_by_thread(tmp_path: Path) -> None:
@@ -120,12 +120,12 @@ def test_confirmation_isolated_by_thread(tmp_path: Path) -> None:
 
     assert thread_b.ok is False
     assert thread_b.error_type == "PendingConfirmationNotFound"
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
 
     thread_a = adapter.handle_message(msg("yes", "a-yes", thread="thread-a"))
 
     assert thread_a.ok is True
-    assert (tmp_path / ".projectops").is_dir()
+    assert (tmp_path / ".weaveflow").is_dir()
 
 
 def test_create_task_flow(tmp_path: Path) -> None:
@@ -141,7 +141,7 @@ def test_create_task_flow(tmp_path: Path) -> None:
     assert response.event_type == "turn_completed"
     assert response.ok is True
     assert (
-        tmp_path / ".projectops" / "tasks" / "TASK-0001" / "task_spec.yaml"
+        tmp_path / ".weaveflow" / "tasks" / "TASK-0001" / "task_spec.yaml"
     ).is_file()
 
 
@@ -157,7 +157,7 @@ def test_plan_and_brief_flow(tmp_path: Path) -> None:
 
     assert plan_pending.event_type == "pending_confirmation"
     assert plan_response.ok is True
-    assert (tmp_path / ".projectops" / "tasks" / "TASK-0001" / "plan.yaml").is_file()
+    assert (tmp_path / ".weaveflow" / "tasks" / "TASK-0001" / "plan.yaml").is_file()
 
     brief_pending = adapter.handle_message(msg("brief TASK-0001", "m-brief"))
     brief_response = adapter.handle_message(msg("yes", "m-brief-yes"))
@@ -166,7 +166,7 @@ def test_plan_and_brief_flow(tmp_path: Path) -> None:
     assert brief_response.ok is True
     assert (
         tmp_path
-        / ".projectops"
+        / ".weaveflow"
         / "tasks"
         / "TASK-0001"
         / "worker_brief_codex.md"

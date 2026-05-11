@@ -1,0 +1,10 @@
+{
+  "id": "weaveflow-stdio-poc",
+  "name": "Weaveflow Stdio POC",
+  "description": "Runs a minimal Weaveflow stdio bridge proof-of-concept sequence.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

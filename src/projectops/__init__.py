@@ -1,5 +1,9 @@
-"""ProjectOps Kernel package."""
+"""Compatibility shim for the pre-rename ``projectops`` package."""
 
-__all__ = ["__version__"]
+from __future__ import annotations
 
-__version__ = "0.1.0"
+import weaveflow as _weaveflow
+from weaveflow import *  # noqa: F401,F403
+
+__path__ = _weaveflow.__path__
+__version__ = _weaveflow.__version__

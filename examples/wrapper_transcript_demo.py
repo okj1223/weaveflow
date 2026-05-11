@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from projectops.adapters.local_wrapper import LocalBridgeWrapper
-from projectops.adapters.wrapper_transcript import (
+from weaveflow.adapters.local_wrapper import LocalBridgeWrapper
+from weaveflow.adapters.wrapper_transcript import (
     run_payloads_with_transcript,
     transcript_to_json,
     transcript_to_markdown,

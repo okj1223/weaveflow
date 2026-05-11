@@ -3,7 +3,7 @@
 ## Purpose
 
 This document defines lightweight bridge health checks for future external
-process wrappers around the ProjectOps stdio bridge.
+process wrappers around the Weaveflow stdio bridge.
 
 The helpers are local Python preflight checks. They are meant for future
 wrappers, such as a future OpenClaw Node or Gateway wrapper, before normal
@@ -110,14 +110,14 @@ OpenClaw wrapper startup
 -> if not ok, report clean error and do not process mutating actions
 ```
 
-OpenClaw should still treat ProjectOps as the source of truth for task state.
+OpenClaw should still treat Weaveflow as the source of truth for task state.
 The health helper checks bridge responsiveness only.
 
 ## Example
 
 ```python
 from pathlib import Path
-from projectops.adapters.stdio_health import check_bridge_subprocess_health
+from weaveflow.adapters.stdio_health import check_bridge_subprocess_health
 
 result = check_bridge_subprocess_health(Path("/path/to/workspace"), diagnostics=True)
 if not result.ok:

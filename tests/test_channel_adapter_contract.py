@@ -1,13 +1,13 @@
 import subprocess
 from pathlib import Path
 
-from projectops.adapters import (
+from weaveflow.adapters import (
     AdapterSession,
-    ProjectOpsServiceAdapter,
+    WeaveflowServiceAdapter,
     event_from_turn_result,
     render_event_for_channel,
 )
-from projectops.adapters.openclaw import OpenClawAdapter
+from weaveflow.adapters.openclaw import OpenClawAdapter
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,7 +27,7 @@ def raw_payload(text: str, message_id: str) -> dict[str, str]:
 
 
 def real_task_count() -> int:
-    tasks_dir = ROOT / ".projectops" / "tasks"
+    tasks_dir = ROOT / ".weaveflow" / "tasks"
     if not tasks_dir.is_dir():
         return 0
     return len([path for path in tasks_dir.iterdir() if path.name.startswith("TASK-")])
@@ -68,7 +68,7 @@ def test_channel_adapter_contract_mentions_required_terms() -> None:
         "OpenClawAdapter",
         "AdapterSession",
         "AdapterSessionStore",
-        "ProjectOpsServiceAdapter",
+        "WeaveflowServiceAdapter",
         "AdapterEvent",
         "render_event_for_channel",
         "OpenClawResponse",
@@ -77,7 +77,7 @@ def test_channel_adapter_contract_mentions_required_terms() -> None:
         "confirmation",
         "session key",
         "source of truth",
-        ".projectops",
+        ".weaveflow",
         "SQLite",
         "no real OpenClaw integration",
         "no server",
@@ -149,17 +149,17 @@ def test_local_raw_payload_flow_works(tmp_path: Path) -> None:
     assert status["event_type"] == "turn_completed"
     assert pending_init["event_type"] == "pending_confirmation"
     assert confirmed_init["ok"] is True
-    assert (tmp_path / ".projectops").is_dir()
+    assert (tmp_path / ".weaveflow").is_dir()
     assert pending_task["event_type"] == "pending_confirmation"
     assert confirmed_task["ok"] is True
     assert (
-        tmp_path / ".projectops" / "tasks" / "TASK-0001" / "task_spec.yaml"
+        tmp_path / ".weaveflow" / "tasks" / "TASK-0001" / "task_spec.yaml"
     ).is_file()
     assert doctor["ok"] is True
 
 
 def test_channel_render_smoke(tmp_path: Path) -> None:
-    session = AdapterSession(ProjectOpsServiceAdapter(tmp_path))
+    session = AdapterSession(WeaveflowServiceAdapter(tmp_path))
     event = event_from_turn_result(
         session.handle_text("status", request_id="render-status")
     )
@@ -173,7 +173,7 @@ def test_channel_render_smoke(tmp_path: Path) -> None:
 
 
 def test_no_real_openclaw_import_dependency() -> None:
-    files = list((ROOT / "src" / "projectops" / "adapters" / "openclaw").glob("*.py"))
+    files = list((ROOT / "src" / "weaveflow" / "adapters" / "openclaw").glob("*.py"))
     files.append(DEMO_PATH)
 
     for path in files:

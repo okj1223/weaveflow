@@ -2,18 +2,18 @@ from pathlib import Path
 
 import pytest
 
-from projectops import service
-from projectops.errors import (
+from weaveflow import service
+from weaveflow.errors import (
     InvalidVerificationStatusError,
     MissingPlanError,
     MissingResultFileError,
-    ProjectOpsError,
+    WeaveflowError,
     TaskNotFoundError,
     UnsupportedWorkerError,
     WorkspaceNotFoundError,
 )
-from projectops.models import TaskStatus
-from projectops.yaml_io import read_yaml
+from weaveflow.models import TaskStatus
+from weaveflow.yaml_io import read_yaml
 
 
 def test_service_end_to_end_workflow(tmp_path: Path) -> None:
@@ -23,8 +23,8 @@ def test_service_end_to_end_workflow(tmp_path: Path) -> None:
     status = service.get_status(tmp_path)
     assert status["workspace_exists"] is True
     assert status["task_count"] == 0
-    assert status["state_path"] == tmp_path / ".projectops" / "state.sqlite"
-    assert status["workspace_path"] == tmp_path / ".projectops"
+    assert status["state_path"] == tmp_path / ".weaveflow" / "state.sqlite"
+    assert status["workspace_path"] == tmp_path / ".weaveflow"
     assert status["tasks"] == []
 
     spec = service.create_task(tmp_path, "Test service boundary")
@@ -41,7 +41,7 @@ def test_service_end_to_end_workflow(tmp_path: Path) -> None:
     brief_path = service.create_worker_brief(tmp_path, "TASK-0001")
     expected_brief_path = (
         tmp_path
-        / ".projectops"
+        / ".weaveflow"
         / "tasks"
         / "TASK-0001"
         / "worker_brief_codex.md"
@@ -73,7 +73,7 @@ def test_service_end_to_end_workflow(tmp_path: Path) -> None:
     assert tasks[0].id == "TASK-0001"
     assert tasks[0].title == "Test service boundary"
     assert tasks[0].status == "completed"
-    expected_task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
+    expected_task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
 
     doctor = service.doctor_workspace(tmp_path)
     assert doctor.healthy is True
@@ -96,8 +96,8 @@ def test_service_functions_use_explicit_root_not_current_directory(
     spec = service.create_task(explicit_root, "Use explicit root")
 
     assert spec.id == "TASK-0001"
-    assert (explicit_root / ".projectops" / "tasks" / "TASK-0001").is_dir()
-    assert not (current_directory / ".projectops").exists()
+    assert (explicit_root / ".weaveflow" / "tasks" / "TASK-0001").is_dir()
+    assert not (current_directory / ".weaveflow").exists()
 
 
 def test_service_requires_workspace_for_task_creation(tmp_path: Path) -> None:
@@ -149,7 +149,7 @@ def test_service_invalid_verification_status_error(tmp_path: Path) -> None:
 def test_service_missing_result_file_preserves_task_status(tmp_path: Path) -> None:
     service.init_workspace(tmp_path)
     service.create_task(tmp_path, "Missing result")
-    task_spec_path = tmp_path / ".projectops" / "tasks" / "TASK-0001" / "task_spec.yaml"
+    task_spec_path = tmp_path / ".weaveflow" / "tasks" / "TASK-0001" / "task_spec.yaml"
 
     with pytest.raises(MissingResultFileError):
         service.attach_result(tmp_path, "TASK-0001", Path("missing.md"))
@@ -157,8 +157,8 @@ def test_service_missing_result_file_preserves_task_status(tmp_path: Path) -> No
     assert read_yaml(task_spec_path)["status"] == "draft"
 
 
-def test_service_errors_share_projectops_base_class(tmp_path: Path) -> None:
-    with pytest.raises(ProjectOpsError):
+def test_service_errors_share_weaveflow_base_class(tmp_path: Path) -> None:
+    with pytest.raises(WeaveflowError):
         service.create_task(tmp_path, "Missing workspace")
 
 
@@ -166,7 +166,7 @@ def test_doctor_service_is_read_only_for_broken_workspace(tmp_path: Path) -> Non
     service.init_workspace(tmp_path)
     service.create_task(tmp_path, "Doctor read-only")
     service.create_plan(tmp_path, "TASK-0001")
-    plan_path = tmp_path / ".projectops" / "tasks" / "TASK-0001" / "plan.yaml"
+    plan_path = tmp_path / ".weaveflow" / "tasks" / "TASK-0001" / "plan.yaml"
     plan_path.unlink()
 
     report = service.doctor_workspace(tmp_path)

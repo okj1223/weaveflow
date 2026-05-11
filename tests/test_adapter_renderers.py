@@ -3,11 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from projectops.adapters import (
+from weaveflow.adapters import (
     AdapterEvent,
     AdapterSession,
     AdapterTranscript,
-    ProjectOpsServiceAdapter,
+    WeaveflowServiceAdapter,
     event_from_turn_result,
     render_event_as_text,
     render_event_summary,
@@ -20,7 +20,7 @@ DEMO_PATH = ROOT / "examples" / "adapter_renderer_demo.py"
 
 
 def make_session(root: Path) -> AdapterSession:
-    return AdapterSession(ProjectOpsServiceAdapter(root))
+    return AdapterSession(WeaveflowServiceAdapter(root))
 
 
 def test_adapter_renderer_imports() -> None:
@@ -143,11 +143,11 @@ def test_renderer_does_not_touch_files(tmp_path: Path) -> None:
     session = make_session(tmp_path)
     event = event_from_turn_result(session.handle_text("status"))
 
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
     render_event_as_text(event)
     render_transcript_as_text(AdapterTranscript(session_id="session-1", events=[event]))
 
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
 
 
 def test_renderer_handles_missing_optional_data() -> None:

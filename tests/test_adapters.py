@@ -1,13 +1,13 @@
 import json
 from pathlib import Path
 
-from projectops.adapters import (
+from weaveflow.adapters import (
     AdapterRequest,
     AdapterResponse,
-    ProjectOpsServiceAdapter,
+    WeaveflowServiceAdapter,
 )
-from projectops.json_io import CONTRACT_VERSION
-from projectops.yaml_io import read_yaml
+from weaveflow.json_io import CONTRACT_VERSION
+from weaveflow.yaml_io import read_yaml
 
 
 def assert_json_serializable(response: AdapterResponse) -> None:
@@ -25,11 +25,11 @@ def test_adapter_imports() -> None:
         error_message=None,
         read_only=True,
     ).ok
-    assert ProjectOpsServiceAdapter(Path("."))
+    assert WeaveflowServiceAdapter(Path("."))
 
 
 def test_status_before_init_is_read_only_success(tmp_path: Path) -> None:
-    adapter = ProjectOpsServiceAdapter(tmp_path)
+    adapter = WeaveflowServiceAdapter(tmp_path)
 
     response = adapter.handle(AdapterRequest(action="status"))
 
@@ -44,7 +44,7 @@ def test_status_before_init_is_read_only_success(tmp_path: Path) -> None:
 def test_doctor_before_init_is_read_only_and_does_not_create_workspace(
     tmp_path: Path,
 ) -> None:
-    adapter = ProjectOpsServiceAdapter(tmp_path)
+    adapter = WeaveflowServiceAdapter(tmp_path)
 
     response = adapter.handle(AdapterRequest(action="doctor"))
 
@@ -52,12 +52,12 @@ def test_doctor_before_init_is_read_only_and_does_not_create_workspace(
     assert response.data is not None
     assert response.data["healthy"] is False
     assert response.data["error_count"] >= 1
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
     assert_json_serializable(response)
 
 
-def test_list_tasks_before_init_returns_clean_projectops_error(tmp_path: Path) -> None:
-    adapter = ProjectOpsServiceAdapter(tmp_path)
+def test_list_tasks_before_init_returns_clean_weaveflow_error(tmp_path: Path) -> None:
+    adapter = WeaveflowServiceAdapter(tmp_path)
 
     response = adapter.handle(AdapterRequest(action="list_tasks"))
 
@@ -65,23 +65,23 @@ def test_list_tasks_before_init_returns_clean_projectops_error(tmp_path: Path) -
     assert response.error_type == "WorkspaceNotFoundError"
     assert response.error_message is not None
     assert "Traceback" not in response.error_message
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
     assert_json_serializable(response)
 
 
 def test_mutating_action_without_allow_mutation_is_denied(tmp_path: Path) -> None:
-    adapter = ProjectOpsServiceAdapter(tmp_path)
+    adapter = WeaveflowServiceAdapter(tmp_path)
 
     response = adapter.handle(AdapterRequest(action="init_workspace"))
 
     assert response.ok is False
     assert response.error_type == "MutationNotAllowed"
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
     assert_json_serializable(response)
 
 
 def test_init_workspace_with_mutation_allowed(tmp_path: Path) -> None:
-    adapter = ProjectOpsServiceAdapter(tmp_path)
+    adapter = WeaveflowServiceAdapter(tmp_path)
 
     response = adapter.handle(
         AdapterRequest(action="init_workspace", allow_mutation=True)
@@ -89,13 +89,13 @@ def test_init_workspace_with_mutation_allowed(tmp_path: Path) -> None:
 
     assert response.ok is True
     assert response.data is not None
-    assert response.data["name"] == "ProjectOps Kernel"
-    assert (tmp_path / ".projectops").is_dir()
+    assert response.data["name"] == "Weaveflow"
+    assert (tmp_path / ".weaveflow").is_dir()
     assert_json_serializable(response)
 
 
 def test_create_task_with_mutation_allowed(tmp_path: Path) -> None:
-    adapter = ProjectOpsServiceAdapter(tmp_path)
+    adapter = WeaveflowServiceAdapter(tmp_path)
     adapter.handle(AdapterRequest(action="init_workspace", allow_mutation=True))
 
     response = adapter.handle(
@@ -110,13 +110,13 @@ def test_create_task_with_mutation_allowed(tmp_path: Path) -> None:
     assert response.data is not None
     assert response.data["id"] == "TASK-0001"
     assert (
-        tmp_path / ".projectops" / "tasks" / "TASK-0001" / "task_spec.yaml"
+        tmp_path / ".weaveflow" / "tasks" / "TASK-0001" / "task_spec.yaml"
     ).is_file()
     assert_json_serializable(response)
 
 
 def test_create_plan_and_worker_brief(tmp_path: Path) -> None:
-    adapter = ProjectOpsServiceAdapter(tmp_path)
+    adapter = WeaveflowServiceAdapter(tmp_path)
     adapter.handle(AdapterRequest(action="init_workspace", allow_mutation=True))
     adapter.handle(
         AdapterRequest(
@@ -141,7 +141,7 @@ def test_create_plan_and_worker_brief(tmp_path: Path) -> None:
         )
     )
 
-    task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
+    task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
     assert plan_response.ok is True
     assert brief_response.ok is True
     assert (task_dir / "plan.yaml").is_file()
@@ -151,7 +151,7 @@ def test_create_plan_and_worker_brief(tmp_path: Path) -> None:
 
 
 def test_show_task_is_read_only(tmp_path: Path) -> None:
-    adapter = ProjectOpsServiceAdapter(tmp_path)
+    adapter = WeaveflowServiceAdapter(tmp_path)
     adapter.handle(AdapterRequest(action="init_workspace", allow_mutation=True))
     adapter.handle(
         AdapterRequest(
@@ -176,7 +176,7 @@ def test_show_task_is_read_only(tmp_path: Path) -> None:
 def test_attach_result_missing_file_returns_error_without_status_change(
     tmp_path: Path,
 ) -> None:
-    adapter = ProjectOpsServiceAdapter(tmp_path)
+    adapter = WeaveflowServiceAdapter(tmp_path)
     adapter.handle(AdapterRequest(action="init_workspace", allow_mutation=True))
     adapter.handle(
         AdapterRequest(
@@ -185,7 +185,7 @@ def test_attach_result_missing_file_returns_error_without_status_change(
             allow_mutation=True,
         )
     )
-    task_spec_path = tmp_path / ".projectops" / "tasks" / "TASK-0001" / "task_spec.yaml"
+    task_spec_path = tmp_path / ".weaveflow" / "tasks" / "TASK-0001" / "task_spec.yaml"
 
     response = adapter.handle(
         AdapterRequest(
@@ -202,7 +202,7 @@ def test_attach_result_missing_file_returns_error_without_status_change(
 
 
 def test_verify_invalid_status_returns_error(tmp_path: Path) -> None:
-    adapter = ProjectOpsServiceAdapter(tmp_path)
+    adapter = WeaveflowServiceAdapter(tmp_path)
     adapter.handle(AdapterRequest(action="init_workspace", allow_mutation=True))
     adapter.handle(
         AdapterRequest(
@@ -226,7 +226,7 @@ def test_verify_invalid_status_returns_error(tmp_path: Path) -> None:
 
 
 def test_full_adapter_workflow(tmp_path: Path) -> None:
-    adapter = ProjectOpsServiceAdapter(tmp_path)
+    adapter = WeaveflowServiceAdapter(tmp_path)
 
     responses = [
         adapter.handle(AdapterRequest(action="init_workspace", allow_mutation=True)),
@@ -306,7 +306,7 @@ def test_full_adapter_workflow(tmp_path: Path) -> None:
 
 
 def test_unsupported_action_returns_error(tmp_path: Path) -> None:
-    adapter = ProjectOpsServiceAdapter(tmp_path)
+    adapter = WeaveflowServiceAdapter(tmp_path)
 
     response = adapter.handle(AdapterRequest(action="does_not_exist"))
 
@@ -317,7 +317,7 @@ def test_unsupported_action_returns_error(tmp_path: Path) -> None:
 
 
 def test_missing_required_param_returns_error(tmp_path: Path) -> None:
-    adapter = ProjectOpsServiceAdapter(tmp_path)
+    adapter = WeaveflowServiceAdapter(tmp_path)
     adapter.handle(AdapterRequest(action="init_workspace", allow_mutation=True))
 
     response = adapter.handle(

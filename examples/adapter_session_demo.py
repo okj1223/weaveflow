@@ -1,11 +1,11 @@
-"""Local ProjectOps adapter session lifecycle demo.
+"""Local Weaveflow adapter session lifecycle demo.
 
 Run with:
 
     python3 examples/adapter_session_demo.py
 
 The demo uses a temporary workspace and does not modify the repository's real
-.projectops directory.
+.weaveflow directory.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from projectops.adapters import AdapterSession, ProjectOpsServiceAdapter  # noqa: E402
+from weaveflow.adapters import AdapterSession, WeaveflowServiceAdapter  # noqa: E402
 
 
 def render(label: str, result) -> str:
@@ -41,7 +41,7 @@ def render(label: str, result) -> str:
 def main() -> None:
     with TemporaryDirectory() as temp_dir:
         root = Path(temp_dir)
-        session = AdapterSession(ProjectOpsServiceAdapter(root))
+        session = AdapterSession(WeaveflowServiceAdapter(root))
 
         status = session.handle_text("status", request_id="demo-status")
         workspace_exists = (
@@ -56,7 +56,7 @@ def main() -> None:
 
         rejected_init = session.reject("demo-reject")
         print(render("reject init workspace", rejected_init))
-        print(f"workspace_exists_after_reject={(root / '.projectops').exists()}")
+        print(f"workspace_exists_after_reject={(root / '.weaveflow').exists()}")
 
         session.handle_text("init workspace", request_id="demo-init")
         confirmed_init = session.confirm("demo-init")

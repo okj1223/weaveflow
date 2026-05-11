@@ -25,7 +25,7 @@ OpenClaw-like payloads, and structured adapter requests, see
 
 ## Action Categories
 
-- `read_only`: actions that inspect ProjectOps state without changing it.
+- `read_only`: actions that inspect Weaveflow state without changing it.
 - `safe_mutation`: supported mutating actions that require confirmation.
 - `sensitive_mutation`: supported mutating actions that require explicit
   confirmation.

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines the stable JSON shape returned by the internal ProjectOps
+This document defines the stable JSON shape returned by the internal Weaveflow
 adapter boundary. Future adapters such as OpenClaw, Slack, Telegram, desktop UI,
 web UI, or automation scripts can consume `AdapterResponse` objects without
 inventing their own response format.
@@ -16,7 +16,7 @@ internal adapter response contract.
 All adapter responses use:
 
 ```text
-projectops.v1
+weaveflow.v1
 ```
 
 Adapters should reject unknown contract versions unless explicitly configured
@@ -33,13 +33,13 @@ schemas/adapter_response.schema.json
 The schema uses JSON Schema Draft 2020-12.
 
 See [adapter_usage_examples.md](adapter_usage_examples.md) for a local demo that
-uses `ProjectOpsServiceAdapter` and returns `AdapterResponse` objects.
+uses `WeaveflowServiceAdapter` and returns `AdapterResponse` objects.
 
 ## Field Definitions
 
 Required top-level fields:
 
-- `contract_version`: string, currently `projectops.v1`.
+- `contract_version`: string, currently `weaveflow.v1`.
 - `ok`: boolean indicating whether the adapter action succeeded.
 - `action`: string action name from the original request.
 - `message`: non-empty human-readable summary.
@@ -68,7 +68,7 @@ When `ok` is `false`:
 - `data` is null unless a future action has a deliberate documented reason to
   include structured error data.
 
-Normal ProjectOps workflow errors are returned as clean adapter responses. Raw
+Normal Weaveflow workflow errors are returned as clean adapter responses. Raw
 Python stack traces should not be exposed to external users.
 
 ## read_only Semantics
@@ -123,7 +123,7 @@ cannot be serialized as JSON.
 
 ```json
 {
-  "contract_version": "projectops.v1",
+  "contract_version": "weaveflow.v1",
   "ok": true,
   "action": "status",
   "message": "Adapter action succeeded: status",
@@ -143,7 +143,7 @@ cannot be serialized as JSON.
 
 ```json
 {
-  "contract_version": "projectops.v1",
+  "contract_version": "weaveflow.v1",
   "ok": false,
   "action": "init_workspace",
   "message": "Mutation not allowed for adapter action: init_workspace. Set allow_mutation=True to run this action.",
@@ -157,9 +157,9 @@ cannot be serialized as JSON.
 
 ## Future OpenClaw Usage Notes
 
-A future OpenClaw adapter should call `ProjectOpsServiceAdapter` or
-`projectops.service` and render `AdapterResponse` to the OpenClaw user. It
-should not mutate `.projectops/` files, SQLite, task statuses, or artifacts
+A future OpenClaw adapter should call `WeaveflowServiceAdapter` or
+`weaveflow.service` and render `AdapterResponse` to the OpenClaw user. It
+should not mutate `.weaveflow/` files, SQLite, task statuses, or artifacts
 directly.
 
 ## Non-Goals

@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from projectops.json_io import CONTRACT_VERSION
+from weaveflow.json_io import CONTRACT_VERSION
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,7 +15,7 @@ def bridge_command(root: Path, diagnostics: bool = False) -> list[str]:
     command = [
         sys.executable,
         "-m",
-        "projectops.adapters.stdio_bridge",
+        "weaveflow.adapters.stdio_bridge",
         "--root",
         str(root),
     ]
@@ -77,7 +77,7 @@ def test_module_entrypoint_help_lists_diagnostics_flag() -> None:
         [
             sys.executable,
             "-m",
-            "projectops.adapters.stdio_bridge",
+            "weaveflow.adapters.stdio_bridge",
             "--help",
         ],
         cwd=ROOT,
@@ -224,9 +224,9 @@ def test_session_state_preserved_across_subprocess_request_lines(
     assert stdout_json[2]["response"]["event_type"] == "pending_confirmation"
     assert stdout_json[3]["response"]["event_type"] == "turn_completed"
     assert stdout_json[4]["response"]["ok"] is True
-    assert (tmp_path / ".projectops").exists()
+    assert (tmp_path / ".weaveflow").exists()
     assert (
-        tmp_path / ".projectops" / "tasks" / "TASK-0001" / "task_spec.yaml"
+        tmp_path / ".weaveflow" / "tasks" / "TASK-0001" / "task_spec.yaml"
     ).is_file()
 
 
@@ -274,7 +274,7 @@ def test_stdio_bridge_diagnostics_capture_docs() -> None:
 
 def test_no_real_openclaw_import_dependency() -> None:
     for path in [
-        ROOT / "src" / "projectops" / "adapters" / "stdio_bridge.py",
+        ROOT / "src" / "weaveflow" / "adapters" / "stdio_bridge.py",
         DEMO_PATH,
     ]:
         for line in path.read_text(encoding="utf-8").splitlines():

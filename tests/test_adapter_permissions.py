@@ -3,14 +3,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-from projectops.adapters import (
+from weaveflow.adapters import (
     AdapterActionPolicy,
     PermissionDecision,
     evaluate_action_permission,
     get_action_policy,
 )
-from projectops.adapters.openclaw import OpenClawAdapter, OpenClawMessage
-from projectops.json_io import to_jsonable
+from weaveflow.adapters.openclaw import OpenClawAdapter, OpenClawMessage
+from weaveflow.json_io import to_jsonable
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -244,5 +244,5 @@ def test_current_openclaw_runtime_behavior_remains_unchanged(tmp_path: Path) -> 
     assert task_pending.event_type == "pending_confirmation"
     assert task_confirmed.ok is True
     assert (
-        tmp_path / ".projectops" / "tasks" / "TASK-0001" / "task_spec.yaml"
+        tmp_path / ".weaveflow" / "tasks" / "TASK-0001" / "task_spec.yaml"
     ).is_file()

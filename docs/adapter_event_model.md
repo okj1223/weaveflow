@@ -4,7 +4,7 @@
 
 `AdapterEvent` and `AdapterTranscript` provide a stable local event model for
 future external UIs. They let OpenClaw, Slack, Telegram, desktop UI, web UI, or
-automation scripts render ProjectOps adapter session turns without interpreting
+automation scripts render Weaveflow adapter session turns without interpreting
 internal Python objects directly.
 
 For how events fit into the full adapter pipeline, see
@@ -50,10 +50,10 @@ Event levels are `info`, `warning`, or `error`.
 ## Safety
 
 - Events are read-only representations.
-- Events do not mutate the ProjectOps workspace.
+- Events do not mutate the Weaveflow workspace.
 - Events are not persisted by this helper.
 - Events should not be treated as the source of truth.
-- ProjectOps files and SQLite remain the source of truth for task state.
+- Weaveflow files and SQLite remain the source of truth for task state.
 
 ## Future OpenClaw Usage
 
@@ -67,21 +67,21 @@ OpenClaw message
 -> render AdapterEvent to user
 ```
 
-OpenClaw should render the event and keep ProjectOps state changes routed
-through `ProjectOpsServiceAdapter`.
+OpenClaw should render the event and keep Weaveflow state changes routed
+through `WeaveflowServiceAdapter`.
 
 ## Example
 
 ```python
 from pathlib import Path
 
-from projectops.adapters import (
+from weaveflow.adapters import (
     AdapterSession,
-    ProjectOpsServiceAdapter,
+    WeaveflowServiceAdapter,
     event_from_turn_result,
 )
 
-session = AdapterSession(ProjectOpsServiceAdapter(Path(".")))
+session = AdapterSession(WeaveflowServiceAdapter(Path(".")))
 turn = session.handle_text("status")
 event = event_from_turn_result(turn)
 
@@ -91,7 +91,7 @@ print(event.event_type, event.level, event.message)
 To render that event for a chat-like surface:
 
 ```python
-from projectops.adapters import render_event_as_text
+from weaveflow.adapters import render_event_as_text
 
 print(render_event_as_text(event, style="chat"))
 ```
@@ -105,4 +105,4 @@ python3 examples/adapter_event_demo.py
 ```
 
 The demo uses `TemporaryDirectory` and does not modify the repository's real
-ProjectOps workspace.
+Weaveflow workspace.

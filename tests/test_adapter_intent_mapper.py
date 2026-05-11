@@ -1,8 +1,8 @@
 import subprocess
 from pathlib import Path
 
-from projectops.adapters import IntentMappingResult, ProjectOpsServiceAdapter
-from projectops.adapters.intent_mapper import map_text_to_adapter_request
+from weaveflow.adapters import IntentMappingResult, WeaveflowServiceAdapter
+from weaveflow.adapters.intent_mapper import map_text_to_adapter_request
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -176,11 +176,11 @@ def test_mapper_does_not_touch_files(tmp_path: Path) -> None:
     result = map_text_to_adapter_request("init workspace", allow_mutation=True)
 
     assert result.ok is True
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
 
 
 def test_mapper_integrates_with_service_adapter(tmp_path: Path) -> None:
-    adapter = ProjectOpsServiceAdapter(tmp_path)
+    adapter = WeaveflowServiceAdapter(tmp_path)
     commands = [
         ("init workspace", True),
         ("create task Mapper integration", True),
@@ -201,7 +201,7 @@ def test_mapper_integrates_with_service_adapter(tmp_path: Path) -> None:
 
 
 def test_requires_confirmation_blocks_if_directly_handled(tmp_path: Path) -> None:
-    adapter = ProjectOpsServiceAdapter(tmp_path)
+    adapter = WeaveflowServiceAdapter(tmp_path)
     init_result = map_text_to_adapter_request("init workspace", allow_mutation=True)
     assert init_result.request is not None
     assert adapter.handle(init_result.request).ok is True
@@ -213,7 +213,7 @@ def test_requires_confirmation_blocks_if_directly_handled(tmp_path: Path) -> Non
 
     assert response.ok is False
     assert response.error_type == "MutationNotAllowed"
-    assert not (tmp_path / ".projectops" / "tasks" / "TASK-0001").exists()
+    assert not (tmp_path / ".weaveflow" / "tasks" / "TASK-0001").exists()
 
 
 def test_intent_mapping_demo_script_runs() -> None:

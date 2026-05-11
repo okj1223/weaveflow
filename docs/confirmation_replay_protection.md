@@ -84,7 +84,7 @@ A future OpenClaw wrapper should:
 - not rely on replay guard for auth
 - add persistent replay protection only as explicit future work
 
-OpenClaw should remain the channel surface. ProjectOps remains the local task
+OpenClaw should remain the channel surface. Weaveflow remains the local task
 kernel and source of truth for durable task state.
 
 ## Safety Notes

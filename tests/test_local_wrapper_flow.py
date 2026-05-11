@@ -2,7 +2,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from projectops.adapters.local_wrapper import LocalBridgeWrapper, WrapperRouteResult
+from weaveflow.adapters.local_wrapper import LocalBridgeWrapper, WrapperRouteResult
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,11 +42,11 @@ def create_task(wrapper: LocalBridgeWrapper, root: Path) -> None:
     create = wrapper.handle_payload(payload("create task Investigate auth bug", "m-create"))
     assert create.routed is True
     assert create.route_reason == "route_to_establish_pending_confirmation"
-    assert not root.joinpath(".projectops", "tasks", "TASK-0001").exists()
+    assert not root.joinpath(".weaveflow", "tasks", "TASK-0001").exists()
     confirmed = wrapper.handle_payload(payload("yes", "m-create-yes"))
     assert confirmed.routed is True
     assert confirmed.ok is True
-    assert root.joinpath(".projectops", "tasks", "TASK-0001", "task_spec.yaml").exists()
+    assert root.joinpath(".weaveflow", "tasks", "TASK-0001", "task_spec.yaml").exists()
 
 
 def test_local_wrapper_imports() -> None:
@@ -87,7 +87,7 @@ def test_safe_mutation_routes_to_establish_pending_confirmation(tmp_path: Path) 
         assert result.route_reason == "route_to_establish_pending_confirmation"
         assert result.bridge_response is not None
         assert result.bridge_response["response"]["event_type"] == "pending_confirmation"
-        assert not tmp_path.joinpath(".projectops", "tasks", "TASK-0001").exists()
+        assert not tmp_path.joinpath(".weaveflow", "tasks", "TASK-0001").exists()
     finally:
         wrapper.shutdown()
 
@@ -102,7 +102,7 @@ def test_yes_confirms_pending_safe_mutation(tmp_path: Path) -> None:
         assert result.routed is True
         assert result.bridge_response is not None
         assert result.bridge_response["response"]["event_type"] == "turn_completed"
-        assert tmp_path.joinpath(".projectops", "tasks", "TASK-0001", "task_spec.yaml").exists()
+        assert tmp_path.joinpath(".weaveflow", "tasks", "TASK-0001", "task_spec.yaml").exists()
     finally:
         wrapper.shutdown()
 
@@ -172,7 +172,7 @@ def test_confirmation_response_routes_directly(tmp_path: Path) -> None:
 
 
 def test_bridge_not_started_blocks() -> None:
-    wrapper = LocalBridgeWrapper(Path("/tmp/projectops-wrapper-not-started"))
+    wrapper = LocalBridgeWrapper(Path("/tmp/weaveflow-wrapper-not-started"))
     result = wrapper.handle_payload(payload("status", "m-status"))
     assert result.routed is False
     assert result.blocked is True
@@ -190,7 +190,7 @@ def test_shutdown_behavior(tmp_path: Path) -> None:
 
 def test_no_real_openclaw_import_dependency() -> None:
     for path in [
-        ROOT / "src" / "projectops" / "adapters" / "local_wrapper.py",
+        ROOT / "src" / "weaveflow" / "adapters" / "local_wrapper.py",
         DEMO_PATH,
     ]:
         source = path.read_text(encoding="utf-8").lower()

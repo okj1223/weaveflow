@@ -3,8 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from projectops.adapters.diagnostics import create_diagnostic_event
-from projectops.adapters.stdio_health import (
+from weaveflow.adapters.diagnostics import create_diagnostic_event
+from weaveflow.adapters.stdio_health import (
     BridgeHealthResult,
     BridgeLineValidationResult,
     check_bridge_subprocess_health,
@@ -12,7 +12,7 @@ from projectops.adapters.stdio_health import (
     validate_stderr_diagnostic_line,
     validate_stdout_response_line,
 )
-from projectops.json_io import CONTRACT_VERSION, to_jsonable
+from weaveflow.json_io import CONTRACT_VERSION, to_jsonable
 
 
 ROOT = Path(__file__).resolve().parents[1]

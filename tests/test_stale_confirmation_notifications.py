@@ -3,8 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from projectops.adapters.local_wrapper import LocalBridgeWrapper
-from projectops.adapters.wrapper_notifications import (
+from weaveflow.adapters.local_wrapper import LocalBridgeWrapper
+from weaveflow.adapters.wrapper_notifications import (
     create_explicit_confirmation_mismatch_notification,
     create_missing_confirmation_notification,
     create_rejected_confirmation_replay_notification,
@@ -51,7 +51,7 @@ def create_task(wrapper: LocalBridgeWrapper, root: Path) -> None:
     assert pending.route_reason == "route_to_establish_pending_confirmation"
     confirmed = wrapper.handle_payload(payload("yes", "m-create-yes"))
     assert confirmed.ok is True
-    assert root.joinpath(".projectops", "tasks", "TASK-0001", "task_spec.yaml").exists()
+    assert root.joinpath(".weaveflow", "tasks", "TASK-0001", "task_spec.yaml").exists()
 
 
 def setup_workspace_and_task(tmp_path: Path) -> LocalBridgeWrapper:
@@ -62,7 +62,7 @@ def setup_workspace_and_task(tmp_path: Path) -> LocalBridgeWrapper:
 
 
 def verification_record(root: Path) -> Path:
-    return root / ".projectops" / "tasks" / "TASK-0001" / "verification_record.yaml"
+    return root / ".weaveflow" / "tasks" / "TASK-0001" / "verification_record.yaml"
 
 
 def create_pending_verify(wrapper: LocalBridgeWrapper):

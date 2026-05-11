@@ -9,7 +9,7 @@ scripts.
 This is not OpenClaw integration. This is not a server API. This is not a
 network protocol. This is a local Python integration contract. External
 integrations should consume this pipeline instead of directly editing
-`.projectops` files.
+`.weaveflow` files.
 
 For the future OpenClaw-specific adapter design, see
 [openclaw_adapter_design.md](openclaw_adapter_design.md).
@@ -38,7 +38,7 @@ Use `AdapterSession` because it combines:
 
 - deterministic intent mapping
 - confirmation gating
-- execution through `ProjectOpsServiceAdapter`
+- execution through `WeaveflowServiceAdapter`
 - `AdapterTurnResult` output
 
 Lower-level boundaries are still available when a caller needs them:
@@ -48,7 +48,7 @@ Lower-level boundaries are still available when a caller needs them:
   permission decisions
 - `prepare_confirmation`, `confirm_request`, and `reject_request` for
   confirmation-only flows
-- `ProjectOpsServiceAdapter` for direct structured calls
+- `WeaveflowServiceAdapter` for direct structured calls
 - `event_from_turn_result` for UI event conversion
 - `render_event_as_text` for plain text output
 - `render_event_for_channel` for channel-specific presentation text
@@ -129,11 +129,11 @@ Responsibility:
 
 ### F. Service Adapter
 
-Class: `ProjectOpsServiceAdapter`
+Class: `WeaveflowServiceAdapter`
 
 Responsibility:
 
-- call `projectops.service` functions
+- call `weaveflow.service` functions
 - enforce `allow_mutation`
 - return `AdapterResponse`
 - never expose raw stack traces for normal errors
@@ -171,11 +171,11 @@ Responsibility:
   and single-line log formatting
 - never send messages
 - never call external APIs
-- never mutate ProjectOps state
+- never mutate Weaveflow state
 
 ## Source Of Truth
 
-`.projectops` files and SQLite remain the source of truth for task state.
+`.weaveflow` files and SQLite remain the source of truth for task state.
 `AdapterSession` pending confirmations and `AdapterSessionStore` records are
 in-memory interaction state only. The session store is not a database.
 `AdapterEvent` and `AdapterTranscript` are renderable records, not state
@@ -187,7 +187,7 @@ result, notification, and rendered text for debugging. See
 layer is not persistent storage and is not the source of truth.
 
 External integrations must not infer task completion from rendered text alone.
-Use ProjectOps task files, SQLite state, service calls, or JSON contracts for
+Use Weaveflow task files, SQLite state, service calls, or JSON contracts for
 authoritative workflow state.
 
 ## Mutation Policy
@@ -272,7 +272,7 @@ Raw OpenClaw-like payload
 
 OpenClaw should not:
 
-- mutate `.projectops` files directly
+- mutate `.weaveflow` files directly
 - parse human-readable CLI output
 - bypass confirmation for mutating actions
 - auto-verify tasks
@@ -286,9 +286,9 @@ Read-only status through session:
 ```python
 from pathlib import Path
 
-from projectops.adapters import AdapterSession, ProjectOpsServiceAdapter
+from weaveflow.adapters import AdapterSession, WeaveflowServiceAdapter
 
-session = AdapterSession(ProjectOpsServiceAdapter(Path(".")))
+session = AdapterSession(WeaveflowServiceAdapter(Path(".")))
 turn = session.handle_text("status", request_id="req-status")
 print(turn.state, turn.ok)
 ```
@@ -307,7 +307,7 @@ if turn.state == "pending_confirmation":
 Confirmed create task converted to event and rendered as text:
 
 ```python
-from projectops.adapters import event_from_turn_result, render_event_as_text
+from weaveflow.adapters import event_from_turn_result, render_event_as_text
 
 turn = session.confirm("req-task")
 event = event_from_turn_result(turn)
@@ -320,9 +320,9 @@ print(message)
 | Boundary | Use When |
 | --- | --- |
 | `AdapterSession` | Building chat-like external integrations, needing confirmation flow, or handling multi-turn interactions. |
-| `ProjectOpsServiceAdapter` | Caller already has structured actions, no text parsing is needed, or confirmation is handled elsewhere. |
+| `WeaveflowServiceAdapter` | Caller already has structured actions, no text parsing is needed, or confirmation is handled elsewhere. |
 | CLI JSON | Integration cannot import the Python package and read-only status/list/doctor output is enough. |
-| `service.py` directly | Building internal tools, needing maximum control, and able to handle `ProjectOpsError` correctly. |
+| `service.py` directly | Building internal tools, needing maximum control, and able to handle `WeaveflowError` correctly. |
 
 ## Non-Goals
 

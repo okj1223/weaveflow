@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from projectops.adapters import AdapterSession, AdapterSessionStore
-from projectops.adapters.openclaw import (
+from weaveflow.adapters import AdapterSession, AdapterSessionStore
+from weaveflow.adapters.openclaw import (
     OpenClawAdapter,
     OpenClawMessage,
     OpenClawSessionStore,
@@ -126,7 +126,7 @@ def test_session_store_has_no_filesystem_side_effects(tmp_path: Path) -> None:
 
     store.get_or_create_session("key-1", tmp_path)
 
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
 
 
 def test_openclaw_session_store_remains_compatible(tmp_path: Path) -> None:
@@ -151,7 +151,7 @@ def test_openclaw_adapter_still_works_with_default_store(tmp_path: Path) -> None
     assert status.ok is True
     assert pending.event_type == "pending_confirmation"
     assert confirmed.ok is True
-    assert (tmp_path / ".projectops").is_dir()
+    assert (tmp_path / ".weaveflow").is_dir()
 
 
 def test_openclaw_adapter_works_with_injected_store(tmp_path: Path) -> None:
@@ -163,7 +163,7 @@ def test_openclaw_adapter_works_with_injected_store(tmp_path: Path) -> None:
 
     assert pending.event_type == "pending_confirmation"
     assert confirmed.ok is True
-    assert (tmp_path / ".projectops").is_dir()
+    assert (tmp_path / ".weaveflow").is_dir()
 
 
 def test_openclaw_session_isolation_still_works(tmp_path: Path) -> None:
@@ -174,9 +174,9 @@ def test_openclaw_session_isolation_still_works(tmp_path: Path) -> None:
 
     assert user_b.ok is False
     assert user_b.error_type == "PendingConfirmationNotFound"
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
 
     user_a = adapter.handle_message(msg("yes", "a-yes", user="user-a"))
 
     assert user_a.ok is True
-    assert (tmp_path / ".projectops").is_dir()
+    assert (tmp_path / ".weaveflow").is_dir()

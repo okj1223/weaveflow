@@ -1,11 +1,11 @@
-from projectops.models import ProjectConfig, TaskSpec, TaskStatus
+from weaveflow.models import ProjectConfig, TaskSpec, TaskStatus
 
 
 def test_project_config_serializes_required_fields() -> None:
     config = ProjectConfig()
     data = config.model_dump(mode="json")
 
-    assert data["name"] == "ProjectOps Kernel"
+    assert data["name"] == "Weaveflow"
     assert data["version"] == 1
     assert data["created_at"]
 

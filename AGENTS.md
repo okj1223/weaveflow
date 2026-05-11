@@ -4,7 +4,7 @@ Rules for agents working in this repository.
 
 ## Repository Goal
 
-Build a local-first ProjectOps Kernel MVP.
+Build a local-first Weaveflow MVP.
 
 This project is a small workflow system that converts a user request into a
 human-readable, file-based task record:
@@ -18,7 +18,7 @@ human-readable, file-based task record:
 7. `final_report.md`
 8. `memory_diff.md`
 
-The first MVP must be a Python CLI named `ops`.
+The first MVP must be a Python CLI named `weaveflow`.
 
 ## Non-Goals
 
@@ -45,10 +45,10 @@ Do not implement these yet:
 
 ## Required Workspace Structure
 
-The MVP manages a local `.projectops/` workspace:
+The MVP manages a local `.weaveflow/` workspace:
 
 ```text
-.projectops/
+.weaveflow/
   config.yaml
   state.sqlite
   memory/
@@ -69,21 +69,21 @@ The MVP manages a local `.projectops/` workspace:
 
 ## Required MVP CLI
 
-The CLI command name is `ops`.
+The CLI command name is `weaveflow`.
 
 Required commands:
 
 ```text
-ops init
-ops task create "USER REQUEST"
-ops task show TASK-0001
-ops task plan TASK-0001
-ops task brief TASK-0001 --worker codex
-ops task attach-result TASK-0001 path/to/result.md
-ops task verify TASK-0001 --status passed --note "manual verification"
-ops task report TASK-0001
-ops memory propose TASK-0001
-ops status
+weaveflow init
+weaveflow task create "USER REQUEST"
+weaveflow task show TASK-0001
+weaveflow task plan TASK-0001
+weaveflow task brief TASK-0001 --worker codex
+weaveflow task attach-result TASK-0001 path/to/result.md
+weaveflow task verify TASK-0001 --status passed --note "manual verification"
+weaveflow task report TASK-0001
+weaveflow memory propose TASK-0001
+weaveflow status
 ```
 
 ## Task Statuses

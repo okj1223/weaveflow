@@ -2,7 +2,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from projectops.adapters.local_wrapper import (
+from weaveflow.adapters.local_wrapper import (
     SESSION_LOSS_MESSAGE,
     LocalBridgeWrapper,
 )
@@ -46,12 +46,12 @@ def create_task(wrapper: LocalBridgeWrapper, root: Path, message_id: str = "m-cr
     assert pending.route_reason == "route_to_establish_pending_confirmation"
     confirmed = wrapper.handle_payload(payload("yes", f"{message_id}-yes"))
     assert confirmed.ok is True
-    assert root.joinpath(".projectops", "tasks", "TASK-0001", "task_spec.yaml").exists()
+    assert root.joinpath(".weaveflow", "tasks", "TASK-0001", "task_spec.yaml").exists()
 
 
 def test_docs_and_imports() -> None:
     assert DOC_PATH.exists()
-    assert SESSION_LOSS_MESSAGE.startswith("The ProjectOps bridge restarted.")
+    assert SESSION_LOSS_MESSAGE.startswith("The Weaveflow bridge restarted.")
 
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     local_wrapper_flow = (ROOT / "docs" / "local_wrapper_flow.md").read_text(
@@ -70,7 +70,7 @@ def test_docs_and_imports() -> None:
         "explicit confirmations",
         "restart",
         "session loss",
-        ".projectops",
+        ".weaveflow",
         "SQLite",
         "repeat the command",
         "OpenClaw",
@@ -97,7 +97,7 @@ def test_normal_pending_confirmation_lost_after_restart(tmp_path: Path) -> None:
         assert result.ok is False
         assert result.error_type == "PendingConfirmationNotFound"
         assert not tmp_path.joinpath(
-            ".projectops",
+            ".weaveflow",
             "tasks",
             "TASK-0001",
             "task_spec.yaml",
@@ -118,7 +118,7 @@ def test_durable_task_survives_restart(tmp_path: Path) -> None:
         doctor = wrapper2.handle_payload(payload("doctor", "m-doctor"))
 
         assert tmp_path.joinpath(
-            ".projectops",
+            ".weaveflow",
             "tasks",
             "TASK-0001",
             "task_spec.yaml",
@@ -152,7 +152,7 @@ def test_explicit_confirmation_lost_after_restart(tmp_path: Path) -> None:
         assert result.ok is False
         assert result.error_type == "PendingExplicitConfirmationNotFound"
         assert not tmp_path.joinpath(
-            ".projectops",
+            ".weaveflow",
             "tasks",
             "TASK-0001",
             "verification_record.yaml",

@@ -13,8 +13,8 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from projectops.adapters.stdio_bridge import run_stdio_bridge  # noqa: E402
-from projectops.json_io import CONTRACT_VERSION  # noqa: E402
+from weaveflow.adapters.stdio_bridge import run_stdio_bridge  # noqa: E402
+from weaveflow.json_io import CONTRACT_VERSION  # noqa: E402
 
 
 def bridge_request(

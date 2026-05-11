@@ -4,8 +4,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from projectops.adapters.stdio_client import StdioBridgeClient
-from projectops.json_io import CONTRACT_VERSION
+from weaveflow.adapters.stdio_client import StdioBridgeClient
+from weaveflow.json_io import CONTRACT_VERSION
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,7 +17,7 @@ def bridge_command(root: Path) -> list[str]:
     return [
         sys.executable,
         "-m",
-        "projectops.adapters.stdio_bridge",
+        "weaveflow.adapters.stdio_bridge",
         "--root",
         str(root),
     ]
@@ -106,7 +106,7 @@ def test_client_contract_mentions_required_terms() -> None:
         "no authentication",
         "in-memory session",
         "source of truth",
-        ".projectops",
+        ".weaveflow",
         "SQLite",
     ]:
         assert term in doc
@@ -160,7 +160,7 @@ def test_subprocess_bridge_session_flow(tmp_path: Path) -> None:
             bridge_request("init-yes", "handle_payload", channel_payload("yes", "m3"))
         )
         assert init_yes["response"]["event_type"] == "turn_completed"
-        assert (tmp_path / ".projectops").exists()
+        assert (tmp_path / ".weaveflow").exists()
 
         create = client.send(
             bridge_request(
@@ -176,7 +176,7 @@ def test_subprocess_bridge_session_flow(tmp_path: Path) -> None:
         )
         assert create_yes["response"]["event_type"] == "turn_completed"
         assert (
-            tmp_path / ".projectops" / "tasks" / "TASK-0001" / "task_spec.yaml"
+            tmp_path / ".weaveflow" / "tasks" / "TASK-0001" / "task_spec.yaml"
         ).is_file()
 
         doctor = client.send(
@@ -265,8 +265,8 @@ def test_stdio_bridge_client_demo_runs() -> None:
 
 def test_no_real_openclaw_import_dependency() -> None:
     for path in [
-        ROOT / "src" / "projectops" / "adapters" / "stdio_client.py",
-        ROOT / "src" / "projectops" / "adapters" / "stdio_bridge.py",
+        ROOT / "src" / "weaveflow" / "adapters" / "stdio_client.py",
+        ROOT / "src" / "weaveflow" / "adapters" / "stdio_bridge.py",
         CLIENT_DEMO,
     ]:
         for line in path.read_text(encoding="utf-8").splitlines():

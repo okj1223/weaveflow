@@ -34,7 +34,7 @@ AdapterSession
 ```
 
 Renderers only format existing adapter events. They do not call
-`ProjectOpsServiceAdapter`, mutate the workspace, or inspect ProjectOps files.
+`WeaveflowServiceAdapter`, mutate the workspace, or inspect Weaveflow files.
 
 ## Styles
 
@@ -82,13 +82,13 @@ This is not real OpenClaw, Slack, or Telegram integration. It does not send
 messages, call external APIs, create bots, or persist rendering configuration.
 It only returns plain text.
 
-Rendered text is not the source of truth. `.projectops` files and SQLite remain
-the source of truth for ProjectOps task state.
+Rendered text is not the source of truth. `.weaveflow` files and SQLite remain
+the source of truth for Weaveflow task state.
 
 ## Safety Rules
 
 - Rendered text is not source of truth.
-- ProjectOps files and SQLite remain the source of truth.
+- Weaveflow files and SQLite remain the source of truth.
 - Renderers must not mutate the workspace.
 - Renderers must not hide errors.
 - Renderers should avoid leaking unnecessary absolute local paths.
@@ -107,7 +107,7 @@ OpenClaw message
 ```
 
 OpenClaw should use rendered text for presentation only and keep state changes
-routed through `ProjectOpsServiceAdapter`.
+routed through `WeaveflowServiceAdapter`.
 
 ## Examples
 

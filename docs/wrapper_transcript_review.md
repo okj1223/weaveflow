@@ -39,7 +39,7 @@ transcript is JSON-safe and intended for local inspection.
 
 ## Source Of Truth
 
-`.projectops` files and SQLite remain the source of truth for task state.
+`.weaveflow` files and SQLite remain the source of truth for task state.
 
 A transcript is a review and debug artifact only. Rendered text is
 presentation-only. Wrapper notifications are user-facing hints, not durable

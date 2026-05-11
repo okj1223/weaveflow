@@ -2,8 +2,8 @@ import json
 import subprocess
 from pathlib import Path
 
-from projectops.adapters import AdapterSession, AdapterTurnResult, ProjectOpsServiceAdapter
-from projectops.json_io import to_jsonable
+from weaveflow.adapters import AdapterSession, AdapterTurnResult, WeaveflowServiceAdapter
+from weaveflow.json_io import to_jsonable
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -11,7 +11,7 @@ DEMO_PATH = ROOT / "examples" / "adapter_session_demo.py"
 
 
 def make_session(root: Path) -> AdapterSession:
-    return AdapterSession(ProjectOpsServiceAdapter(root))
+    return AdapterSession(WeaveflowServiceAdapter(root))
 
 
 def confirm_text(session: AdapterSession, text: str, request_id: str) -> AdapterTurnResult:
@@ -46,7 +46,7 @@ def test_mutating_init_becomes_pending(tmp_path: Path) -> None:
 
     assert result.state == "pending_confirmation"
     assert result.pending is True
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
     assert session.has_pending("req-init") is True
     assert session.list_pending() == ["req-init"]
 
@@ -58,7 +58,7 @@ def test_confirm_init_executes(tmp_path: Path) -> None:
 
     assert result.state == "completed"
     assert result.ok is True
-    assert (tmp_path / ".projectops").is_dir()
+    assert (tmp_path / ".weaveflow").is_dir()
     assert session.has_pending("req-init") is False
 
 
@@ -69,7 +69,7 @@ def test_reject_init_does_not_execute(tmp_path: Path) -> None:
 
     assert result.state == "rejected"
     assert result.ok is True
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
     assert session.has_pending("req-init") is False
 
 
@@ -108,7 +108,7 @@ def test_create_task_confirmation_flow(tmp_path: Path) -> None:
     assert result.response.data is not None
     assert result.response.data["id"] == "TASK-0001"
     assert (
-        tmp_path / ".projectops" / "tasks" / "TASK-0001" / "task_spec.yaml"
+        tmp_path / ".weaveflow" / "tasks" / "TASK-0001" / "task_spec.yaml"
     ).is_file()
 
 
@@ -151,7 +151,7 @@ def test_allow_mutation_true_executes_immediately(tmp_path: Path) -> None:
     assert result.state == "completed"
     assert result.ok is True
     assert result.pending is False
-    assert (tmp_path / ".projectops").is_dir()
+    assert (tmp_path / ".weaveflow").is_dir()
     assert session.list_pending() == []
 
 
@@ -189,7 +189,7 @@ def test_turn_result_is_json_serializable(tmp_path: Path) -> None:
 
 
 def test_session_does_not_persist_pending_state(tmp_path: Path) -> None:
-    adapter = ProjectOpsServiceAdapter(tmp_path)
+    adapter = WeaveflowServiceAdapter(tmp_path)
     first = AdapterSession(adapter)
     first.handle_text("init workspace", request_id="req-init")
 

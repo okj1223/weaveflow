@@ -1,6 +1,6 @@
 """Local channel adapter contract smoke demo.
 
-This demo uses raw OpenClaw-like dictionaries and a temporary ProjectOps root.
+This demo uses raw OpenClaw-like dictionaries and a temporary Weaveflow root.
 It does not import real OpenClaw, call external APIs, or modify the repository
 workspace.
 """
@@ -16,13 +16,13 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from projectops.adapters import (  # noqa: E402
+from weaveflow.adapters import (  # noqa: E402
     AdapterSession,
-    ProjectOpsServiceAdapter,
+    WeaveflowServiceAdapter,
     event_from_turn_result,
     render_event_for_channel,
 )
-from projectops.adapters.openclaw import OpenClawAdapter  # noqa: E402
+from weaveflow.adapters.openclaw import OpenClawAdapter  # noqa: E402
 
 
 def payload(text: str, message_id: str) -> dict[str, str]:
@@ -90,7 +90,7 @@ def main() -> None:
             adapter.handle_payload({"messageId": "bad-1", "content": "status"}),
         )
 
-        session = AdapterSession(ProjectOpsServiceAdapter(root))
+        session = AdapterSession(WeaveflowServiceAdapter(root))
         event = event_from_turn_result(
             session.handle_text("status", request_id="render-status")
         )

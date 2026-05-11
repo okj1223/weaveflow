@@ -6,7 +6,7 @@ This document defines expected behavior when `LocalBridgeWrapper` or its
 underlying stdio bridge process restarts while confirmations are pending.
 
 The behavior is intentional: pending confirmations are interaction state, not
-durable ProjectOps task state. This document is for future external wrappers,
+durable Weaveflow task state. This document is for future external wrappers,
 including a future OpenClaw wrapper, before any real OpenClaw integration.
 
 For the structured user-facing notification contract, see
@@ -29,9 +29,9 @@ For in-memory explicit confirmation replay records, see
 
 ## State Model
 
-Durable state lives in ProjectOps workspace storage:
+Durable state lives in Weaveflow workspace storage:
 
-- `.projectops` files
+- `.weaveflow` files
 - SQLite task index
 - generated artifacts
 - generated plans
@@ -57,7 +57,7 @@ When the wrapper or bridge process restarts:
 - pending normal confirmations are lost
 - pending explicit confirmations are lost
 - explicit confirmation replay records are lost on restart
-- durable ProjectOps task state survives
+- durable Weaveflow task state survives
 - read-only commands work after restart
 - mutating actions must be repeated and reconfirmed by the user
 
@@ -70,7 +70,7 @@ Future external wrappers should show this message when they detect bridge
 restart or session loss:
 
 ```text
-The ProjectOps bridge restarted. Pending confirmations were cleared. Please repeat the command if needed.
+The Weaveflow bridge restarted. Pending confirmations were cleared. Please repeat the command if needed.
 ```
 
 Use this message when a wrapper restarts its bridge process, detects an
@@ -117,9 +117,9 @@ A future OpenClaw wrapper should:
 - not auto-confirm old requests
 - not route stale exact confirmation phrases
 - ask the user to repeat the original command
-- preserve durable ProjectOps task state
+- preserve durable Weaveflow task state
 
-OpenClaw should remain a channel surface. ProjectOps `.projectops` files and
+OpenClaw should remain a channel surface. Weaveflow `.weaveflow` files and
 SQLite remain the durable task source of truth.
 
 ## Examples
@@ -149,7 +149,7 @@ Durable task state surviving restart:
 ```text
 create task Durable task
 yes
--> TASK-0001 written under .projectops and indexed in SQLite
+-> TASK-0001 written under .weaveflow and indexed in SQLite
 bridge restarts
 list tasks
 -> TASK-0001 still exists

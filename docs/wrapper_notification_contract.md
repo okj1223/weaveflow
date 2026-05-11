@@ -64,14 +64,14 @@ Supported levels:
 Recommended user-facing message:
 
 ```text
-The ProjectOps bridge restarted. Pending confirmations were cleared. Please repeat the command if needed.
+The Weaveflow bridge restarted. Pending confirmations were cleared. Please repeat the command if needed.
 ```
 
 Session loss means:
 
 - pending normal confirmations are cleared
 - pending explicit confirmations are cleared
-- durable ProjectOps task state remains in `.projectops` and SQLite
+- durable Weaveflow task state remains in `.weaveflow` and SQLite
 - users should repeat mutating commands if they still want to proceed
 
 The helper `create_session_loss_notification` creates a warning-level
@@ -139,7 +139,7 @@ A future OpenClaw wrapper should:
 - not auto-retry mutating actions
 - ask the user to repeat the command if needed
 
-OpenClaw should remain the channel surface. ProjectOps `.projectops` files and
+OpenClaw should remain the channel surface. Weaveflow `.weaveflow` files and
 SQLite remain the durable task source of truth.
 
 Stale explicit confirmation replays can be rendered later as a wrapper warning
@@ -167,20 +167,20 @@ The user-facing stale confirmation notification behavior is documented in
 Chat rendering:
 
 ```text
-The ProjectOps bridge restarted. Pending confirmations were cleared. Please repeat the command if needed. Repeat the command if you still want to proceed. (request_id=m-1)
+The Weaveflow bridge restarted. Pending confirmations were cleared. Please repeat the command if needed. Repeat the command if you still want to proceed. (request_id=m-1)
 ```
 
 Log rendering:
 
 ```text
-type=session_loss level=warning pending_cleared=true retry_safe=false request_id=m-1 action=create_task message=The ProjectOps bridge restarted. Pending confirmations were cleared. Please repeat the command if needed.
+type=session_loss level=warning pending_cleared=true retry_safe=false request_id=m-1 action=create_task message=The Weaveflow bridge restarted. Pending confirmations were cleared. Please repeat the command if needed.
 ```
 
 Payload notification:
 
 ```json
 {
-  "contract_version": "projectops.v1",
+  "contract_version": "weaveflow.v1",
   "notification_type": "session_loss",
   "level": "warning",
   "pending_cleared": true,

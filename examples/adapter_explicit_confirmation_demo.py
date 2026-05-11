@@ -10,11 +10,11 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from projectops.adapters.explicit_confirmation import (  # noqa: E402
+from weaveflow.adapters.explicit_confirmation import (  # noqa: E402
     check_explicit_confirmation,
     create_explicit_confirmation_prompt,
 )
-from projectops.adapters.permission_preflight import (  # noqa: E402
+from weaveflow.adapters.permission_preflight import (  # noqa: E402
     preflight_openclaw_payload,
 )
 

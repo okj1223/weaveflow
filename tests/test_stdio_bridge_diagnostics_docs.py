@@ -59,7 +59,7 @@ def test_diagnostics_contract_mentions_required_terms() -> None:
         "bridge_request_id",
         "request_id",
         "diagnostic_version",
-        "projectops.diagnostics.v1",
+        "weaveflow.diagnostics.v1",
         "bridge_started",
         "request_completed",
         "normalization_error",

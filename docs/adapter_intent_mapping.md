@@ -21,11 +21,11 @@ For how this mapper fits into the full adapter pipeline, see
 
 ## Safety Model
 
-The mapper only maps. It does not call `ProjectOpsServiceAdapter`, does not call
+The mapper only maps. It does not call `WeaveflowServiceAdapter`, does not call
 service functions, and does not write files.
 
 Mutating actions require `allow_mutation=True` to be executed by
-`ProjectOpsServiceAdapter`. If `allow_mutation` is false, mutating commands map
+`WeaveflowServiceAdapter`. If `allow_mutation` is false, mutating commands map
 successfully but return `requires_confirmation: true`. Future OpenClaw adapters
 should use that flag to ask for confirmation before executing the request.
 
@@ -65,11 +65,11 @@ Recommended future flow:
 OpenClaw message
 -> map_text_to_adapter_request
 -> if requires_confirmation, ask user
--> ProjectOpsServiceAdapter.handle
+-> WeaveflowServiceAdapter.handle
 -> render AdapterResponse
 ```
 
-OpenClaw should not mutate `.projectops/` files directly and should not parse
+OpenClaw should not mutate `.weaveflow/` files directly and should not parse
 human-readable CLI output.
 
 ## Confirmation flow
@@ -81,7 +81,7 @@ make that flow explicit:
 1. Call `prepare_confirmation(text)`.
 2. If confirmation is required, ask the user.
 3. If the user confirms, call `confirm_request(state)` and then pass the
-   confirmed request to `ProjectOpsServiceAdapter.handle`.
+   confirmed request to `WeaveflowServiceAdapter.handle`.
 4. If the user rejects, call `reject_request(state)` and do not execute.
 
 This flow is deterministic. It does not use OpenClaw, does not use an LLM, and
@@ -106,13 +106,13 @@ Mapping failures return an `IntentMappingResult` with `ok: false` and no
 ```python
 from pathlib import Path
 
-from projectops.adapters import ProjectOpsServiceAdapter
-from projectops.adapters.intent_mapper import map_text_to_adapter_request
+from weaveflow.adapters import WeaveflowServiceAdapter
+from weaveflow.adapters.intent_mapper import map_text_to_adapter_request
 
 root = Path(".")
 result = map_text_to_adapter_request("status")
 if result.request is not None:
-    response = ProjectOpsServiceAdapter(root).handle(result.request)
+    response = WeaveflowServiceAdapter(root).handle(result.request)
     print(response.ok, response.data)
 ```
 
@@ -125,4 +125,4 @@ python3 examples/adapter_intent_mapping_demo.py
 ```
 
 The demo uses `TemporaryDirectory` and does not modify the repository's real
-ProjectOps workspace.
+Weaveflow workspace.

@@ -3,12 +3,12 @@
 ## Purpose
 
 This document defines how a future external process wrapper should communicate
-with the ProjectOps stdio bridge.
+with the Weaveflow stdio bridge.
 
 This is not real OpenClaw integration. This is not a server API. This is not a
 network protocol. This is a local subprocess JSON-line contract. Future
 OpenClaw integration may use this pattern if an OpenClaw plugin or runtime
-needs to call Python ProjectOps locally.
+needs to call Python Weaveflow locally.
 
 For process lifecycle, restart, timeout, stdout, and stderr policy, see
 [stdio_bridge_process_supervision.md](stdio_bridge_process_supervision.md).
@@ -41,8 +41,8 @@ response line.
 
 Keeping the process alive preserves the bridge's in-memory `AdapterSession`
 state, including pending confirmations. Killing the process loses in-memory
-pending confirmations. ProjectOps task state remains durable because
-`.projectops` files and SQLite remain the source of truth.
+pending confirmations. Weaveflow task state remains durable because
+`.weaveflow` files and SQLite remain the source of truth.
 
 The wrapper must never parse human-readable output from the bridge. Bridge
 stdout is reserved for JSON response lines.
@@ -52,16 +52,16 @@ stdout is reserved for JSON response lines.
 Use the module entrypoint:
 
 ```bash
-python3 -m projectops.adapters.stdio_bridge --root /path/to/project
+python3 -m weaveflow.adapters.stdio_bridge --root /path/to/project
 ```
 
-This does not add an `ops` CLI command. The module entrypoint calls
+This does not add an `weaveflow` CLI command. The module entrypoint calls
 `run_stdio_bridge(root, sys.stdin, sys.stdout)`.
 
 Client wrappers may opt into structured stderr diagnostics with:
 
 ```bash
-python3 -m projectops.adapters.stdio_bridge --root /path/to/project --diagnostics-stderr
+python3 -m weaveflow.adapters.stdio_bridge --root /path/to/project --diagnostics-stderr
 ```
 
 When that flag is used, stdout and stderr must be consumed separately: stdout
@@ -136,8 +136,8 @@ diagnostics rather than protocol responses.
 One running bridge process owns one `OpenClawAdapter`, and therefore one
 in-memory session store. Pending confirmations live only inside that process.
 
-A future persistent session store is separate future work. ProjectOps task
-state survives process restarts because it lives in `.projectops/` and SQLite.
+A future persistent session store is separate future work. Weaveflow task
+state survives process restarts because it lives in `.weaveflow/` and SQLite.
 Confirmation prompts may be lost on process restart.
 
 ## Security Notes
@@ -153,7 +153,7 @@ Confirmation prompts may be lost on process restart.
 ## Minimal Pseudo-Code
 
 ```text
-spawn bridge: python3 -m projectops.adapters.stdio_bridge --root /path/to/project
+spawn bridge: python3 -m weaveflow.adapters.stdio_bridge --root /path/to/project
 send ping
 read ping response
 send status handle_payload request

@@ -3,8 +3,8 @@ import json
 import subprocess
 from pathlib import Path
 
-from projectops.adapters.openclaw import OpenClawAdapter
-from projectops.adapters.stdio_bridge import (
+from weaveflow.adapters.openclaw import OpenClawAdapter
+from weaveflow.adapters.stdio_bridge import (
     StdioBridgeError,
     StdioBridgeRequest,
     StdioBridgeResponse,
@@ -12,7 +12,7 @@ from projectops.adapters.stdio_bridge import (
     process_bridge_line,
     run_stdio_bridge,
 )
-from projectops.json_io import CONTRACT_VERSION
+from weaveflow.json_io import CONTRACT_VERSION
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -95,7 +95,7 @@ def test_status_before_init(tmp_path: Path) -> None:
     assert response["ok"] is True
     assert response["response"]["ok"] is True
     assert response["response"]["event_type"] == "turn_completed"
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
 
 
 def test_init_pending_then_yes_confirms_across_bridge_lines(tmp_path: Path) -> None:
@@ -117,7 +117,7 @@ def test_init_pending_then_yes_confirms_across_bridge_lines(tmp_path: Path) -> N
 
     assert responses[0]["response"]["event_type"] == "pending_confirmation"
     assert responses[1]["response"]["event_type"] == "turn_completed"
-    assert (tmp_path / ".projectops").exists()
+    assert (tmp_path / ".weaveflow").exists()
 
 
 def test_create_task_flow_across_bridge_lines(tmp_path: Path) -> None:
@@ -150,7 +150,7 @@ def test_create_task_flow_across_bridge_lines(tmp_path: Path) -> None:
     assert responses[2]["response"]["event_type"] == "pending_confirmation"
     assert responses[3]["response"]["event_type"] == "turn_completed"
     assert (
-        tmp_path / ".projectops" / "tasks" / "TASK-0001" / "task_spec.yaml"
+        tmp_path / ".weaveflow" / "tasks" / "TASK-0001" / "task_spec.yaml"
     ).is_file()
 
 
@@ -227,7 +227,7 @@ def test_wrong_contract_version_returns_error(tmp_path: Path) -> None:
     adapter = OpenClawAdapter(tmp_path)
     response = parsed_response(
         adapter,
-        bridge_request("bridge-1", "ping", contract_version="projectops.v2"),
+        bridge_request("bridge-1", "ping", contract_version="weaveflow.v2"),
     )
 
     assert response["ok"] is False
@@ -325,7 +325,7 @@ def test_stdio_bridge_demo_runs() -> None:
 
 def test_no_real_openclaw_import_dependency() -> None:
     for path in [
-        ROOT / "src" / "projectops" / "adapters" / "stdio_bridge.py",
+        ROOT / "src" / "weaveflow" / "adapters" / "stdio_bridge.py",
         DEMO_PATH,
     ]:
         for line in path.read_text(encoding="utf-8").splitlines():

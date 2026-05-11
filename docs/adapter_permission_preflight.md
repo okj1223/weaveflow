@@ -4,7 +4,7 @@
 
 This document defines the local permission preflight layer for future external
 wrappers. A wrapper can use this layer before routing raw payloads into the
-ProjectOps stdio bridge or local channel adapter.
+Weaveflow stdio bridge or local channel adapter.
 
 The preflight classifies the intended adapter action, applies the advisory
 permission policy, and returns a `PermissionPreflightResult` that says whether

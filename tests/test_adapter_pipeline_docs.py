@@ -28,7 +28,7 @@ def test_adapter_pipeline_contract_mentions_required_boundaries() -> None:
 
     for expected in [
         "AdapterSession",
-        "ProjectOpsServiceAdapter",
+        "WeaveflowServiceAdapter",
         "AdapterTurnResult",
         "AdapterResponse",
         "AdapterEvent",
@@ -42,7 +42,7 @@ def test_adapter_pipeline_contract_mentions_required_boundaries() -> None:
         "mutation",
         "confirmation",
         "read-only",
-        ".projectops",
+        ".weaveflow",
     ]:
         assert expected in text
 

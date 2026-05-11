@@ -1,4 +1,4 @@
-"""Subprocess client demo for the ProjectOps stdio bridge."""
+"""Subprocess client demo for the Weaveflow stdio bridge."""
 
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from projectops.adapters.stdio_client import StdioBridgeClient  # noqa: E402
-from projectops.json_io import CONTRACT_VERSION  # noqa: E402
+from weaveflow.adapters.stdio_client import StdioBridgeClient  # noqa: E402
+from weaveflow.json_io import CONTRACT_VERSION  # noqa: E402
 
 
 def bridge_request(
@@ -61,7 +61,7 @@ def main() -> None:
         command = [
             sys.executable,
             "-m",
-            "projectops.adapters.stdio_bridge",
+            "weaveflow.adapters.stdio_bridge",
             "--root",
             directory,
         ]

@@ -5,8 +5,8 @@ import pytest
 from jsonschema import Draft202012Validator, ValidationError
 from typer.testing import CliRunner
 
-from projectops.cli import app
-from projectops.json_io import CONTRACT_VERSION
+from weaveflow.cli import app
+from weaveflow.json_io import CONTRACT_VERSION
 
 
 runner = CliRunner()
@@ -57,7 +57,7 @@ def test_schemas_require_contract_version() -> None:
         "status.schema.json": {
             "contract_version": CONTRACT_VERSION,
             "workspace_exists": False,
-            "workspace_path": "/tmp/project/.projectops",
+            "workspace_path": "/tmp/project/.weaveflow",
             "state_db_path": None,
             "memory_path": None,
             "task_count": 0,
@@ -79,7 +79,7 @@ def test_schemas_require_contract_version() -> None:
                     "level": "error",
                     "name": "workspace_exists",
                     "message": "workspace missing",
-                    "path": ".projectops",
+                    "path": ".weaveflow",
                 }
             ],
         },
@@ -98,7 +98,7 @@ def test_schemas_reject_wrong_contract_version() -> None:
         "status.schema.json": {
             "contract_version": CONTRACT_VERSION,
             "workspace_exists": False,
-            "workspace_path": "/tmp/project/.projectops",
+            "workspace_path": "/tmp/project/.weaveflow",
             "state_db_path": None,
             "memory_path": None,
             "task_count": 0,
@@ -120,7 +120,7 @@ def test_schemas_reject_wrong_contract_version() -> None:
                     "level": "ok",
                     "name": "workspace_exists",
                     "message": "workspace exists",
-                    "path": ".projectops",
+                    "path": ".weaveflow",
                 }
             ],
         },
@@ -128,7 +128,7 @@ def test_schemas_reject_wrong_contract_version() -> None:
 
     for schema_name, payload in payloads.items():
         schema = load_schema(schema_name)
-        invalid_payload = {**payload, "contract_version": "projectops.v2"}
+        invalid_payload = {**payload, "contract_version": "weaveflow.v2"}
         with pytest.raises(ValidationError):
             Draft202012Validator(schema).validate(invalid_payload)
 
@@ -147,7 +147,7 @@ def test_status_json_contract_before_init(
     assert payload["workspace_exists"] is False
     assert payload["task_count"] == 0
     assert payload["tasks"] == []
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
 
 
 def test_status_json_contract_after_init(
@@ -241,7 +241,7 @@ def test_doctor_json_contract_before_init(
         check["level"] == "error" and "workspace missing" in check["message"]
         for check in payload["checks"]
     )
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
 
 
 def test_doctor_json_contract_after_init(
@@ -267,7 +267,7 @@ def test_doctor_json_contract_with_broken_workspace(
     assert runner.invoke(app, ["init"]).exit_code == 0
     assert runner.invoke(app, ["task", "create", "Broken schema doctor"]).exit_code == 0
     assert runner.invoke(app, ["task", "plan", "TASK-0001"]).exit_code == 0
-    plan_path = tmp_path / ".projectops" / "tasks" / "TASK-0001" / "plan.yaml"
+    plan_path = tmp_path / ".weaveflow" / "tasks" / "TASK-0001" / "plan.yaml"
     plan_path.unlink()
 
     result = runner.invoke(app, ["doctor", "--json"])

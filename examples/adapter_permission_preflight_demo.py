@@ -10,7 +10,7 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from projectops.adapters.permission_preflight import (  # noqa: E402
+from weaveflow.adapters.permission_preflight import (  # noqa: E402
     PermissionPreflightResult,
     preflight_openclaw_payload,
     preflight_text_command,

@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from projectops.adapters.local_wrapper import LocalBridgeWrapper
-from projectops.adapters.wrapper_rendering import (
+from weaveflow.adapters.local_wrapper import LocalBridgeWrapper
+from weaveflow.adapters.wrapper_rendering import (
     render_wrapper_result_as_text,
     render_wrapper_result_summary,
 )

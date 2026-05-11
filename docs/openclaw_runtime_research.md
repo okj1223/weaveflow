@@ -3,17 +3,17 @@
 ## Purpose
 
 This document records factual research about the real OpenClaw runtime before
-ProjectOps implements any integration.
+Weaveflow implements any integration.
 
 The goal is to understand the current OpenClaw surfaces well enough to decide
-which future ProjectOps adapter path is safest.
+which future Weaveflow adapter path is safest.
 
 ## Non-Goals
 
 - This is not real OpenClaw integration.
 - This does not import OpenClaw.
 - This does not create a bot.
-- This does not call OpenClaw APIs from ProjectOps runtime code.
+- This does not call OpenClaw APIs from Weaveflow runtime code.
 - This does not define final production architecture.
 
 ## Sources Reviewed
@@ -54,13 +54,13 @@ Date checked: 2026-05-09.
 
 ### Inferred Interpretation
 
-- ProjectOps should not treat OpenClaw as a task database. OpenClaw should be a
-  channel, Gateway, or tool surface that calls ProjectOps boundaries.
-- A ProjectOps integration probably belongs as a plugin-registered tool or a
+- Weaveflow should not treat OpenClaw as a task database. OpenClaw should be a
+  channel, Gateway, or tool surface that calls Weaveflow boundaries.
+- A Weaveflow integration probably belongs as a plugin-registered tool or a
   local process bridge invoked from an OpenClaw plugin, rather than as a new
   channel plugin.
 - A direct Gateway client is possible, but it would need role/scope/auth and
-  protocol behavior that ProjectOps does not yet model.
+  protocol behavior that Weaveflow does not yet model.
 
 ### Unknowns
 
@@ -68,7 +68,7 @@ Date checked: 2026-05-09.
   yet verified against a working OpenClaw checkout.
 - The exact inbound message payload shape inside channel plugins was not
   confirmed from type definitions in this phase.
-- The exact reply API a plugin should call for ProjectOps confirmation prompts
+- The exact reply API a plugin should call for Weaveflow confirmation prompts
   still needs a small OpenClaw-side proof of concept.
 - The stability contract for plugin APIs and Gateway RPC methods should be
   checked against release notes before implementation.
@@ -82,7 +82,7 @@ Evidence: README and docs show `openclaw onboard`, `openclaw gateway`,
 `openclaw doctor`, `openclaw config`, `openclaw sessions`, and plugin
 management commands.
 
-Uncertainty: A CLI-driven ProjectOps integration would be simple, but it may not
+Uncertainty: A CLI-driven Weaveflow integration would be simple, but it may not
 offer good multi-turn confirmation UX unless wrapped by OpenClaw or another
 caller.
 
@@ -93,7 +93,7 @@ response, and event forms. The first client frame must be `connect`. The
 handshake declares role and scopes. Method families include status, health,
 config, sessions, channels, tasks, artifacts, and chat methods.
 
-Uncertainty: ProjectOps has not implemented an OpenClaw Gateway client. Auth,
+Uncertainty: Weaveflow has not implemented an OpenClaw Gateway client. Auth,
 token, role, scope, retry, event subscription, and compatibility behavior would
 need implementation and tests.
 
@@ -103,8 +103,8 @@ Evidence: Plugin docs state `api.registerChannel` is a common registration
 method. Channel docs for Slack and Telegram show channel-specific transport and
 access policies.
 
-Uncertainty: ProjectOps is not a messaging network. A channel plugin likely
-duplicates OpenClaw responsibilities unless ProjectOps needs to expose a brand
+Uncertainty: Weaveflow is not a messaging network. A channel plugin likely
+duplicates OpenClaw responsibilities unless Weaveflow needs to expose a brand
 new external channel.
 
 ### Skills/Tools
@@ -113,7 +113,7 @@ Evidence: Skills are loaded from skill folders and teach agents how to use
 tools. Plugins can register tools. Skills can be gated by config, binaries, and
 environment, and can be allowlisted per agent.
 
-Uncertainty: A ProjectOps skill alone may only teach usage; it may still need a
+Uncertainty: A Weaveflow skill alone may only teach usage; it may still need a
 registered tool or subprocess bridge for structured execution.
 
 ### Configuration Schema
@@ -121,7 +121,7 @@ registered tool or subprocess bridge for structured execution.
 Evidence: Config docs describe strict validation, live schema lookup, Control
 UI forms, channel schemas, plugin schemas, `openclaw doctor`, and repair flows.
 
-Uncertainty: A ProjectOps plugin would need an explicit config schema for root
+Uncertainty: A Weaveflow plugin would need an explicit config schema for root
 path, allowed operations, and bridge command path.
 
 ### Control UI
@@ -129,7 +129,7 @@ path, allowed operations, and bridge command path.
 Evidence: README/docs describe a browser Control UI/dashboard served by the
 Gateway.
 
-Uncertainty: ProjectOps should not target UI internals until the plugin/tool
+Uncertainty: Weaveflow should not target UI internals until the plugin/tool
 surface is proven.
 
 ### Local Files/Config
@@ -137,14 +137,14 @@ surface is proven.
 Evidence: OpenClaw config defaults to `~/.openclaw/openclaw.json`. Gateway
 session state lives under `~/.openclaw/agents/<agentId>/sessions/`.
 
-Uncertainty: ProjectOps state should remain under `.projectops/`; OpenClaw
-session state should not become ProjectOps task state.
+Uncertainty: Weaveflow state should remain under `.weaveflow/`; OpenClaw
+session state should not become Weaveflow task state.
 
 ### External Process Invocation
 
 Evidence: Plugin docs mention plugin-owned CLI commands and registration of
 tools/services. Skills can require binaries. OpenClaw is Node-based while
-ProjectOps is Python.
+Weaveflow is Python.
 
 Uncertainty: The exact recommended way for a plugin tool to invoke a local
 Python process should be verified with a small plugin proof of concept.
@@ -152,9 +152,9 @@ Python process should be verified with a small plugin proof of concept.
 ### Model/Provider Integration
 
 Evidence: OpenClaw providers are plugin-based and model refs use provider/model
-shape. This is outside ProjectOps scope.
+shape. This is outside Weaveflow scope.
 
-Uncertainty: ProjectOps should not act as a model provider.
+Uncertainty: Weaveflow should not act as a model provider.
 
 ## Message And Session Model Findings
 
@@ -200,10 +200,10 @@ Confirmed:
 
 Unknown:
 
-- How ProjectOps-specific permission decisions should map to OpenClaw operator
+- How Weaveflow-specific permission decisions should map to OpenClaw operator
   scopes.
-- Whether a future ProjectOps tool should request its own plugin operator scope.
-- How best to represent explicit confirmation for sensitive ProjectOps actions
+- Whether a future Weaveflow tool should request its own plugin operator scope.
+- How best to represent explicit confirmation for sensitive Weaveflow actions
   in OpenClaw chat UI.
 
 ## Config And Schema Findings
@@ -221,11 +221,11 @@ Confirmed:
 
 Unknown:
 
-- ProjectOps plugin config schema shape is not defined yet.
-- Whether ProjectOps should be configured under plugin entries, skill entries,
+- Weaveflow plugin config schema shape is not defined yet.
+- Whether Weaveflow should be configured under plugin entries, skill entries,
   or a dedicated tool config depends on the chosen integration surface.
 
-## Candidate Integration Modes For ProjectOps
+## Candidate Integration Modes For Weaveflow
 
 ### A. OpenClaw Skill/Tool Integration
 
@@ -234,8 +234,8 @@ Fit: High.
 Pros:
 
 - Aligns with OpenClaw's documented skills and plugin-registered tools.
-- ProjectOps operations can remain local and structured.
-- Confirmation policy can stay near the ProjectOps adapter boundary.
+- Weaveflow operations can remain local and structured.
+- Confirmation policy can stay near the Weaveflow adapter boundary.
 
 Cons:
 
@@ -248,7 +248,7 @@ Risk: Medium.
 Unknowns:
 
 - Exact plugin tool signature and response shape.
-- Best way to preserve ProjectOps request IDs through OpenClaw replies.
+- Best way to preserve Weaveflow request IDs through OpenClaw replies.
 
 Recommended priority: Primary.
 
@@ -259,11 +259,11 @@ Fit: Low to medium.
 Pros:
 
 - Direct control over channel messages and rendering.
-- Could own very specific ProjectOps chat behavior.
+- Could own very specific Weaveflow chat behavior.
 
 Cons:
 
-- ProjectOps is not a chat network.
+- Weaveflow is not a chat network.
 - It would duplicate OpenClaw channel responsibilities.
 - Channel plugins appear to be Node runtime modules, not Python packages.
 
@@ -288,13 +288,13 @@ Cons:
 
 - Requires WebSocket auth, role, scope, retry, feature discovery, and event
   handling.
-- ProjectOps would need to track Gateway protocol compatibility.
+- Weaveflow would need to track Gateway protocol compatibility.
 
 Risk: Medium to high.
 
 Unknowns:
 
-- Whether ProjectOps should be an operator client, node client, or some other
+- Whether Weaveflow should be an operator client, node client, or some other
   role.
 - How replies should be sent back to a user from a standalone Gateway client.
 
@@ -306,7 +306,7 @@ Fit: Medium.
 
 Pros:
 
-- Uses existing ProjectOps CLI and JSON contracts.
+- Uses existing Weaveflow CLI and JSON contracts.
 - Avoids tight runtime coupling.
 - Easy to test locally.
 
@@ -330,7 +330,7 @@ Fit: High.
 
 Pros:
 
-- Preserves ProjectOps as a local-first Python kernel.
+- Preserves Weaveflow as a local-first Python kernel.
 - Creates a clear Python/Node boundary.
 - Can use JSON/stdin/stdout rather than guessed channel payloads.
 
@@ -349,21 +349,21 @@ Recommended priority: Primary, paired with skill/tool integration.
 
 ## Initial Recommendation
 
-Recommended next path: build a narrow local stdio JSON bridge for the ProjectOps
+Recommended next path: build a narrow local stdio JSON bridge for the Weaveflow
 adapter pipeline, then wrap that bridge from a future OpenClaw plugin tool.
 
-The ProjectOps-side bridge protocol is documented in
+The Weaveflow-side bridge protocol is documented in
 [stdio_bridge_protocol.md](stdio_bridge_protocol.md). It is not an
 OpenClaw-confirmed API; it is a local process boundary for future proof of
 concept work.
 
 Reasoning:
 
-- OpenClaw is Node/Gateway/plugin centered, while ProjectOps is Python.
-- A stdio bridge avoids coupling ProjectOps to unverified channel payloads.
-- The bridge can reuse existing ProjectOps adapter contracts, permission
+- OpenClaw is Node/Gateway/plugin centered, while Weaveflow is Python.
+- A stdio bridge avoids coupling Weaveflow to unverified channel payloads.
+- The bridge can reuse existing Weaveflow adapter contracts, permission
   policy, events, and rendering.
-- A future OpenClaw skill can teach users how to invoke the ProjectOps tool,
+- A future OpenClaw skill can teach users how to invoke the Weaveflow tool,
   while a plugin tool handles structured execution.
 
 Confidence: Medium. This should be validated with a minimal OpenClaw plugin
@@ -372,7 +372,7 @@ proof of concept before production integration.
 ## Open Questions
 
 - What is the current supported extension mechanism for external local tools?
-- Is a plugin-registered tool the best first surface for ProjectOps?
+- Is a plugin-registered tool the best first surface for Weaveflow?
 - What is the exact plugin tool input/output shape?
 - Can a plugin tool invoke a local Python command with bounded timeouts and
   structured JSON safely?
@@ -382,6 +382,6 @@ proof of concept before production integration.
 - How are sessions keyed across channel, user, account, group, and thread?
 - How should confirmation prompts be handled in DMs and groups?
 - How are operator scopes represented for plugin-owned tools?
-- Can ProjectOps register as a tool without modifying OpenClaw core?
+- Can Weaveflow register as a tool without modifying OpenClaw core?
 - What is the recommended local testing harness for OpenClaw plugin tools?
-- How should ProjectOps avoid exposing absolute local paths in OpenClaw output?
+- How should Weaveflow avoid exposing absolute local paths in OpenClaw output?

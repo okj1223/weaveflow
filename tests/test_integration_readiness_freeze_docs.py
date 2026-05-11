@@ -19,7 +19,7 @@ def test_integration_readiness_freeze_mentions_required_terms() -> None:
     doc = DOC_PATH.read_text(encoding="utf-8")
 
     for term in [
-        "ProjectOps core workflow",
+        "Weaveflow core workflow",
         "stdio bridge",
         "OpenClaw",
         "local wrapper",
@@ -29,7 +29,7 @@ def test_integration_readiness_freeze_mentions_required_terms() -> None:
         "wrapper notifications",
         "in-memory",
         "source of truth",
-        ".projectops",
+        ".weaveflow",
         "SQLite",
         "stop criteria",
         "smallest future POC",

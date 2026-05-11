@@ -1,11 +1,11 @@
-"""Local ProjectOps adapter intent mapping demo.
+"""Local Weaveflow adapter intent mapping demo.
 
 Run with:
 
     python3 examples/adapter_intent_mapping_demo.py
 
 The demo uses a temporary workspace and does not modify the repository's real
-.projectops directory.
+.weaveflow directory.
 """
 
 from __future__ import annotations
@@ -20,12 +20,12 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from projectops.adapters import ProjectOpsServiceAdapter  # noqa: E402
-from projectops.adapters.intent_mapper import map_text_to_adapter_request  # noqa: E402
+from weaveflow.adapters import WeaveflowServiceAdapter  # noqa: E402
+from weaveflow.adapters.intent_mapper import map_text_to_adapter_request  # noqa: E402
 
 
 def run_command(
-    adapter: ProjectOpsServiceAdapter,
+    adapter: WeaveflowServiceAdapter,
     text: str,
     *,
     allow_mutation: bool = False,
@@ -52,7 +52,7 @@ def run_command(
 
 def main() -> None:
     with TemporaryDirectory() as temp_dir:
-        adapter = ProjectOpsServiceAdapter(Path(temp_dir))
+        adapter = WeaveflowServiceAdapter(Path(temp_dir))
 
         run_command(adapter, "status")
         run_command(adapter, "init workspace", allow_mutation=True)

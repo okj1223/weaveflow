@@ -23,7 +23,7 @@ def test_external_adapter_interface_mentions_key_policies() -> None:
         "openclaw",
         "service functions",
         "cli json",
-        "projectopserror",
+        "weaveflowerror",
         "contract_version",
         "read-only",
         "mutating",
@@ -35,7 +35,7 @@ def test_contract_changelog_mentions_contract_terms() -> None:
     text = read_doc("docs/contract_changelog.md")
 
     for expected in [
-        "projectops.v1",
+        "weaveflow.v1",
         "status",
         "task list",
         "doctor",

@@ -24,7 +24,13 @@ venv/
 # OS/editor noise
 .DS_Store
 
-# ProjectOps local runtime state
+# Weaveflow local runtime state
+.weaveflow/
+.weaveflow/state.sqlite
+.weaveflow/tasks/
+.weaveflow/memory/
+
+# Legacy ProjectOps local runtime state
 .projectops/
 .projectops/state.sqlite
 .projectops/tasks/

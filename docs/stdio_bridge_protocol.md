@@ -7,7 +7,7 @@ process integrations. A future OpenClaw plugin, local automation script, or
 other process can spawn the Python bridge, send line-delimited JSON requests,
 and receive line-delimited JSON responses.
 
-This keeps ProjectOps local-first while giving non-Python callers a narrow
+This keeps Weaveflow local-first while giving non-Python callers a narrow
 process boundary.
 
 For the external process-wrapper side of this protocol, see
@@ -57,7 +57,7 @@ For the future structured stderr diagnostics shape, see
 
 `StdioBridgeRequest` fields:
 
-- `contract_version`: must be `projectops.v1`
+- `contract_version`: must be `weaveflow.v1`
 - `bridge_request_id`: caller-provided request identifier
 - `type`: bridge request type
 - `payload`: object payload, empty for request types that do not need one
@@ -65,14 +65,14 @@ For the future structured stderr diagnostics shape, see
 Example:
 
 ```json
-{"contract_version":"projectops.v1","bridge_request_id":"bridge-001","type":"ping","payload":{}}
+{"contract_version":"weaveflow.v1","bridge_request_id":"bridge-001","type":"ping","payload":{}}
 ```
 
 ## Response Schema
 
 `StdioBridgeResponse` fields:
 
-- `contract_version`: always `projectops.v1`
+- `contract_version`: always `weaveflow.v1`
 - `bridge_request_id`: copied from the request when available
 - `ok`: bridge-level success flag
 - `type`: request type, or `invalid` for malformed input
@@ -84,7 +84,7 @@ Example:
 
 ### ping
 
-Health check for the bridge process. It does not touch ProjectOps workspace
+Health check for the bridge process. It does not touch Weaveflow workspace
 state.
 `ping` is the basic protocol health check; wrapper-level helpers validate the
 stdout `StdioBridgeResponse` shape and require `pong=true`.
@@ -92,7 +92,7 @@ stdout `StdioBridgeResponse` shape and require `pong=true`.
 Response:
 
 ```json
-{"contract_version":"projectops.v1","bridge_request_id":"bridge-001","ok":true,"type":"ping","response":{"pong":true},"error_type":null,"error_message":null}
+{"contract_version":"weaveflow.v1","bridge_request_id":"bridge-001","ok":true,"type":"ping","response":{"pong":true},"error_type":null,"error_message":null}
 ```
 
 ### handle_payload
@@ -102,7 +102,7 @@ Routes an OpenClaw-like raw payload through:
 ```text
 OpenClawAdapter.handle_payload
 -> AdapterSession
--> ProjectOpsServiceAdapter
+-> WeaveflowServiceAdapter
 -> AdapterEvent
 -> rendered OpenClawResponse payload
 ```
@@ -120,31 +120,31 @@ loop exits cleanly when `stop_on_shutdown` is true.
 Ping:
 
 ```json
-{"contract_version":"projectops.v1","bridge_request_id":"b-1","type":"ping","payload":{}}
+{"contract_version":"weaveflow.v1","bridge_request_id":"b-1","type":"ping","payload":{}}
 ```
 
 Status through `handle_payload`:
 
 ```json
-{"contract_version":"projectops.v1","bridge_request_id":"b-2","type":"handle_payload","payload":{"channelId":"channel-1","userId":"user-1","messageId":"m1","content":"status","createdAt":"2026-05-09T00:00:00Z","threadId":"thread-1"}}
+{"contract_version":"weaveflow.v1","bridge_request_id":"b-2","type":"handle_payload","payload":{"channelId":"channel-1","userId":"user-1","messageId":"m1","content":"status","createdAt":"2026-05-09T00:00:00Z","threadId":"thread-1"}}
 ```
 
 Init workspace pending confirmation:
 
 ```json
-{"contract_version":"projectops.v1","bridge_request_id":"b-3","type":"handle_payload","payload":{"channelId":"channel-1","userId":"user-1","messageId":"m2","content":"init workspace","createdAt":"2026-05-09T00:00:00Z","threadId":"thread-1"}}
+{"contract_version":"weaveflow.v1","bridge_request_id":"b-3","type":"handle_payload","payload":{"channelId":"channel-1","userId":"user-1","messageId":"m2","content":"init workspace","createdAt":"2026-05-09T00:00:00Z","threadId":"thread-1"}}
 ```
 
 Confirm with yes:
 
 ```json
-{"contract_version":"projectops.v1","bridge_request_id":"b-4","type":"handle_payload","payload":{"channelId":"channel-1","userId":"user-1","messageId":"m3","content":"yes","createdAt":"2026-05-09T00:00:00Z","threadId":"thread-1"}}
+{"contract_version":"weaveflow.v1","bridge_request_id":"b-4","type":"handle_payload","payload":{"channelId":"channel-1","userId":"user-1","messageId":"m3","content":"yes","createdAt":"2026-05-09T00:00:00Z","threadId":"thread-1"}}
 ```
 
 Invalid JSON response shape:
 
 ```json
-{"contract_version":"projectops.v1","bridge_request_id":"","ok":false,"type":"invalid","response":null,"error_type":"InvalidBridgeJson","error_message":"Invalid JSON request."}
+{"contract_version":"weaveflow.v1","bridge_request_id":"","ok":false,"type":"invalid","response":null,"error_type":"InvalidBridgeJson","error_message":"Invalid JSON request."}
 ```
 
 ## Session Behavior
@@ -163,8 +163,8 @@ yes -> confirmed mutation
 ```
 
 There is no cross-process recovery. Starting a new bridge process creates a new
-in-memory session store. `.projectops` files and SQLite remain the source of
-truth for ProjectOps task state.
+in-memory session store. `.weaveflow` files and SQLite remain the source of
+truth for Weaveflow task state.
 
 Rendered bridge responses are not the source of truth.
 
@@ -173,8 +173,8 @@ Rendered bridge responses are not the source of truth.
 - Do not expose the stdio bridge directly to a network.
 - Do not use the bridge as an authentication boundary.
 - A future OpenClaw plugin should own process spawning and access control.
-- ProjectOps confirmation flow still gates mutations.
-- The bridge does not bypass `AdapterSession` or `ProjectOpsServiceAdapter`.
+- Weaveflow confirmation flow still gates mutations.
+- The bridge does not bypass `AdapterSession` or `WeaveflowServiceAdapter`.
 
 ## Future OpenClaw Usage
 
@@ -182,11 +182,11 @@ Future flow:
 
 ```text
 OpenClaw plugin
--> spawn ProjectOps stdio bridge
+-> spawn Weaveflow stdio bridge
 -> send handle_payload request
 -> receive JSON response
 -> render or pass response to OpenClaw user
 ```
 
-This is a ProjectOps-side local process bridge. It is not an OpenClaw-confirmed
+This is a Weaveflow-side local process bridge. It is not an OpenClaw-confirmed
 runtime API.

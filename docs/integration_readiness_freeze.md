@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document freezes the current local ProjectOps and OpenClaw-preparation
+This document freezes the current local Weaveflow and OpenClaw-preparation
 architecture before real integration work begins.
 
 It answers what exists, what is stable enough, what remains intentionally
@@ -15,9 +15,9 @@ OpenClaw APIs, create a bot, add a server, or add a network surface.
 
 ## Current Completed Layers
 
-The repository now has these local ProjectOps layers:
+The repository now has these local Weaveflow layers:
 
-- ProjectOps core workflow
+- Weaveflow core workflow
 - task specs
 - plans
 - Codex worker briefs
@@ -48,7 +48,7 @@ The repository now has these local ProjectOps layers:
 - wrapper notifications
 - local wrapper flow
 
-The `.projectops` files and SQLite remain the source of truth for ProjectOps
+The `.weaveflow` files and SQLite remain the source of truth for Weaveflow
 task state. Wrapper records, rendered text, notifications, and transcripts are
 review or interaction artifacts only.
 
@@ -58,7 +58,7 @@ The current repository is stable enough for a local proof of concept because:
 
 - the full test suite is passing
 - git commits exist for the local architecture layers
-- `.projectops` runtime state is ignored by git
+- `.weaveflow` runtime state is ignored by git
 - docs exist for the major contracts
 - the stdio bridge can be spawned by a future external process
 - the stdio bridge preserves stdout as protocol JSON
@@ -135,7 +135,7 @@ Building them now would harden guesses before the runtime boundary is known.
 The smallest future POC should be a real external wrapper that does only this:
 
 ```text
-spawn ProjectOps stdio bridge
+spawn Weaveflow stdio bridge
 send ping
 send status payload
 send create task payload
@@ -156,14 +156,14 @@ This POC should not:
 - persist sessions
 
 The goal is to validate the real OpenClaw process/tool boundary and reply path,
-not to expand ProjectOps runtime behavior.
+not to expand Weaveflow runtime behavior.
 
 ## Stop Criteria
 
 Stop architecture-building phases when:
 
 - full test suite passes
-- `ops doctor` is healthy
+- `weaveflow doctor` is healthy
 - git status is clean
 - `integration_readiness_freeze.md` exists
 - README links to it
@@ -172,7 +172,7 @@ Stop architecture-building phases when:
   verification
 
 These stop criteria are met when the freeze document is committed, tests pass,
-ProjectOps health is clean, and the repository has no uncommitted
+Weaveflow health is clean, and the repository has no uncommitted
 commit-worthy changes.
 
 ## Recommended Next Human Action
@@ -186,7 +186,7 @@ Recommended action:
   A. pause and preserve the repository
   B. research actual OpenClaw plugin implementation deeply
   C. build a minimal real POC in a separate branch
-  D. package ProjectOps as a local tool first
+  D. package Weaveflow as a local tool first
 
 The next decision should be made by a human after reviewing the freeze, not by
 continuing the local architecture loop.
@@ -199,7 +199,7 @@ Recommended options:
 
 - PHASE 11-B: create a release tag and changelog
 - PHASE 12-A: real OpenClaw plugin POC research branch
-- PHASE 12-B: package ProjectOps as a local Python tool
+- PHASE 12-B: package Weaveflow as a local Python tool
 - STOP: pause architecture work
 
 Do not recommend another speculative safety wrapper unless a real integration

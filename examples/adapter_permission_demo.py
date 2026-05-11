@@ -16,7 +16,7 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from projectops.adapters import evaluate_action_permission, get_action_policy  # noqa: E402
+from weaveflow.adapters import evaluate_action_permission, get_action_policy  # noqa: E402
 
 
 def render(action: str, allow_mutation: bool = False, explicit: bool = False) -> str:

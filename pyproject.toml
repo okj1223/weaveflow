@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "projectops-kernel"
+name = "weaveflow"
 version = "0.1.0"
-description = "Local-first ProjectOps Kernel MVP"
+description = "Local-first Weaveflow MVP"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -21,7 +21,8 @@ dev = [
 ]
 
 [project.scripts]
-ops = "projectops.cli:app"
+weaveflow = "weaveflow.cli:app"
+ops = "weaveflow.cli:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]

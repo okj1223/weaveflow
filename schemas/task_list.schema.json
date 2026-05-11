@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://projectops.local/schemas/task_list.schema.json",
-  "title": "ProjectOps Task List JSON Output",
+  "$id": "https://weaveflow.local/schemas/task_list.schema.json",
+  "title": "Weaveflow Task List JSON Output",
   "type": "object",
   "required": [
     "contract_version",
@@ -11,7 +11,7 @@
   "properties": {
     "contract_version": {
       "type": "string",
-      "const": "projectops.v1"
+      "const": "weaveflow.v1"
     },
     "tasks": {
       "type": "array",

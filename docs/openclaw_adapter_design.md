@@ -37,10 +37,10 @@ OpenClaw should act as:
 
 OpenClaw should not be:
 
-- the source of truth for ProjectOps task state
-- the owner of `.projectops` files
+- the source of truth for Weaveflow task state
+- the owner of `.weaveflow` files
 - a direct SQLite mutator
-- a bypass around `ProjectOpsServiceAdapter`
+- a bypass around `WeaveflowServiceAdapter`
 - an automatic verifier of Codex results
 - an automatic memory applier
 
@@ -61,7 +61,7 @@ OpenClaw message
 -> OpenClaw response message
 ```
 
-The local adapter pipeline remains the ProjectOps-facing boundary. OpenClaw is
+The local adapter pipeline remains the Weaveflow-facing boundary. OpenClaw is
 only the channel-specific wrapper around that boundary.
 The local channel adapter contract and smoke flow are documented in
 [channel_adapter_contract.md](channel_adapter_contract.md).
@@ -85,7 +85,7 @@ Fields:
 
 This is a design model only. It does not need to match the OpenClaw runtime
 exactly yet. A future adapter should normalize OpenClaw-specific payloads into
-this shape before routing them into ProjectOps.
+this shape before routing them into Weaveflow.
 
 ## Payload Normalization
 
@@ -129,7 +129,7 @@ the skeleton uses `"unknown"` as a placeholder channel value in that error
 payload.
 
 Real OpenClaw payload mapping may change after checking the actual OpenClaw
-runtime API. ProjectOps still owns task state; OpenClaw-like payloads are only
+runtime API. Weaveflow still owns task state; OpenClaw-like payloads are only
 message inputs.
 
 ## Proposed Response Wrapper
@@ -175,7 +175,7 @@ Pending confirmations are currently in-memory only. The skeleton uses the
 reusable `AdapterSessionStore` behavior through `OpenClawSessionStore`, which
 stores `AdapterSession` objects and latest pending request IDs by session key.
 A future OpenClaw adapter may need a persistent session store, but that should
-be explicit future work. ProjectOps task state remains in `.projectops` and
+be explicit future work. Weaveflow task state remains in `.weaveflow` and
 SQLite, not OpenClaw memory.
 
 ## Permission And Mutation Policy
@@ -318,7 +318,7 @@ Future channel-specific policies:
 
 The renderer should not hide errors. The renderer should not expose unnecessary
 absolute paths. Renderer output is presentation only. Task state must be read
-from ProjectOps, not inferred from rendered text.
+from Weaveflow, not inferred from rendered text.
 
 The channel rendering policy is local-only. It does not import OpenClaw, call
 OpenClaw APIs, or send messages.
@@ -348,9 +348,9 @@ Rules:
 - preserve `request_id` when possible
 - doctor errors should be shown clearly, not hidden
 
-## ProjectOps Source Of Truth
+## Weaveflow Source Of Truth
 
-`.projectops` files and SQLite are the source of truth for task state.
+`.weaveflow` files and SQLite are the source of truth for task state.
 `AdapterSession` is in-memory interaction state only. `AdapterEvent` is
 renderable event state only. OpenClaw messages are communication records only.
 OpenClaw should not be used as the primary task database.
@@ -360,7 +360,7 @@ OpenClaw should not be used as the primary task database.
 Current placeholder package:
 
 ```text
-src/projectops/adapters/openclaw/
+src/weaveflow/adapters/openclaw/
   __init__.py
   models.py
   adapter.py
@@ -370,7 +370,7 @@ src/projectops/adapters/openclaw/
 
 ## Current Skeleton Implementation
 
-`src/projectops/adapters/openclaw/` contains placeholder models and a local
+`src/weaveflow/adapters/openclaw/` contains placeholder models and a local
 adapter skeleton. It does not import real OpenClaw. It does not call OpenClaw
 APIs. It proves the local flow:
 The skeleton does not call OpenClaw APIs.
@@ -433,7 +433,7 @@ Future implementation tests should cover:
 - missing pending confirmation returns clean error
 - errors are rendered safely
 - session key prevents cross-user confirmation leakage
-- no direct `.projectops` mutation outside service adapter
+- no direct `.weaveflow` mutation outside service adapter
 
 ## Non-Goals
 

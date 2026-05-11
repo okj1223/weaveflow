@@ -4,9 +4,9 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from projectops.cli import app
-from projectops.store import count_tasks
-from projectops.yaml_io import read_yaml
+from weaveflow.cli import app
+from weaveflow.store import count_tasks
+from weaveflow.yaml_io import read_yaml
 
 
 runner = CliRunner()
@@ -28,7 +28,7 @@ def test_init_creates_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     result = runner.invoke(app, ["init"])
 
     assert result.exit_code == 0, result.output
-    workspace = tmp_path / ".projectops"
+    workspace = tmp_path / ".weaveflow"
     assert (workspace / "config.yaml").is_file()
     assert (workspace / "state.sqlite").is_file()
     assert (workspace / "memory" / "project.md").is_file()
@@ -61,11 +61,11 @@ def test_status_reports_workspace_paths(
     result = runner.invoke(app, ["status"])
 
     assert result.exit_code == 0, result.output
-    assert ".projectops exists: yes" in result.output
-    assert f"workspace: {tmp_path / '.projectops'}" in result.output
+    assert ".weaveflow exists: yes" in result.output
+    assert f"workspace: {tmp_path / '.weaveflow'}" in result.output
     assert "tasks: 0" in result.output
-    assert f"state.sqlite: {tmp_path / '.projectops' / 'state.sqlite'}" in result.output
-    assert f"memory: {tmp_path / '.projectops' / 'memory'}" in result.output
+    assert f"state.sqlite: {tmp_path / '.weaveflow' / 'state.sqlite'}" in result.output
+    assert f"memory: {tmp_path / '.weaveflow' / 'memory'}" in result.output
 
 
 def test_init_is_safe_to_rerun(
@@ -79,12 +79,12 @@ def test_init_is_safe_to_rerun(
 
     second_init = runner.invoke(app, ["init"])
 
-    task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
+    task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
     assert second_init.exit_code == 0, second_init.output
-    assert "ProjectOps workspace already exists" in second_init.output
+    assert "Weaveflow workspace already exists" in second_init.output
     assert task_dir.is_dir()
     assert (task_dir / "task_spec.yaml").is_file()
-    assert count_tasks(tmp_path / ".projectops" / "state.sqlite") == 1
+    assert count_tasks(tmp_path / ".weaveflow" / "state.sqlite") == 1
 
     status = runner.invoke(app, ["status"])
     assert status.exit_code == 0, status.output
@@ -106,7 +106,7 @@ def test_task_create_allocates_ids_and_writes_task_files(
     assert "Created task: TASK-0001" in first.output
     assert "Created task: TASK-0002" in second.output
 
-    first_task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
+    first_task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
     assert (first_task_dir / "task_spec.yaml").is_file()
     assert (first_task_dir / "artifacts").is_dir()
 
@@ -120,7 +120,7 @@ def test_task_create_allocates_ids_and_writes_task_files(
         "Do not make unrelated changes",
     ]
 
-    with sqlite3.connect(tmp_path / ".projectops" / "state.sqlite") as connection:
+    with sqlite3.connect(tmp_path / ".weaveflow" / "state.sqlite") as connection:
         row = connection.execute(
             "SELECT id, title, status, task_dir FROM tasks WHERE id = ?",
             ("TASK-0001",),
@@ -156,7 +156,7 @@ def test_task_show_loads_task_spec(
     assert "- Task is understood and structured" in result.output
     assert "constraints:" in result.output
     assert "- Do not call external APIs in this MVP" in result.output
-    task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
+    task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
     assert f"task directory: {task_dir}" in result.output
 
 
@@ -194,8 +194,8 @@ def test_task_plan_generates_default_plan_and_updates_status(
     assert runner.invoke(app, ["init"]).exit_code == 0
     assert runner.invoke(app, ["task", "create", "Investigate auth bug"]).exit_code == 0
 
-    task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
-    db_path = tmp_path / ".projectops" / "state.sqlite"
+    task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
+    db_path = tmp_path / ".weaveflow" / "state.sqlite"
     assert read_yaml(task_dir / "task_spec.yaml")["status"] == "draft"
     assert task_status(db_path, "TASK-0001") == "draft"
 
@@ -239,8 +239,8 @@ def test_task_brief_generates_codex_brief_and_updates_status(
     )
     assert create_result.exit_code == 0, create_result.output
 
-    task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
-    db_path = tmp_path / ".projectops" / "state.sqlite"
+    task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
+    db_path = tmp_path / ".weaveflow" / "state.sqlite"
     assert read_yaml(task_dir / "task_spec.yaml")["status"] == "draft"
     assert task_status(db_path, "TASK-0001") == "draft"
 
@@ -281,8 +281,8 @@ def test_task_attach_result_copies_file_and_registers_artifact(
 
     source = tmp_path / "result.md"
     source.write_text("# Result\n\nAuth bug fixed.\n", encoding="utf-8")
-    task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
-    db_path = tmp_path / ".projectops" / "state.sqlite"
+    task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
+    db_path = tmp_path / ".weaveflow" / "state.sqlite"
 
     result = runner.invoke(
         app,
@@ -310,8 +310,8 @@ def test_task_verify_passed_creates_record_and_marks_verified(
     assert runner.invoke(app, ["init"]).exit_code == 0
     assert runner.invoke(app, ["task", "create", "Investigate auth bug"]).exit_code == 0
 
-    task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
-    db_path = tmp_path / ".projectops" / "state.sqlite"
+    task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
+    db_path = tmp_path / ".weaveflow" / "state.sqlite"
     result = runner.invoke(
         app,
         [
@@ -376,8 +376,8 @@ def test_task_verify_failed_and_blocked_statuses(
         ],
     )
 
-    task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
-    db_path = tmp_path / ".projectops" / "state.sqlite"
+    task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
+    db_path = tmp_path / ".weaveflow" / "state.sqlite"
     assert result.exit_code == 0, result.output
     record = read_yaml(task_dir / "verification_record.yaml")
     assert record["status"] == verification_status
@@ -412,8 +412,8 @@ def test_task_report_generates_report_and_completes_verified_task(
         == 0
     )
 
-    task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
-    db_path = tmp_path / ".projectops" / "state.sqlite"
+    task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
+    db_path = tmp_path / ".weaveflow" / "state.sqlite"
     assert read_yaml(task_dir / "task_spec.yaml")["status"] == "verified"
 
     result = runner.invoke(app, ["task", "report", "TASK-0001"])
@@ -460,7 +460,7 @@ def test_memory_propose_generates_conservative_memory_diff(
 
     result = runner.invoke(app, ["memory", "propose", "TASK-0001"])
 
-    task_dir = tmp_path / ".projectops" / "tasks" / "TASK-0001"
+    task_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-0001"
     diff_path = task_dir / "memory_diff.md"
     assert result.exit_code == 0, result.output
     assert f"Memory diff: {diff_path}" in result.output

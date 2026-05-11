@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from projectops.adapters.diagnostics import (
+from weaveflow.adapters.diagnostics import (
     DIAGNOSTIC_VERSION,
     DiagnosticEvent,
     DiagnosticWriter,
@@ -13,9 +13,9 @@ from projectops.adapters.diagnostics import (
     diagnostic_event_to_json_line,
     sanitize_diagnostic_metadata,
 )
-from projectops.adapters.openclaw import OpenClawAdapter
-from projectops.adapters.stdio_bridge import process_bridge_line, run_stdio_bridge
-from projectops.json_io import CONTRACT_VERSION
+from weaveflow.adapters.openclaw import OpenClawAdapter
+from weaveflow.adapters.stdio_bridge import process_bridge_line, run_stdio_bridge
+from weaveflow.json_io import CONTRACT_VERSION
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -75,7 +75,7 @@ def run_bridge_with_diagnostics(
 def test_stdio_bridge_diagnostics_imports() -> None:
     assert DiagnosticEvent
     assert DiagnosticWriter
-    assert DIAGNOSTIC_VERSION == "projectops.diagnostics.v1"
+    assert DIAGNOSTIC_VERSION == "weaveflow.diagnostics.v1"
     assert create_diagnostic_event
     assert diagnostic_event_to_json_line
     assert sanitize_diagnostic_metadata
@@ -280,6 +280,6 @@ def test_stdio_bridge_diagnostics_docs() -> None:
 
     assert "DiagnosticEvent" in diagnostics
     assert "DiagnosticWriter" in diagnostics
-    assert "projectops.diagnostics.v1" in diagnostics
+    assert "weaveflow.diagnostics.v1" in diagnostics
     assert "diagnostics capture" in supervision or "capture stderr diagnostics" in supervision
     assert "stderr diagnostics" in protocol

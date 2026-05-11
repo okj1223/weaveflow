@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document compares the ProjectOps local OpenClaw skeleton with findings
+This document compares the Weaveflow local OpenClaw skeleton with findings
 from the real OpenClaw runtime research.
 
 The comparison is meant to guide the next implementation phase without
@@ -13,7 +13,7 @@ The current local architecture is frozen for readiness review in
 freeze defines the stop criteria and the smallest future real OpenClaw proof of
 concept.
 
-## Current ProjectOps Skeleton
+## Current Weaveflow Skeleton
 
 Current local pieces:
 
@@ -29,24 +29,24 @@ Current local pieces:
 - `handle_payload` local smoke flow
 
 The skeleton is local-only. It does not import OpenClaw, call OpenClaw APIs,
-create a bot, add a server, or modify ProjectOps core workflow behavior.
+create a bot, add a server, or modify Weaveflow core workflow behavior.
 
 ## What Aligns Well
 
-- OpenClaw uses channel, user, session, and thread concepts; ProjectOps already
+- OpenClaw uses channel, user, session, and thread concepts; Weaveflow already
   models channel-like payloads with channel, user, message, and optional thread
   fields.
 - OpenClaw treats the Gateway as the source of truth for sessions and channel
-  connections; ProjectOps treats `.projectops` files and SQLite as the source
-  of truth for ProjectOps task state.
+  connections; Weaveflow treats `.weaveflow` files and SQLite as the source
+  of truth for Weaveflow task state.
 - OpenClaw has explicit security controls for DMs, groups, pairing, allowlists,
-  roles, and scopes; ProjectOps has started an advisory permission policy for
+  roles, and scopes; Weaveflow has started an advisory permission policy for
   read-only, safe mutating, sensitive mutating, and future high-risk actions.
-- OpenClaw supports skills and plugin-registered tools; ProjectOps already has
+- OpenClaw supports skills and plugin-registered tools; Weaveflow already has
   a structured adapter pipeline that can be exposed as a tool boundary later.
-- OpenClaw separates channel surfaces from Gateway/client control. ProjectOps
+- OpenClaw separates channel surfaces from Gateway/client control. Weaveflow
   similarly separates channel-like payload normalization from
-  `ProjectOpsServiceAdapter` execution.
+  `WeaveflowServiceAdapter` execution.
 - Confirmation flow is a good fit for chat-like surfaces where mutating actions
   must not execute silently.
 - Channel-specific rendering aligns with OpenClaw's multi-channel nature.
@@ -62,11 +62,11 @@ create a bot, add a server, or modify ProjectOps core workflow behavior.
   cron, and thread bindings.
 - Auth/scope handling is missing. Real Gateway clients negotiate roles and
   scopes, and plugins can be controlled by allow/deny policy.
-- The real Gateway protocol may require a WebSocket client if ProjectOps chooses
+- The real Gateway protocol may require a WebSocket client if Weaveflow chooses
   a Gateway-client integration path.
 - Real plugin and skill implementation appears to be TypeScript/Node oriented;
-  ProjectOps is Python and likely needs a subprocess bridge.
-- Current ProjectOps permission policy is advisory and not enforced in
+  Weaveflow is Python and likely needs a subprocess bridge.
+- Current Weaveflow permission policy is advisory and not enforced in
   `OpenClawAdapter`.
 - Channel rendering redaction is simple and not a full secret redaction system.
 - The skeleton `handle_payload` method is useful for local smoke tests but is
@@ -77,10 +77,10 @@ create a bot, add a server, or modify ProjectOps core workflow behavior.
 | Risk | Likelihood | Impact | Mitigation |
 | --- | --- | --- | --- |
 | Payload mismatch | High | Medium | Do not treat placeholder payloads as production. Verify real plugin tool or channel payload types before implementation. |
-| Auth/scope mismatch | High | High | Map ProjectOps permission policy to OpenClaw role/scope and plugin policy only after a proof of concept. |
+| Auth/scope mismatch | High | High | Map Weaveflow permission policy to OpenClaw role/scope and plugin policy only after a proof of concept. |
 | Session mismatch | Medium | High | Reuse OpenClaw session identifiers where possible; avoid inventing an independent task-state session authority. |
 | Confirmation UX mismatch | Medium | Medium | Keep confirmation as explicit text first; add buttons or richer UI only after channel behavior is verified. |
-| Real OpenClaw API instability | Medium | Medium | Pin against a documented version and keep ProjectOps bridge narrow. |
+| Real OpenClaw API instability | Medium | Medium | Pin against a documented version and keep Weaveflow bridge narrow. |
 | Python/Node boundary complexity | High | Medium | Prefer a stdio JSON bridge with strict schemas, timeouts, and clean error handling. |
 | Security issue from chat-triggered mutations | Medium | High | Require confirmation, add explicit confirmation for sensitive actions, and block future high-risk actions. |
 | Local path exposure | Medium | Medium | Keep channel rendering redaction and avoid returning unnecessary absolute paths. |
@@ -102,7 +102,7 @@ or external API actions.
 ## Prior Recommended Next Phase
 
 Primary recommendation: PHASE 10-I should add a local stdio JSON bridge, also
-called the stdio bridge, for the ProjectOps adapter pipeline.
+called the stdio bridge, for the Weaveflow adapter pipeline.
 
 That bridge is now defined in
 [stdio_bridge_protocol.md](stdio_bridge_protocol.md). It is a local process
@@ -110,7 +110,7 @@ bridge, not real OpenClaw integration.
 
 The next wrapper-facing step is documented in
 [stdio_bridge_client_contract.md](stdio_bridge_client_contract.md). It explains
-how a future OpenClaw Node process wrapper should spawn the ProjectOps bridge,
+how a future OpenClaw Node process wrapper should spawn the Weaveflow bridge,
 send JSON lines, preserve `bridge_request_id`, and keep the process alive for
 in-memory sessions.
 
@@ -129,7 +129,7 @@ Why this path:
 
 - It is useful even before real OpenClaw integration.
 - It gives a future OpenClaw plugin a stable subprocess contract.
-- It keeps ProjectOps Python runtime independent from OpenClaw's Node runtime.
+- It keeps Weaveflow Python runtime independent from OpenClaw's Node runtime.
 - It can reuse `AdapterSession`, permission policy, `AdapterEvent`, and
   renderer outputs without guessing OpenClaw payload shapes.
 - It avoids implementing a Gateway WebSocket client before auth, scope, and
@@ -153,12 +153,12 @@ Do not jump straight to production integration.
 - Confirm how a tool result is rendered back to the user and whether it can
   preserve `request_id`.
 - Confirm how OpenClaw represents channel/user/account/thread/session keys.
-- Confirm whether ProjectOps needs a plugin-specific operator scope.
-- Confirm how to package or configure a local ProjectOps bridge in OpenClaw.
+- Confirm whether Weaveflow needs a plugin-specific operator scope.
+- Confirm how to package or configure a local Weaveflow bridge in OpenClaw.
 - Confirm subprocess timeout, environment, cwd, and path safety rules.
 - Confirm how to test the integration locally without a real Slack/Telegram
   bot.
-- Confirm whether sensitive ProjectOps actions need a richer explicit
+- Confirm whether sensitive Weaveflow actions need a richer explicit
   confirmation UX in OpenClaw.
 
 ## Decision Record
@@ -168,5 +168,5 @@ Current decision: Do not integrate real OpenClaw yet.
 First build a narrow bridge or proof of concept aligned with a confirmed
 runtime surface.
 
-Reason: Avoid coupling ProjectOps to guessed payloads or unstable undocumented
+Reason: Avoid coupling Weaveflow to guessed payloads or unstable undocumented
 APIs.

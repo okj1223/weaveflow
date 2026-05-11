@@ -29,7 +29,7 @@ deterministic intent mapper plus the confirmation helper.
 - Mutating commands return `state: pending_confirmation` unless
   `allow_mutation=True` is passed.
 - `confirm(request_id)` confirms a pending request, executes it through
-  `ProjectOpsServiceAdapter`, removes it from pending state, and returns a
+  `WeaveflowServiceAdapter`, removes it from pending state, and returns a
   completed or error result.
 - `reject(request_id)` removes the pending request and returns `state:
   rejected` without executing it.
@@ -50,8 +50,8 @@ The store tracks:
 - latest pending request ID by session key
 
 It does not write files, use SQLite, call external APIs, or persist sessions.
-It should not be treated as the source of truth for ProjectOps task state.
-`.projectops` files and SQLite remain the source of truth for task state.
+It should not be treated as the source of truth for Weaveflow task state.
+`.weaveflow` files and SQLite remain the source of truth for task state.
 
 Channel-specific adapters can use the same store boundary instead of inventing
 their own pending-confirmation storage. OpenClaw currently exposes
@@ -74,7 +74,7 @@ high-risk, or unknown; it is not enforced by `AdapterSession` in this phase.
 - Pending state is in-memory only.
 - External adapters must decide how to persist or rehydrate state later if they
   need that behavior.
-- ProjectOps state changes only through `ProjectOpsServiceAdapter`.
+- Weaveflow state changes only through `WeaveflowServiceAdapter`.
 - The session does not call external APIs, run background workers, or silently
   confirm requests.
 
@@ -100,13 +100,13 @@ a separate explicit adapter feature.
 ```python
 from pathlib import Path
 
-from projectops.adapters import AdapterSession, ProjectOpsServiceAdapter
+from weaveflow.adapters import AdapterSession, WeaveflowServiceAdapter
 
-session = AdapterSession(ProjectOpsServiceAdapter(Path(".")))
+session = AdapterSession(WeaveflowServiceAdapter(Path(".")))
 
 turn = session.handle_text("init workspace", request_id="req-init")
 if turn.state == "pending_confirmation":
-    # Ask the user before mutating ProjectOps state.
+    # Ask the user before mutating Weaveflow state.
     turn = session.confirm("req-init")
 
 print(turn.ok, turn.state)
@@ -115,7 +115,7 @@ print(turn.ok, turn.state)
 To render the turn consistently in a future UI:
 
 ```python
-from projectops.adapters import event_from_turn_result
+from weaveflow.adapters import event_from_turn_result
 
 event = event_from_turn_result(turn)
 print(event.event_type, event.level, event.message)
@@ -130,4 +130,4 @@ python3 examples/adapter_session_demo.py
 ```
 
 The demo uses `TemporaryDirectory` and does not modify the repository's real
-ProjectOps workspace.
+Weaveflow workspace.

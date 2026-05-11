@@ -1,11 +1,11 @@
-"""Local ProjectOps adapter event model demo.
+"""Local Weaveflow adapter event model demo.
 
 Run with:
 
     python3 examples/adapter_event_demo.py
 
 The demo uses a temporary workspace and does not modify the repository's real
-.projectops directory.
+.weaveflow directory.
 """
 
 from __future__ import annotations
@@ -20,10 +20,10 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from projectops.adapters import (  # noqa: E402
+from weaveflow.adapters import (  # noqa: E402
     AdapterSession,
     AdapterTranscript,
-    ProjectOpsServiceAdapter,
+    WeaveflowServiceAdapter,
     event_from_turn_result,
     event_to_display_line,
 )
@@ -32,7 +32,7 @@ from projectops.adapters import (  # noqa: E402
 def main() -> None:
     with TemporaryDirectory() as temp_dir:
         root = Path(temp_dir)
-        session = AdapterSession(ProjectOpsServiceAdapter(root))
+        session = AdapterSession(WeaveflowServiceAdapter(root))
         transcript = AdapterTranscript(session_id="demo-session")
 
         def record(turn) -> None:

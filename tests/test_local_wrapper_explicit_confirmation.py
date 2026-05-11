@@ -3,11 +3,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from projectops.adapters.local_wrapper import (
+from weaveflow.adapters.local_wrapper import (
     LocalBridgeWrapper,
     PendingExplicitConfirmation,
 )
-from projectops.json_io import to_jsonable
+from weaveflow.json_io import to_jsonable
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,7 +46,7 @@ def create_task(wrapper: LocalBridgeWrapper, root: Path) -> None:
     assert create.route_reason == "route_to_establish_pending_confirmation"
     confirmed = wrapper.handle_payload(payload("yes", "m-create-yes"))
     assert confirmed.ok is True
-    assert root.joinpath(".projectops", "tasks", "TASK-0001", "task_spec.yaml").exists()
+    assert root.joinpath(".weaveflow", "tasks", "TASK-0001", "task_spec.yaml").exists()
 
 
 def setup_workspace_and_task(tmp_path: Path) -> LocalBridgeWrapper:
@@ -57,7 +57,7 @@ def setup_workspace_and_task(tmp_path: Path) -> LocalBridgeWrapper:
 
 
 def verification_record(root: Path) -> Path:
-    return root / ".projectops" / "tasks" / "TASK-0001" / "verification_record.yaml"
+    return root / ".weaveflow" / "tasks" / "TASK-0001" / "verification_record.yaml"
 
 
 def test_imports() -> None:
@@ -198,7 +198,7 @@ def test_sensitive_create_final_report_held(tmp_path: Path) -> None:
         assert result.requires_explicit_confirmation is True
         assert result.action == "create_final_report"
         assert not tmp_path.joinpath(
-            ".projectops",
+            ".weaveflow",
             "tasks",
             "TASK-0001",
             "final_report.md",
@@ -220,7 +220,7 @@ def test_attach_result_held_before_routing(tmp_path: Path) -> None:
         assert result.requires_explicit_confirmation is True
         assert result.action == "attach_result"
         assert not tmp_path.joinpath(
-            ".projectops",
+            ".weaveflow",
             "tasks",
             "TASK-0001",
             "artifacts.yaml",
@@ -243,7 +243,7 @@ def test_shutdown_clears_pending_explicit_confirmations(tmp_path: Path) -> None:
 
 
 def test_bridge_not_started_for_explicit_confirmation() -> None:
-    wrapper = LocalBridgeWrapper(Path("/tmp/projectops-wrapper-not-started"))
+    wrapper = LocalBridgeWrapper(Path("/tmp/weaveflow-wrapper-not-started"))
     result = wrapper.handle_explicit_confirmation(
         "confirm verify_task m-verify",
         request_id="m-verify",
@@ -318,7 +318,7 @@ def test_runtime_compatibility_safe_mutation_still_works(tmp_path: Path) -> None
         initialize_workspace(wrapper)
         create_task(wrapper, tmp_path)
         assert tmp_path.joinpath(
-            ".projectops",
+            ".weaveflow",
             "tasks",
             "TASK-0001",
             "task_spec.yaml",

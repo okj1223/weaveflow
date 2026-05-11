@@ -1,4 +1,4 @@
-"""Demo lightweight health checks for the ProjectOps stdio bridge."""
+"""Demo lightweight health checks for the Weaveflow stdio bridge."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from projectops.adapters.stdio_health import check_bridge_subprocess_health  # noqa: E402
+from weaveflow.adapters.stdio_health import check_bridge_subprocess_health  # noqa: E402
 
 
 def print_result(label: str, root: Path, diagnostics: bool) -> None:

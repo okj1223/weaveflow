@@ -5,18 +5,18 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from projectops.cli import app
+from weaveflow.cli import app
 
 
 runner = CliRunner()
 
 
 def task_dir(root: Path, task_id: str = "TASK-0001") -> Path:
-    return root / ".projectops" / "tasks" / task_id
+    return root / ".weaveflow" / "tasks" / task_id
 
 
 def update_sqlite_status(root: Path, task_id: str, status: str) -> None:
-    with sqlite3.connect(root / ".projectops" / "state.sqlite") as connection:
+    with sqlite3.connect(root / ".weaveflow" / "state.sqlite") as connection:
         connection.execute(
             "UPDATE tasks SET status = ? WHERE id = ?",
             (status, task_id),
@@ -68,9 +68,9 @@ def test_doctor_fails_cleanly_before_init(
 
     assert result.exit_code == 1
     assert "workspace missing" in result.output
-    assert "Run `ops init` first" in result.output
+    assert "Run `weaveflow init` first" in result.output
     assert "ERROR: 1" in result.output
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
 
 
 def test_doctor_passes_after_init_with_no_tasks(
@@ -108,7 +108,7 @@ def test_doctor_detects_missing_required_workspace_file(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     assert runner.invoke(app, ["init"]).exit_code == 0
-    (tmp_path / ".projectops" / "config.yaml").unlink()
+    (tmp_path / ".weaveflow" / "config.yaml").unlink()
 
     result = runner.invoke(app, ["doctor"])
 
@@ -182,7 +182,7 @@ def test_doctor_detects_task_directory_not_indexed_in_sqlite(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     assert runner.invoke(app, ["init"]).exit_code == 0
-    unindexed_dir = tmp_path / ".projectops" / "tasks" / "TASK-9999"
+    unindexed_dir = tmp_path / ".weaveflow" / "tasks" / "TASK-9999"
     unindexed_dir.mkdir()
 
     result = runner.invoke(app, ["doctor"])

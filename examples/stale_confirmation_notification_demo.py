@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from projectops.adapters.local_wrapper import LocalBridgeWrapper
+from weaveflow.adapters.local_wrapper import LocalBridgeWrapper
 
 
 def payload(text: str, message_id: str) -> dict[str, str]:

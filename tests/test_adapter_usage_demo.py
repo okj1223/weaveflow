@@ -9,7 +9,7 @@ DOC_PATH = ROOT / "docs" / "adapter_usage_examples.md"
 
 
 def task_dirs() -> set[str]:
-    tasks_dir = ROOT / ".projectops" / "tasks"
+    tasks_dir = ROOT / ".weaveflow" / "tasks"
     if not tasks_dir.is_dir():
         return set()
     return {path.name for path in tasks_dir.glob("TASK-*") if path.is_dir()}
@@ -58,8 +58,8 @@ def test_demo_uses_temporary_workspace_source() -> None:
     source = DEMO_PATH.read_text(encoding="utf-8")
 
     assert "TemporaryDirectory" in source
-    assert 'ProjectOpsServiceAdapter(Path("."))' not in source
-    assert "ProjectOpsServiceAdapter(root)" in source
+    assert 'WeaveflowServiceAdapter(Path("."))' not in source
+    assert "WeaveflowServiceAdapter(root)" in source
 
 
 def test_adapter_usage_documentation_exists() -> None:
@@ -70,7 +70,7 @@ def test_adapter_usage_documentation_mentions_key_terms() -> None:
     text = DOC_PATH.read_text(encoding="utf-8")
 
     for expected in [
-        "ProjectOpsServiceAdapter",
+        "WeaveflowServiceAdapter",
         "AdapterRequest",
         "AdapterResponse",
         "OpenClaw",

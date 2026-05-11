@@ -16,7 +16,7 @@ def test_poc_openclaw_stdio_bridge_plan_mentions_required_terms() -> None:
     for term in [
         "poc/openclaw-stdio-bridge",
         "v0.1.0-integration-freeze",
-        "projectops.adapters.stdio_bridge",
+        "weaveflow.adapters.stdio_bridge",
         "ping",
         "handle_payload",
         "shutdown",

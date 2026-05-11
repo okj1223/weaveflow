@@ -3,7 +3,7 @@
 ## Purpose
 
 This document defines the diagnostics contract for future stderr output from
-the ProjectOps stdio bridge and external wrappers.
+the Weaveflow stdio bridge and external wrappers.
 
 stdout remains the protocol channel. stderr is diagnostics-only. This is not
 real OpenClaw integration. This is not a server logging system.
@@ -49,14 +49,14 @@ Future stderr diagnostics may use JSON lines shaped like:
 
 ```json
 {
-  "contract_version": "projectops.v1",
-  "diagnostic_version": "projectops.diagnostics.v1",
+  "contract_version": "weaveflow.v1",
+  "diagnostic_version": "weaveflow.diagnostics.v1",
   "level": "info",
   "event": "bridge_started",
   "bridge_request_id": null,
   "request_id": null,
   "action": null,
-  "message": "ProjectOps stdio bridge started.",
+  "message": "Weaveflow stdio bridge started.",
   "timestamp": "2026-05-09T00:00:00Z",
   "metadata": {}
 }
@@ -104,7 +104,7 @@ should keep diagnostics JSON-safe.
 ## PHASE 10-M Implementation Status
 
 `DiagnosticEvent` and `DiagnosticWriter` now exist in
-`projectops.adapters.diagnostics`. Diagnostics can be emitted to stderr or to
+`weaveflow.adapters.diagnostics`. Diagnostics can be emitted to stderr or to
 an injected stream, which keeps tests and future process wrappers from mixing
 diagnostics with protocol output.
 
@@ -115,7 +115,7 @@ a writer is provided, the bridge may emit JSON lines such as `bridge_started`,
 `normalization_error`, `shutdown_requested`, and `bridge_stopped`.
 
 stdout remains protocol-only. Diagnostic lines use
-`projectops.diagnostics.v1` and are separate from `StdioBridgeResponse` JSON.
+`weaveflow.diagnostics.v1` and are separate from `StdioBridgeResponse` JSON.
 This is not production logging, and the lightweight path redaction is not a
 full secret redaction system.
 
@@ -124,7 +124,7 @@ full secret redaction system.
 PHASE 10-N adds subprocess validation for the module entrypoint:
 
 ```bash
-python3 -m projectops.adapters.stdio_bridge --root <workspace-root> --diagnostics-stderr
+python3 -m weaveflow.adapters.stdio_bridge --root <workspace-root> --diagnostics-stderr
 ```
 
 `--diagnostics-stderr` enables structured diagnostic JSON lines on stderr.
@@ -220,31 +220,31 @@ events in the future. This phase does not implement those emissions.
 bridge_started:
 
 ```json
-{"contract_version":"projectops.v1","diagnostic_version":"projectops.diagnostics.v1","level":"info","event":"bridge_started","bridge_request_id":null,"request_id":null,"action":null,"message":"ProjectOps stdio bridge started.","timestamp":"2026-05-09T00:00:00Z","metadata":{}}
+{"contract_version":"weaveflow.v1","diagnostic_version":"weaveflow.diagnostics.v1","level":"info","event":"bridge_started","bridge_request_id":null,"request_id":null,"action":null,"message":"Weaveflow stdio bridge started.","timestamp":"2026-05-09T00:00:00Z","metadata":{}}
 ```
 
 request_completed:
 
 ```json
-{"contract_version":"projectops.v1","diagnostic_version":"projectops.diagnostics.v1","level":"info","event":"request_completed","bridge_request_id":"bridge-001","request_id":"m1","action":"status","message":"Bridge request completed.","timestamp":"2026-05-09T00:00:01Z","metadata":{"duration_ms":12}}
+{"contract_version":"weaveflow.v1","diagnostic_version":"weaveflow.diagnostics.v1","level":"info","event":"request_completed","bridge_request_id":"bridge-001","request_id":"m1","action":"status","message":"Bridge request completed.","timestamp":"2026-05-09T00:00:01Z","metadata":{"duration_ms":12}}
 ```
 
 normalization_error:
 
 ```json
-{"contract_version":"projectops.v1","diagnostic_version":"projectops.diagnostics.v1","level":"warning","event":"normalization_error","bridge_request_id":"bridge-002","request_id":null,"action":null,"message":"Payload normalization failed.","timestamp":"2026-05-09T00:00:02Z","metadata":{"error_type":"OpenClawPayloadNormalizationError"}}
+{"contract_version":"weaveflow.v1","diagnostic_version":"weaveflow.diagnostics.v1","level":"warning","event":"normalization_error","bridge_request_id":"bridge-002","request_id":null,"action":null,"message":"Payload normalization failed.","timestamp":"2026-05-09T00:00:02Z","metadata":{"error_type":"OpenClawPayloadNormalizationError"}}
 ```
 
 session_lost:
 
 ```json
-{"contract_version":"projectops.v1","diagnostic_version":"projectops.diagnostics.v1","level":"warning","event":"session_lost","bridge_request_id":null,"request_id":null,"action":null,"message":"Pending confirmations were cleared after bridge restart.","timestamp":"2026-05-09T00:00:03Z","metadata":{}}
+{"contract_version":"weaveflow.v1","diagnostic_version":"weaveflow.diagnostics.v1","level":"warning","event":"session_lost","bridge_request_id":null,"request_id":null,"action":null,"message":"Pending confirmations were cleared after bridge restart.","timestamp":"2026-05-09T00:00:03Z","metadata":{}}
 ```
 
 shutdown_requested:
 
 ```json
-{"contract_version":"projectops.v1","diagnostic_version":"projectops.diagnostics.v1","level":"info","event":"shutdown_requested","bridge_request_id":"bridge-999","request_id":null,"action":null,"message":"Bridge shutdown requested.","timestamp":"2026-05-09T00:00:04Z","metadata":{}}
+{"contract_version":"weaveflow.v1","diagnostic_version":"weaveflow.diagnostics.v1","level":"info","event":"shutdown_requested","bridge_request_id":"bridge-999","request_id":null,"action":null,"message":"Bridge shutdown requested.","timestamp":"2026-05-09T00:00:04Z","metadata":{}}
 ```
 
 ## Future Implementation Checklist

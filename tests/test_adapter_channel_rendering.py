@@ -3,18 +3,18 @@ from pathlib import Path
 
 import pytest
 
-from projectops.adapters import (
+from weaveflow.adapters import (
     AdapterEvent,
     AdapterSession,
     AdapterTranscript,
     ChannelRenderPolicy,
-    ProjectOpsServiceAdapter,
+    WeaveflowServiceAdapter,
     event_from_turn_result,
     get_channel_render_policy,
     render_event_for_channel,
     render_transcript_for_channel,
 )
-from projectops.adapters.openclaw import OpenClawAdapter, OpenClawMessage
+from weaveflow.adapters.openclaw import OpenClawAdapter, OpenClawMessage
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,7 +22,7 @@ DEMO_PATH = ROOT / "examples" / "adapter_channel_rendering_demo.py"
 
 
 def make_session(root: Path) -> AdapterSession:
-    return AdapterSession(ProjectOpsServiceAdapter(root))
+    return AdapterSession(WeaveflowServiceAdapter(root))
 
 
 def status_event(root: Path) -> AdapterEvent:
@@ -224,13 +224,13 @@ def test_transcript_rendering(tmp_path: Path) -> None:
 def test_rendering_does_not_touch_files(tmp_path: Path) -> None:
     event = status_event(tmp_path)
 
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
     render_event_for_channel(event, channel="openclaw")
     render_transcript_for_channel(
         AdapterTranscript(session_id="session-1", events=[event]),
         channel="openclaw",
     )
-    assert not (tmp_path / ".projectops").exists()
+    assert not (tmp_path / ".weaveflow").exists()
 
 
 def test_adapter_channel_rendering_demo_runs() -> None:
@@ -276,4 +276,4 @@ def test_openclaw_runtime_compatibility(tmp_path: Path) -> None:
 
     assert pending.event_type == "pending_confirmation"
     assert confirmed.ok is True
-    assert (tmp_path / ".projectops").is_dir()
+    assert (tmp_path / ".weaveflow").is_dir()
