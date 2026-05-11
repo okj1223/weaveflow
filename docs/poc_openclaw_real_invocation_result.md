@@ -245,11 +245,11 @@ The successful workspace contains:
 
 ## Remaining Unknowns
 
-- A full model-driven OpenClaw chat/session turn has not yet been tested. Treat
-  it as optional manual validation, not a reason to add new code.
-- User-facing optional tool selection in an interactive OpenClaw UI has not yet
-  been validated. Treat it as optional manual validation, not a reason to add
-  new code.
+- A full model-driven OpenClaw chat/session turn had not yet been tested during
+  the original `/tools/invoke` closeout. A later Discord UI POC, documented
+  below, confirmed the Discord chat path.
+- User-facing optional tool selection in other interactive OpenClaw UI surfaces
+  has not yet been validated. Treat it as optional manual validation, not a reason to add new code.
 - The checked-out branch has a later rename commit after `59d7239`, so the
   current tree's plugin is named `weaveflow_stdio_poc`; this ProjectOps result
   was produced from the exact `59d7239` temporary worktree.
@@ -259,3 +259,76 @@ The successful workspace contains:
 PHASE 12-B is closed as a documented POC outcome. This result does not start a
 new architecture phase, config hardening phase, production integration phase, or
 chat/TUI implementation phase.
+
+## Discord OpenClaw Weaveflow POC Result
+
+A later documentation-only closeout recorded that the current Weaveflow plugin
+also works through the real Discord chat path:
+
+```text
+Discord message
+-> @QuadPoter
+-> OpenClaw Discord session
+-> weaveflow_stdio_poc
+-> Weaveflow stdio bridge
+-> Weaveflow task creation
+-> Discord response
+```
+
+The current repository plugin is:
+
+- Plugin id: `weaveflow-stdio-poc`
+- Plugin name: `Weaveflow Stdio POC`
+- Plugin directory:
+  `/home/okj/workspace/weaveflow/integrations/openclaw-weaveflow-stdio-poc`
+- Tool name: `weaveflow_stdio_poc`
+
+Tool exposure required default OpenClaw profile configuration and session
+refresh only. No Weaveflow code, plugin behavior, or repository files were
+changed for the successful Discord run.
+
+Confirmed exposure state:
+
+- Default profile plugin visible: yes
+- Default profile tool visible: yes
+- Discord connector profile: default
+- Discord session effective tool list included `weaveflow_stdio_poc`: yes
+- `tools.alsoAllow` included `weaveflow_stdio_poc`
+- `plugins.allow` included `discord`, `openai`, and `weaveflow-stdio-poc`
+
+The Discord POC successfully invoked `@QuadPoter`; OpenClaw exposed
+`weaveflow_stdio_poc` in the Discord session; and the tool completed the full
+Weaveflow stdio POC sequence:
+
+```text
+Weaveflow stdio POC: ok
+ping=ok
+status=ok
+create_task=ok
+pending_confirmation=yes
+confirmation_completed=yes
+task_list_seen=yes
+shutdown=ok
+task_id=TASK-0001
+```
+
+Important finding:
+
+- The first Discord test reached `weaveflow_stdio_poc`, but failed with
+  `UnknownIntent` when `taskText` was only
+  `Discord OpenClaw Weaveflow POC task`.
+- The successful retry used explicit create-task wording:
+  `Create a task titled Discord OpenClaw Weaveflow POC task`.
+
+Remaining limitation:
+
+- Natural-language `taskText` must clearly express create-task intent. A bare
+  title-like phrase can reach the tool but still fail intent mapping.
+
+Closeout boundary:
+
+- Discord -> OpenClaw -> `weaveflow_stdio_poc` -> Weaveflow task creation is
+  confirmed as a POC outcome.
+- No new architecture phase, wrapper, safety layer, renderer, notification
+  system, diagnostics, replay, session system, auth/RBAC, process supervision,
+  production integration, or plugin behavior change was started.

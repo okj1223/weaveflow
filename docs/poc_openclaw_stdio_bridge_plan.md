@@ -350,10 +350,13 @@ Confirmed behavior:
 - The fixed bridge sequence works against an initialized temporary Weaveflow
   workspace.
 
-Remaining unknowns:
+Remaining unknowns at this point in the POC:
 
-- The tool has not yet been invoked from a real OpenClaw chat session.
-- Optional tool allowlisting/user enablement still needs real UX validation.
+- The tool had not yet been invoked from a real OpenClaw chat session at this
+  point in the plan. A later Discord POC confirmed
+  `Discord -> OpenClaw -> weaveflow_stdio_poc -> Weaveflow` task creation.
+- Optional tool allowlisting/user enablement for the Discord path was later
+  validated with default profile config and session refresh only.
 - Workspace root selection is still manual tool input.
 - The POC is one-shot; it starts and stops the bridge for one fixed sequence.
 - No long-lived process, persistent sessions, auth/RBAC, or process supervisor
@@ -408,3 +411,47 @@ Closeout boundary:
   optional manual validation, not a reason to add new code.
 - This result does not start a new architecture phase, config hardening phase,
   production integration phase, or chat/TUI implementation phase.
+
+## Discord OpenClaw Weaveflow POC Result
+
+The current Weaveflow plugin was later exposed to the default OpenClaw profile
+used by Discord and invoked from Discord through `@QuadPoter`.
+
+Confirmed exposure state:
+
+- Plugin visible in default profile: yes
+- Tool visible in default profile: yes
+- Discord connector profile: default
+- Discord session effective tool list included `weaveflow_stdio_poc`: yes
+- `tools.alsoAllow` included `weaveflow_stdio_poc`
+- `plugins.allow` included `discord`, `openai`, and `weaveflow-stdio-poc`
+
+Successful path:
+
+```text
+Discord -> OpenClaw -> weaveflow_stdio_poc -> Weaveflow task creation
+```
+
+Successful tool output:
+
+```text
+Weaveflow stdio POC: ok
+ping=ok
+status=ok
+create_task=ok
+pending_confirmation=yes
+confirmation_completed=yes
+task_list_seen=yes
+shutdown=ok
+task_id=TASK-0001
+```
+
+Important finding:
+
+- A first Discord attempt reached the tool but failed with `UnknownIntent`
+  when `taskText` was only `Discord OpenClaw Weaveflow POC task`.
+- The successful retry used explicit create-task wording:
+  `Create a task titled Discord OpenClaw Weaveflow POC task`.
+
+No code changes were needed. The remaining limitation is that natural-language
+`taskText` must clearly express create-task intent.
