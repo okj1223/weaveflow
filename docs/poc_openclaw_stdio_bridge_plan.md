@@ -358,3 +358,53 @@ Remaining unknowns:
 - The POC is one-shot; it starts and stops the bridge for one fixed sequence.
 - No long-lived process, persistent sessions, auth/RBAC, or process supervisor
   has been added.
+
+## PHASE 12-B Real Invocation Result
+
+PHASE 12-B attempted real OpenClaw invocation of the original
+`projectops_stdio_poc` tool from commit `59d7239` by creating a temporary
+detached worktree at `/tmp/projectops-kernel-phase12b`. This avoided rewriting
+the current branch history, which now includes a later rename commit.
+
+Result summary:
+
+- The existing `--dev` profile was blocked by stale config pointing at the
+  missing path
+  `/home/okj/workspace/projectops-kernel/integrations/openclaw-projectops-stdio-poc`.
+- An isolated OpenClaw profile, `phase12b-projectops-poc`, linked the temporary
+  ProjectOps plugin path and enabled only `projectops-stdio-poc` plus
+  `projectops_stdio_poc`.
+- The installed OpenClaw CLI did not expose a documented `plugins test`,
+  `tools call`, or `skills run` command.
+- The smallest real invocation surface found locally was the gateway HTTP
+  endpoint `/tools/invoke`.
+- The first `/tools/invoke` call proved OpenClaw could invoke the tool, but the
+  uninitialized workspace failed after pending confirmation with
+  `WorkspaceNotFoundError`.
+- The successful `/tools/invoke` call used initialized workspace
+  `/tmp/openclaw-projectops-real-init-lLpsNg` and returned:
+  `ping=ok`, `status=ok`, `create_task=ok`, `pending_confirmation=yes`,
+  `confirmation_completed=yes`, `task_list_seen=yes`, `shutdown=ok`, and
+  `task_id=TASK-0001`.
+- Successful sequence:
+  - `ping` ok
+  - `status` ok
+  - `create task` returned pending confirmation
+  - `yes` confirmed task creation
+  - `task list` saw `TASK-0001`
+  - `shutdown` ok
+- Successful invocation required `workspaceRoot` to point to an initialized
+  ProjectOps workspace.
+- Stale `--dev` profile paths and stale repository `.projectops` paths are
+  local environment/workspace hygiene issues, not blockers for the confirmed
+  real invocation result.
+
+Actual OpenClaw invocation succeeded through `/tools/invoke`; no chat/TUI
+interaction was required for the smallest real invocation path.
+
+Closeout boundary:
+
+- Model-driven chat/TUI invocation remains untested and should be treated as
+  optional manual validation, not a reason to add new code.
+- This result does not start a new architecture phase, config hardening phase,
+  production integration phase, or chat/TUI implementation phase.
