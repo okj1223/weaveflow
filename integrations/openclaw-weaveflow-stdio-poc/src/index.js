@@ -178,6 +178,15 @@ export default definePluginEntry({
               enum: ["auto", "specific", "timeboxed"],
               description: "How to interpret userRequest. Defaults to auto."
             },
+            sessionMode: {
+              type: "string",
+              enum: ["single", "multi_step"],
+              description: "Run as one Codex job or a multi-step autonomous work session. Defaults to single."
+            },
+            maxSteps: {
+              type: "number",
+              description: "Maximum session steps when sessionMode is multi_step."
+            },
             push: {
               type: "boolean",
               description: "Push the task branch when a remote exists. Defaults to true."
@@ -212,6 +221,8 @@ export default definePluginEntry({
               userRequest,
               timeBudgetMinutes: readOptionalNumber(params, "timeBudgetMinutes"),
               autonomyMode: readOptionalString(params, "autonomyMode") || "auto",
+              sessionMode: readOptionalString(params, "sessionMode") || "single",
+              maxSteps: readOptionalNumber(params, "maxSteps"),
               push: readOptionalBoolean(params, "push", true),
               runTests: readOptionalBoolean(params, "runTests", true),
               maxFixAttempts: readOptionalNumber(params, "maxFixAttempts"),

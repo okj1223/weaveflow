@@ -236,6 +236,80 @@ test("Codex job start uses normalized intake fields for metadata and branch nami
   assert.match(goal, /시간 예산: 45분/);
 });
 
+test("Codex job multi-step session creates session artifacts and Korean progress", async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "weaveflow-session-test-"));
+  const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
+  const start = await startWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    userRequest: "Spend about 45 minutes improving the documentation around the Weaveflow OpenClaw Codex job runner.",
+    sessionMode: "multi_step",
+    timeBudgetMinutes: 45,
+    maxSteps: 3,
+    push: false,
+    runTests: true,
+    maxFixAttempts: 2,
+    startWorker: false
+  });
+
+  assert.equal(start.sessionMode, "multi_step");
+  assert.equal(start.totalSteps > 0, true);
+  assert.equal(start.totalSteps <= 3, true);
+  assert.equal(start.currentSessionStep.status, "pending");
+  assert.match(formatCodexJobStartSummary(start), /세션 진행/);
+
+  const jobState = JSON.parse(await readFile(join(start.jobDir, "job.yaml"), "utf8"));
+  assert.equal(jobState.session_mode, "multi_step");
+  assert.equal(jobState.total_steps, start.totalSteps);
+  assert.equal(jobState.completed_steps, 0);
+  assert.equal(jobState.failed_steps, 0);
+  assert.equal(jobState.skipped_steps, 0);
+  assert.equal(jobState.session_plan_path, join(start.jobDir, "session_plan.md"));
+  assert.equal(jobState.session_summary_path, join(start.jobDir, "session_summary.md"));
+
+  const sessionSteps = JSON.parse(await readFile(join(start.jobDir, "session_steps.json"), "utf8"));
+  assert.equal(sessionSteps.length, start.totalSteps);
+  assert.deepEqual(Object.keys(sessionSteps[0]).sort(), [
+    "commit_hash",
+    "estimated_minutes",
+    "finished_at",
+    "goal",
+    "reason",
+    "result_summary",
+    "risk",
+    "selected_files_hint",
+    "started_at",
+    "status",
+    "step_id",
+    "title",
+    "value",
+    "verification_commands"
+  ].sort());
+  assert.match(await readFile(join(start.jobDir, "session_plan.md"), "utf8"), /Multi-step Work Session Plan/);
+  assert.match(await readFile(join(start.jobDir, "steps", "step-1", "step.md"), "utf8"), /^# step-1:/);
+
+  const status = await checkWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    jobId: start.jobId
+  });
+  assert.equal(status.sessionMode, "multi_step");
+  assert.equal(status.totalSteps, start.totalSteps);
+  assert.match(formatCodexJobStatusSummary(status), /세션 진행/);
+  assert.match(formatCodexJobStatusSummary(status), /현재 단계 목표:/);
+
+  const cancel = await cancelWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    jobId: start.jobId
+  });
+  assert.equal(cancel.cancelled, true);
+  assert.equal(cancel.sessionMode, "multi_step");
+  assert.equal(cancel.skippedSteps, start.totalSteps);
+  assert.match(formatCodexJobCancelSummary(cancel), /세션 진행/);
+  assert.match(await readFile(join(start.jobDir, "session_summary.md"), "utf8"), /사용자 요청으로 세션이 취소되었습니다/);
+});
+
 test("Codex job timeline and result report include durations and observability fields", () => {
   const state = {
     job_id: "JOB-0001",

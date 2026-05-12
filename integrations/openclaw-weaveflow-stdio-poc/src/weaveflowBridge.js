@@ -38,6 +38,18 @@ import {
   planVerificationCommands,
   summarizeVerificationPlanKorean
 } from "./verificationPlanner.js";
+import {
+  buildWorkSessionPlan,
+  normalizeSessionMode,
+  renderSessionPlanMarkdown,
+  renderSessionStepMarkdown,
+  renderSessionSummaryMarkdown,
+  sessionProgress,
+  shouldStopForTimeBudget,
+  skipPendingSessionSteps,
+  summarizeSessionProgressKorean,
+  updateSessionStep
+} from "./workSession.js";
 
 export const CONTRACT_VERSION = "weaveflow.v1";
 export const DEFAULT_TASK_TEXT = "OpenClaw stdio bridge POC task";
@@ -674,6 +686,8 @@ export async function startWeaveflowCodexJob(options) {
   const timeoutMs = options?.timeoutMs || DEFAULT_TIMEOUT_MS;
   const requestedTimeBudgetMinutes = normalizeOptionalPositiveInteger(options?.timeBudgetMinutes);
   const requestedAutonomyMode = normalizeAutonomyMode(options?.autonomyMode);
+  const sessionMode = normalizeSessionMode(options?.sessionMode);
+  const maxSteps = normalizeOptionalPositiveInteger(options?.maxSteps) || null;
   const policy = resolveJobPolicy({
     userRequest,
     timeBudgetMinutes: requestedTimeBudgetMinutes ?? intake.time_budget_minutes,
@@ -704,6 +718,9 @@ export async function startWeaveflowCodexJob(options) {
   });
   const jobId = await nextJobId(jobsRoot);
   const jobDir = await ensureJobDir(jobsRoot, jobId);
+  const sessionPlanPath = sessionMode === "multi_step" ? join(jobDir, "session_plan.md") : null;
+  const sessionSummaryPath = sessionMode === "multi_step" ? join(jobDir, "session_summary.md") : null;
+  const sessionStepsPath = sessionMode === "multi_step" ? join(jobDir, "session_steps.json") : null;
   const branch = await chooseJobBranchName({
     jobId,
     userRequest,
@@ -732,6 +749,18 @@ export async function startWeaveflowCodexJob(options) {
     repo_resolution: repoResolution,
     job_policy: policy,
     verification_plan: null,
+    session_mode: sessionMode,
+    max_steps: maxSteps,
+    total_steps: 0,
+    current_step_index: 0,
+    completed_steps: 0,
+    failed_steps: 0,
+    skipped_steps: 0,
+    session_plan_path: sessionPlanPath,
+    session_summary_path: sessionSummaryPath,
+    session_steps_path: sessionStepsPath,
+    current_session_step: null,
+    recent_session_result: null,
     requested_autonomy_mode: requestedAutonomyMode,
     autonomy_mode: autonomyMode,
     resolved_autonomy_mode: null,
@@ -786,6 +815,15 @@ export async function startWeaveflowCodexJob(options) {
     repoAlias: repoResolution.repoAlias
   }, state, now);
 
+  if (sessionMode === "multi_step") {
+    state = await prepareInitialWorkSession({
+      jobDir,
+      state,
+      maxSteps,
+      timeoutMs
+    });
+  }
+
   if (options?.startWorker === false) {
     return buildJobStartDetails(state);
   }
@@ -839,6 +877,18 @@ export async function runCodexJobWorker(jobDir) {
       candidateCount: planning.candidates?.length || 0,
       selectedScope: planning.selectedScope?.title || "User-specified task"
     });
+
+    if (state.session_mode === "multi_step") {
+      state = await runMultiStepCodexSession({
+        jobDir,
+        state,
+        scan,
+        planning,
+        verificationPlan: initialVerificationPlan,
+        deadlineMs
+      });
+      return;
+    }
 
     assertJobNotTimedOut(deadlineMs);
     const tempRoot = await mkdtemp(join(tmpdir(), `weaveflow-codex-job-${state.job_id}-`));
@@ -1140,6 +1190,14 @@ export async function runCodexJobWorker(jobDir) {
     });
     await writeJobFile(jobDir, "result.md", renderCodexJobResultMarkdown(state, planning));
   } catch (error) {
+    state = await readOptionalJobState(jobDir) || state;
+    if (state.session_mode === "multi_step") {
+      const steps = skipPendingSessionSteps(await readSessionSteps(jobDir), "작업 실패로 세션을 중단했습니다.");
+      if (steps.length) {
+        await writeSessionSteps(jobDir, steps);
+        state = await updateSessionStateFromSteps(jobDir, state, steps);
+      }
+    }
     const message = safeOneLine(error instanceof Error ? error.message : String(error));
     const status = message.includes("exceeded max runtime") ? "timeout" : "failed";
     const eventName = status === "timeout" ? "job_timeout" : "job_failed";
@@ -1190,6 +1248,16 @@ export async function checkWeaveflowCodexJob(options) {
     repoResolution: state.repo_resolution,
     jobPolicy: state.job_policy,
     verificationPlan: state.verification_plan,
+    sessionMode: state.session_mode || "single",
+    totalSteps: state.total_steps || 0,
+    currentStepIndex: state.current_step_index || 0,
+    completedSteps: state.completed_steps || 0,
+    failedSteps: state.failed_steps || 0,
+    skippedSteps: state.skipped_steps || 0,
+    currentSessionStep: state.current_session_step,
+    recentSessionResult: state.recent_session_result,
+    sessionPlanPath: state.session_plan_path,
+    sessionSummaryPath: state.session_summary_path,
     jobDir,
     worktree: state.worktree
   };
@@ -1221,6 +1289,13 @@ export async function cancelWeaveflowCodexJob(options) {
     } else {
       cancelled = true;
     }
+    if (state.session_mode === "multi_step") {
+      const steps = skipPendingSessionSteps(await readSessionSteps(jobDir), "사용자 요청으로 세션이 취소되었습니다.");
+      if (steps.length) {
+        await writeSessionSteps(jobDir, steps);
+        state = await updateSessionStateFromSteps(jobDir, state, steps);
+      }
+    }
     state = await recordJobEvent(jobDir, state, "job_cancelled", "Codex job cancelled by request.", {
       previousStatus,
       signalError
@@ -1239,6 +1314,13 @@ export async function cancelWeaveflowCodexJob(options) {
     cancelled,
     preservedWorktree: state.worktree,
     logPath: jobDir,
+    sessionMode: state.session_mode,
+    totalSteps: state.total_steps,
+    completedSteps: state.completed_steps,
+    failedSteps: state.failed_steps,
+    skippedSteps: state.skipped_steps,
+    currentSessionStep: state.current_session_step,
+    recentSessionResult: state.recent_session_result,
     error: signalError || null
   };
 }
@@ -1251,6 +1333,7 @@ export function formatCodexJobStartSummary(summary) {
     report,
     `저장소: ${summary.repoRoot || summary.repoResolution?.repoRoot || "없음"}`,
     summary.jobPolicy?.korean_summary ? `정책:\n${summary.jobPolicy.korean_summary}` : "",
+    summary.sessionMode === "multi_step" ? summarizeSessionProgressKorean(sessionProgressFromSummary(summary)) : "",
     `상태 확인: weaveflow_check_codex_job jobId=${summary.jobId}`,
     `취소: weaveflow_cancel_codex_job jobId=${summary.jobId}`,
     `작업 디렉터리: ${summary.jobDir}`
@@ -1271,6 +1354,7 @@ export function formatCodexJobStatusSummary(summary) {
     selected,
     summary.jobPolicy?.korean_summary ? `정책:\n${summary.jobPolicy.korean_summary}` : "",
     summary.verificationPlan?.korean_summary ? `검증 계획:\n${summary.verificationPlan.korean_summary}` : "",
+    summary.sessionMode === "multi_step" ? summarizeSessionProgressKorean(sessionProgressFromSummary(summary)) : "",
     "최근 로그:",
     logs
   ];
@@ -1288,9 +1372,22 @@ export function formatCodexJobCancelSummary(summary) {
     `취소 처리: ${summary.cancelled ? "예" : "아니오"}`,
     `현재 상태: ${summary.status}`,
     `보존된 worktree: ${summary.preservedWorktree || "없음"}`,
+    summary.sessionMode === "multi_step" ? summarizeSessionProgressKorean(sessionProgressFromSummary(summary)) : "",
     `로그 경로: ${summary.logPath}`,
     summary.error ? `오류: ${summary.error}` : ""
   ].filter(Boolean).join("\n");
+}
+
+function sessionProgressFromSummary(summary = {}) {
+  return {
+    totalSteps: summary.totalSteps || 0,
+    currentStepIndex: summary.currentStepIndex || 0,
+    completedSteps: summary.completedSteps || 0,
+    failedSteps: summary.failedSteps || 0,
+    skippedSteps: summary.skippedSteps || 0,
+    currentStep: summary.currentSessionStep || null,
+    recentResult: summary.recentSessionResult || null
+  };
 }
 
 async function runBridgeProcess({ pythonCommand, projectRoot, workspaceRoot, requests, timeoutMs }) {
@@ -1864,6 +1961,9 @@ async function writeRequiredJobPlaceholders(jobDir, userRequest, intake = null) 
     "selected_scope.md": "# Selected Scope\n\n대기 중입니다.\n",
     "execution_plan.md": "# Execution Plan\n\n대기 중입니다.\n",
     "verification_plan.md": "# Verification Plan\n\n대기 중입니다.\n",
+    "session_plan.md": "# Multi-step Work Session Plan\n\nsingle session mode 또는 계획 대기 중입니다.\n",
+    "session_steps.json": "[]\n",
+    "session_summary.md": "# Multi-step Work Session Summary\n\nsingle session mode 또는 결과 대기 중입니다.\n",
     "codex_prompt.md": "# Codex Prompt\n\n대기 중입니다.\n",
     "events.jsonl": "",
     "stdout.log": "",
@@ -2069,6 +2169,16 @@ function buildJobStartDetails(state) {
     repoResolution: state.repo_resolution,
     jobPolicy: state.job_policy,
     verificationPlan: state.verification_plan,
+    sessionMode: state.session_mode || "single",
+    totalSteps: state.total_steps || 0,
+    currentStepIndex: state.current_step_index || 0,
+    completedSteps: state.completed_steps || 0,
+    failedSteps: state.failed_steps || 0,
+    skippedSteps: state.skipped_steps || 0,
+    currentSessionStep: state.current_session_step,
+    recentSessionResult: state.recent_session_result,
+    sessionPlanPath: state.session_plan_path,
+    sessionSummaryPath: state.session_summary_path,
     recentEvents: [
       {
         timestamp: state.stage_timestamps?.job_created || state.started_at,
@@ -2259,6 +2369,101 @@ function renderVerificationPlanMarkdown(plan = {}) {
     plan.warnings?.length ? plan.warnings.map((warning) => `- ${warning}`).join("\n") : "- none",
     ""
   ].join("\n");
+}
+
+async function prepareInitialWorkSession({ jobDir, state, maxSteps, timeoutMs }) {
+  const scan = await scanRepositoryForJob({
+    repoRoot: state.repo_root,
+    timeoutMs
+  });
+  const verificationPlan = buildVerificationPlan(scan, state.job_policy || {}, { cwd: "." });
+  const sessionPlan = createWorkSessionPlanForState({
+    state,
+    scan,
+    verificationPlan,
+    maxSteps
+  });
+  await writeJobFile(jobDir, "repo_scan.md", renderRepoScanMarkdown(scan));
+  await writeJobFile(jobDir, "verification_plan.md", renderVerificationPlanMarkdown(verificationPlan));
+  await writeWorkSessionArtifacts(jobDir, sessionPlan);
+  let next = await updateJobState(jobDir, state, {
+    verification_plan: verificationPlan,
+    session_plan_path: join(jobDir, "session_plan.md"),
+    session_summary_path: join(jobDir, "session_summary.md"),
+    session_steps_path: join(jobDir, "session_steps.json")
+  });
+  next = await updateSessionStateFromSteps(jobDir, next, sessionPlan.steps);
+  await appendJobEvent(jobDir, "session_planned", "Multi-step session plan created.", {
+    totalSteps: sessionPlan.steps.length,
+    maxSteps: sessionPlan.max_steps
+  }, next);
+  return next;
+}
+
+function createWorkSessionPlanForState({ state, scan, verificationPlan, maxSteps = null }) {
+  return buildWorkSessionPlan({
+    userRequest: state.user_request,
+    normalizedJobRequest: state.job_intake,
+    repoContext: scan,
+    jobPolicy: state.job_policy,
+    verificationPlan,
+    timeBudgetMinutes: state.time_budget_minutes,
+    maxSteps: maxSteps || state.max_steps || 3
+  });
+}
+
+async function writeWorkSessionArtifacts(jobDir, sessionPlan) {
+  await mkdir(join(jobDir, "steps"), { recursive: true });
+  await writeJobFile(jobDir, "session_plan.md", renderSessionPlanMarkdown(sessionPlan));
+  await writeJsonAtomic(join(jobDir, "session_steps.json"), sessionPlan.steps || []);
+  await writeJobFile(jobDir, "session_summary.md", renderSessionSummaryMarkdown({
+    plan: sessionPlan,
+    steps: sessionPlan.steps || []
+  }));
+  await Promise.all((sessionPlan.steps || []).map((step, index) => writeSessionStepArtifacts(jobDir, step, index, sessionPlan.steps.length)));
+}
+
+async function writeSessionStepArtifacts(jobDir, step, index, total) {
+  const stepDir = sessionStepDir(jobDir, step);
+  await mkdir(stepDir, { recursive: true });
+  await writeFile(join(stepDir, "step.md"), renderSessionStepMarkdown(step, index, total), "utf8");
+  if (!existsSync(join(stepDir, "result.md"))) {
+    await writeFile(join(stepDir, "result.md"), "# Step Result\n\n아직 결과가 없습니다.\n", "utf8");
+  }
+  if (!existsSync(join(stepDir, "test_output.log"))) {
+    await writeFile(join(stepDir, "test_output.log"), "", "utf8");
+  }
+}
+
+async function readSessionSteps(jobDir) {
+  const steps = await readJsonSafe(join(jobDir, "session_steps.json"));
+  return Array.isArray(steps) ? steps : [];
+}
+
+async function writeSessionSteps(jobDir, steps, plan = null) {
+  await writeJsonAtomic(join(jobDir, "session_steps.json"), steps);
+  await Promise.all(steps.map((step, index) => writeSessionStepArtifacts(jobDir, step, index, steps.length)));
+  await writeJobFile(jobDir, "session_summary.md", renderSessionSummaryMarkdown({
+    plan: plan || {},
+    steps
+  }));
+}
+
+async function updateSessionStateFromSteps(jobDir, state, steps) {
+  const progress = sessionProgress(steps);
+  return updateJobState(jobDir, state, {
+    total_steps: progress.totalSteps,
+    current_step_index: progress.currentStepIndex,
+    completed_steps: progress.completedSteps,
+    failed_steps: progress.failedSteps,
+    skipped_steps: progress.skippedSteps,
+    current_session_step: progress.currentStep,
+    recent_session_result: progress.recentResult
+  });
+}
+
+function sessionStepDir(jobDir, step) {
+  return join(jobDir, "steps", step.step_id || "step-unknown");
 }
 
 function contextProjectTypes(types = []) {
@@ -2594,6 +2799,403 @@ function buildCodexJobPrompt({ state, planning, scan, taskFiles, repoStatus }) {
   ].filter(Boolean).join("\n");
 }
 
+async function runMultiStepCodexSession({ jobDir, state, scan, planning, verificationPlan, deadlineMs }) {
+  const sessionPlan = createWorkSessionPlanForState({
+    state,
+    scan,
+    verificationPlan,
+    maxSteps: state.max_steps
+  });
+  await writeWorkSessionArtifacts(jobDir, sessionPlan);
+  let steps = sessionPlan.steps || [];
+  state = await updateSessionStateFromSteps(jobDir, state, steps);
+  state = await recordJobEvent(jobDir, state, "session_started", "Multi-step Codex session started.", {
+    totalSteps: steps.length
+  }, {
+    status: "running",
+    current_step: "session_running"
+  });
+
+  assertJobNotTimedOut(deadlineMs);
+  const tempRoot = await mkdtemp(join(tmpdir(), `weaveflow-codex-session-${state.job_id}-`));
+  const worktreeRoot = join(tempRoot, "repo");
+  state = await updateJobState(jobDir, state, {
+    worktree: worktreeRoot,
+    current_step: "git_worktree"
+  });
+  await appendJobEvent(jobDir, "worktree", "Creating isolated git worktree for multi-step session.", {
+    worktree: worktreeRoot,
+    branch: state.branch
+  });
+  const worktreeResult = await runLoggedCommand({
+    jobDir,
+    command: "git",
+    args: ["worktree", "add", "-b", state.branch, worktreeRoot, "HEAD"],
+    cwd: state.repo_root,
+    env: process.env,
+    timeoutMs: DEFAULT_TIMEOUT_MS
+  });
+  if (worktreeResult.code !== 0) {
+    throw new Error(`git worktree add failed: ${safeOneLine(worktreeResult.stderr || worktreeResult.stdout)}`);
+  }
+
+  const taskFiles = await readTaskFiles({
+    taskSpecPath: state.task_spec_path,
+    planPath: state.plan_path,
+    briefPath: state.brief_path
+  });
+
+  for (let index = 0; index < steps.length; index += 1) {
+    let step = steps[index];
+    if (step.status !== "pending") {
+      continue;
+    }
+    if (shouldStopForTimeBudget({
+      startedAt: state.started_at,
+      timeBudgetMinutes: state.time_budget_minutes,
+      nextStep: step
+    })) {
+      steps = skipPendingSessionSteps(steps, "시간 예산이 소진되어 남은 단계를 건너뜁니다.");
+      await writeSessionSteps(jobDir, steps, sessionPlan);
+      state = await updateSessionStateFromSteps(jobDir, state, steps);
+      await appendJobEvent(jobDir, "session_budget_exhausted", "Session stopped before the next step because the time budget was exhausted.", {
+        nextStep: step.step_id
+      }, state);
+      break;
+    }
+
+    const startedAt = new Date().toISOString();
+    steps = updateSessionStep(steps, step.step_id, {
+      status: "running",
+      started_at: startedAt,
+      result_summary: ""
+    });
+    await writeSessionSteps(jobDir, steps, sessionPlan);
+    step = steps[index];
+    state = await updateSessionStateFromSteps(jobDir, state, steps);
+    state = await updateJobState(jobDir, state, {
+      status: "running",
+      current_step: `session_${step.step_id}`,
+      current_step_index: index + 1
+    });
+    await appendJobEvent(jobDir, "session_step_started", "Session step started.", {
+      stepId: step.step_id,
+      title: step.title
+    }, state);
+
+    const stepDir = sessionStepDir(jobDir, step);
+    const prompt = buildCodexSessionStepPrompt({
+      state,
+      planning,
+      scan,
+      taskFiles,
+      step,
+      stepIndex: index,
+      totalSteps: steps.length,
+      repoStatus: await currentRepoStatus(state.repo_root, DEFAULT_TIMEOUT_MS)
+    });
+    await writeFile(join(stepDir, "prompt.md"), prompt, "utf8");
+    const codexResult = await runCodexJobAttempt({
+      jobDir,
+      state,
+      worktreeRoot,
+      prompt,
+      attemptLabel: step.step_id,
+      sandboxMode: state.codex_sandbox_mode || "workspace-write",
+      deadlineMs
+    });
+    state = await updateJobState(jobDir, state, {
+      codex_exit_code: codexResult.code,
+      codex_termination: codexResult.termination
+    });
+    if (codexResult.code !== 0 || codexResult.termination !== "exit") {
+      steps = updateSessionStep(steps, step.step_id, {
+        status: "failed",
+        finished_at: new Date().toISOString(),
+        result_summary: `Codex 실행 실패: exit=${codexResult.code} termination=${codexResult.termination}`
+      });
+      steps = skipPendingSessionSteps(steps, "이전 단계 실패로 남은 단계를 건너뜁니다.");
+      await writeSessionSteps(jobDir, steps, sessionPlan);
+      state = await updateSessionStateFromSteps(jobDir, state, steps);
+      throw new Error(`Session step ${step.step_id} failed: exit=${codexResult.code} termination=${codexResult.termination}`);
+    }
+
+    let changedFiles = await currentChangedFiles(worktreeRoot, state.repo_root);
+    const stepVerificationPlan = buildVerificationPlan(scan, {
+      ...(state.job_policy || {}),
+      runTests: state.run_tests,
+      changedFiles
+    }, {
+      cwd: worktreeRoot,
+      changedFiles
+    });
+    let tests = {
+      run: false,
+      passed: null,
+      checks: [],
+      plan: stepVerificationPlan
+    };
+    if (state.run_tests && stepVerificationPlan.commands.length) {
+      for (let attempt = 0; attempt <= state.max_fix_attempts; attempt += 1) {
+        tests = await runTargetedChecks({
+          worktreeRoot,
+          changedFiles,
+          pythonCommand: state.python_command || "python3",
+          timeoutMs: 120000,
+          verificationPlan: stepVerificationPlan
+        });
+        await writeFile(join(stepDir, "test_output.log"), renderJobTestOutput(tests), "utf8");
+        if (tests.passed) {
+          break;
+        }
+        if (attempt >= state.max_fix_attempts) {
+          break;
+        }
+        const fixPrompt = buildCodexSessionStepFixPrompt({
+          state,
+          step,
+          tests,
+          attempt: attempt + 1
+        });
+        await writeFile(join(stepDir, `fix_prompt_${attempt + 1}.md`), fixPrompt, "utf8");
+        const fixResult = await runCodexJobAttempt({
+          jobDir,
+          state,
+          worktreeRoot,
+          prompt: fixPrompt,
+          attemptLabel: `${step.step_id}-fix-${attempt + 1}`,
+          sandboxMode: state.codex_sandbox_mode || "workspace-write",
+          deadlineMs
+        });
+        if (fixResult.code !== 0 || fixResult.termination !== "exit") {
+          throw new Error(`Session step ${step.step_id} fix attempt ${attempt + 1} failed.`);
+        }
+        changedFiles = await currentChangedFiles(worktreeRoot, state.repo_root);
+      }
+    } else {
+      await writeFile(join(stepDir, "test_output.log"), renderJobTestOutput(tests), "utf8");
+    }
+
+    if (tests.run && tests.passed === false) {
+      steps = updateSessionStep(steps, step.step_id, {
+        status: "failed",
+        finished_at: new Date().toISOString(),
+        result_summary: "검증 실패로 세션을 중단했습니다."
+      });
+      steps = skipPendingSessionSteps(steps, "이전 단계 검증 실패로 남은 단계를 건너뜁니다.");
+      await writeSessionSteps(jobDir, steps, sessionPlan);
+      state = await updateSessionStateFromSteps(jobDir, state, steps);
+      throw new Error(`Session step ${step.step_id} checks failed.`);
+    }
+
+    const resultSummary = `${step.title} 단계를 완료했습니다. 변경 파일 ${changedFiles.length}개.`;
+    steps = updateSessionStep(steps, step.step_id, {
+      status: "completed",
+      finished_at: new Date().toISOString(),
+      result_summary: resultSummary
+    });
+    await writeSessionSteps(jobDir, steps, sessionPlan);
+    await writeFile(join(stepDir, "result.md"), [
+      "# Step Result",
+      "",
+      resultSummary,
+      "",
+      "## Changed Files",
+      changedFiles.length ? changedFiles.map((file) => `- ${file}`).join("\n") : "- 없음",
+      "",
+      "## Codex Last Message",
+      fenced(codexResult.lastMessage || "(empty)", "text"),
+      ""
+    ].join("\n"), "utf8");
+    state = await updateSessionStateFromSteps(jobDir, state, steps);
+    state = await updateJobState(jobDir, state, {
+      changed_files: changedFiles,
+      tests
+    });
+    await appendJobEvent(jobDir, "session_step_completed", "Session step completed.", {
+      stepId: step.step_id,
+      changedFileCount: changedFiles.length
+    }, state);
+  }
+
+  const completedSteps = steps.filter((step) => step.status === "completed");
+  const changedFiles = await currentChangedFiles(worktreeRoot, state.repo_root);
+  if (!completedSteps.length) {
+    throw new Error("No session steps completed successfully.");
+  }
+  if (!changedFiles.length) {
+    throw new Error("Session completed steps but left no repository changes to commit.");
+  }
+
+  const diffResult = await runLoggedCommand({
+    jobDir,
+    command: "git",
+    args: ["-C", worktreeRoot, "diff", "--binary"],
+    cwd: state.repo_root,
+    env: process.env,
+    timeoutMs: DEFAULT_TIMEOUT_MS
+  });
+  await writeJobFile(jobDir, "diff.patch", diffResult.stdout);
+
+  state = await recordJobEvent(jobDir, state, "commit_started", "Git commit stage started.", {
+    changedFileCount: changedFiles.length
+  }, {
+    status: "committing",
+    current_step: "git_commit",
+    changed_files: changedFiles
+  });
+  const addResult = await runLoggedCommand({
+    jobDir,
+    command: "git",
+    args: ["-C", worktreeRoot, "add", "-A"],
+    cwd: state.repo_root,
+    env: process.env,
+    timeoutMs: DEFAULT_TIMEOUT_MS
+  });
+  if (addResult.code !== 0) {
+    throw new Error(`git add failed: ${safeOneLine(addResult.stderr || addResult.stdout)}`);
+  }
+  const commitResult = await runLoggedCommand({
+    jobDir,
+    command: "git",
+    args: ["-C", worktreeRoot, "commit", "-m", buildJobCommitMessage(planning, state.user_request)],
+    cwd: state.repo_root,
+    env: process.env,
+    timeoutMs: 120000
+  });
+  if (commitResult.code !== 0) {
+    throw new Error(`git commit failed: ${safeOneLine(commitResult.stderr || commitResult.stdout)}`);
+  }
+  const commitHashResult = await runLoggedCommand({
+    jobDir,
+    command: "git",
+    args: ["-C", worktreeRoot, "rev-parse", "--short", "HEAD"],
+    cwd: state.repo_root,
+    env: process.env,
+    timeoutMs: DEFAULT_TIMEOUT_MS
+  });
+  if (commitHashResult.code !== 0) {
+    throw new Error(`git rev-parse failed: ${safeOneLine(commitHashResult.stderr || commitHashResult.stdout)}`);
+  }
+  state = await updateJobState(jobDir, state, {
+    commit_hash: commitHashResult.stdout.trim()
+  });
+  steps = steps.map((step) => step.status === "completed" ? { ...step, commit_hash: state.commit_hash } : step);
+  await writeSessionSteps(jobDir, steps, sessionPlan);
+  state = await updateSessionStateFromSteps(jobDir, state, steps);
+  state = await recordJobEvent(jobDir, state, "commit_finished", "Git commit stage finished.", {
+    commitHash: state.commit_hash
+  });
+
+  if (state.push) {
+    state = await recordJobEvent(jobDir, state, "push_started", "Git push stage started.", {}, {
+      status: "pushing",
+      current_step: "git_push"
+    });
+    const remote = await firstGitRemote(state.repo_root, DEFAULT_TIMEOUT_MS);
+    if (remote) {
+      const pushResult = await runLoggedCommand({
+        jobDir,
+        command: "git",
+        args: ["-C", worktreeRoot, "push", "-u", remote, state.branch],
+        cwd: state.repo_root,
+        env: process.env,
+        timeoutMs: 120000
+      });
+      if (pushResult.code !== 0) {
+        throw new Error(`git push failed: ${safeOneLine(pushResult.stderr || pushResult.stdout)}`);
+      }
+      state = await updateJobState(jobDir, state, { pushed: true });
+      state = await recordJobEvent(jobDir, state, "push_finished", "Git push stage finished.", {
+        branch: state.branch,
+        pushed: true
+      });
+    } else {
+      state = await recordJobEvent(jobDir, state, "push_finished", "Git push skipped because no remote is configured.", {
+        branch: state.branch,
+        pushed: false
+      });
+    }
+  }
+
+  state = await recordJobEvent(jobDir, state, "job_completed", "Multi-step Codex session completed.", {
+    commitHash: state.commit_hash,
+    pushed: state.pushed,
+    completedSteps: state.completed_steps
+  }, {
+    status: "completed",
+    current_step: "completed",
+    result_artifact_path: join(jobDir, "result.md"),
+    error: null
+  });
+  await writeJobFile(jobDir, "session_summary.md", renderSessionSummaryMarkdown({
+    plan: sessionPlan,
+    steps
+  }));
+  await writeJobFile(jobDir, "result.md", renderCodexJobResultMarkdown(state, planning));
+  return state;
+}
+
+function buildCodexSessionStepPrompt({ state, planning, scan, taskFiles, step, stepIndex, totalSteps, repoStatus }) {
+  return [
+    "You are running as Codex inside an isolated temporary git worktree for a Weaveflow/OpenClaw multi-step work session POC.",
+    "Execute only the current session step. Do not move ahead to other steps.",
+    "Do not commit, push, merge, or modify files outside this worktree. The Weaveflow job runner will verify and commit after successful steps.",
+    "Do not expose secrets, tokens, environment variables, or credentials.",
+    "Keep the change realistic for the step estimate and selected file hints.",
+    "When finished, respond with a concise Korean summary of changed files and checks you ran or recommend.",
+    "",
+    `Job ID: ${state.job_id}`,
+    `Task ID: ${state.task_id}`,
+    `Session step: ${stepIndex + 1} of ${totalSteps}`,
+    `Step ID: ${step.step_id}`,
+    `Target branch: ${state.branch}`,
+    "",
+    "## Overall User Request",
+    state.user_request,
+    "",
+    "## Current Step",
+    renderSessionStepMarkdown(step, stepIndex, totalSteps),
+    "",
+    "## Current Repo Status",
+    repoStatus,
+    "",
+    "## Repository Scan",
+    renderRepoScanMarkdown(scan),
+    "",
+    "## Session Selected Scope",
+    planning.selectedScopeMarkdown,
+    "",
+    "## Weaveflow task_spec.yaml",
+    taskFiles.taskSpec,
+    "",
+    "## Weaveflow plan.yaml",
+    taskFiles.plan,
+    "",
+    "## Weaveflow Worker Brief",
+    taskFiles.brief
+  ].filter(Boolean).join("\n");
+}
+
+function buildCodexSessionStepFixPrompt({ state, step, tests, attempt }) {
+  return [
+    "You are still running inside the same isolated worktree for a Weaveflow/Codex multi-step session.",
+    "The current step failed checks. Make the smallest focused fix only for this step.",
+    "Do not commit, push, merge, or modify files outside this worktree.",
+    "When finished, respond in Korean with what you fixed.",
+    "",
+    `Job ID: ${state.job_id}`,
+    `Step ID: ${step.step_id}`,
+    `Fix attempt: ${attempt} of ${state.max_fix_attempts}`,
+    "",
+    "## Current Step",
+    renderSessionStepMarkdown(step),
+    "",
+    "## Failed Check Output",
+    renderJobTestOutput(tests)
+  ].join("\n");
+}
+
 function buildCodexJobFixPrompt({ state, planning, tests, attempt }) {
   return [
     "You are still running inside the same isolated worktree for a Weaveflow/Codex job.",
@@ -2615,6 +3217,10 @@ function buildCodexJobFixPrompt({ state, planning, tests, attempt }) {
 function attemptNumberForLabel(label) {
   if (label === "initial") return 1;
   if (label === "sandbox-fallback") return 2;
+  const stepMatch = String(label || "").match(/^step-(\d+)$/);
+  if (stepMatch) return 100 + Number(stepMatch[1]);
+  const stepFixMatch = String(label || "").match(/^step-(\d+)-fix-(\d+)$/);
+  if (stepFixMatch) return 100 + Number(stepFixMatch[1]) * 10 + Number(stepFixMatch[2]);
   const match = String(label || "").match(/^fix-(\d+)$/);
   if (match) return 10 + Number(match[1]);
   return 99;
@@ -2795,6 +3401,17 @@ export function renderCodexJobResultMarkdown(state, planning) {
     "## Selected Scope",
     planning?.selectedScopeMarkdown || "(not available)",
     "",
+    state.session_mode === "multi_step" ? "## Session Summary" : "",
+    state.session_mode === "multi_step" ? summarizeSessionProgressKorean(sessionProgressFromSummary({
+      totalSteps: state.total_steps,
+      currentStepIndex: state.current_step_index,
+      completedSteps: state.completed_steps,
+      failedSteps: state.failed_steps,
+      skippedSteps: state.skipped_steps,
+      currentSessionStep: state.current_session_step,
+      recentSessionResult: state.recent_session_result
+    })) : "",
+    state.session_mode === "multi_step" ? "" : "",
     "## Timeline",
     renderTimelineTable(timeline),
     "",
