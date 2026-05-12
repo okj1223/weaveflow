@@ -159,10 +159,11 @@ test("Codex job start creates file-based state without starting worker when requ
   assert.equal(status.status, "queued");
   assert.equal(status.elapsedMs >= 0, true);
   assert.deepEqual(Object.keys(status.stageDurations), ["planning", "codex", "tests", "fixes", "commit", "push"]);
-  assert.match(formatCodexJobStartSummary(start), /Weaveflow Codex 작업을 시작했습니다/);
-  assert.match(formatCodexJobStatusSummary(status), /작업 ID:/);
+  assert.match(formatCodexJobStartSummary(start), /Weaveflow Codex 작업 시작/);
+  assert.match(formatCodexJobStatusSummary(status), /Weaveflow Codex 작업 상태/);
   assert.match(formatCodexJobStatusSummary(status), /총 경과 시간:/);
-  assert.match(formatCodexJobStatusSummary(status), /최근 이벤트 5개:/);
+  assert.match(formatCodexJobStatusSummary(status), /최근 이벤트:/);
+  assert.match(formatCodexJobStatusSummary(status), /job_created/);
 
   const cancel = await cancelWeaveflowCodexJob({
     workspaceRoot,
@@ -170,6 +171,7 @@ test("Codex job start creates file-based state without starting worker when requ
     jobId: start.jobId
   });
   assert.equal(cancel.cancelled, true);
+  assert.match(formatCodexJobCancelSummary(cancel), /Weaveflow Codex 작업 취소/);
   assert.match(formatCodexJobCancelSummary(cancel), /취소 처리: 예/);
 
   const cancelledState = JSON.parse(await readFile(join(start.jobDir, "job.yaml"), "utf8"));
@@ -177,6 +179,31 @@ test("Codex job start creates file-based state without starting worker when requ
   assert.equal(cancelledState.last_event, "job_cancelled");
   assert.equal(cancelledState.elapsed_ms >= 0, true);
   assert.equal(cancelledState.stage_timestamps.job_cancelled.length > 0, true);
+});
+
+test("Codex job start uses normalized intake fields for metadata and branch naming", async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "weaveflow-job-intake-test-"));
+  const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
+  const start = await startWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    userRequest: "Spend 45 minutes improving repo quality yourself.",
+    autonomyMode: "auto",
+    push: false,
+    startWorker: false
+  });
+
+  const jobState = JSON.parse(await readFile(join(start.jobDir, "job.yaml"), "utf8"));
+  assert.equal(jobState.time_budget_minutes, 45);
+  assert.equal(jobState.autonomy_mode, "timeboxed");
+  assert.equal(jobState.job_intake.time_budget_minutes, 45);
+  assert.equal(jobState.job_intake.autonomy_mode, "timeboxed");
+  assert.match(jobState.normalized_goal, /저장소 품질 개선/);
+  assert.match(jobState.branch, new RegExp(`^codex/${start.jobId}-${jobState.job_intake.branch_slug}`));
+
+  const goal = await readFile(join(start.jobDir, "goal.md"), "utf8");
+  assert.match(goal, /Intake Summary/);
+  assert.match(goal, /시간 예산: 45분/);
 });
 
 test("Codex job timeline and result report include durations and observability fields", () => {
