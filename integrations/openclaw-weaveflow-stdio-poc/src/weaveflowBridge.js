@@ -678,6 +678,17 @@ export async function startWeaveflowCodexJob(options) {
     started_at: now,
     updated_at: now,
     finished_at: null,
+    elapsed_ms: 0,
+    planning_elapsed_ms: null,
+    codex_elapsed_ms: null,
+    tests_elapsed_ms: null,
+    commit_elapsed_ms: null,
+    push_elapsed_ms: null,
+    fix_attempts_elapsed_ms: 0,
+    stage_timestamps: {
+      job_created: now
+    },
+    last_event: "job_created",
     commit_hash: null,
     pushed: false,
     changed_files: [],
@@ -696,21 +707,19 @@ export async function startWeaveflowCodexJob(options) {
 
   await writeRequiredJobPlaceholders(jobDir, userRequest);
   await writeJobState(jobDir, state);
-  await appendJobEvent(jobDir, "queued", "Codex background job queued.", {
+  await appendJobEvent(jobDir, "job_created", "Codex job state created.", {
     jobId,
     taskId: taskInfo.taskId,
     branch
-  });
+  }, state, now);
 
   if (options?.startWorker === false) {
     return buildJobStartDetails(state);
   }
 
   const child = await startBackgroundJobProcess({ jobDir, repoRoot });
-  state.pid = child.pid;
-  state.updated_at = new Date().toISOString();
-  await writeJobState(jobDir, state);
-  await appendJobEvent(jobDir, "started", "Codex background worker started.", { pid: child.pid });
+  state = await updateJobState(jobDir, state, { pid: child.pid });
+  await appendJobEvent(jobDir, "worker_started", "Codex background worker started.", { pid: child.pid }, state);
   return buildJobStartDetails(state);
 }
 
@@ -720,11 +729,10 @@ export async function runCodexJobWorker(jobDir) {
 
   try {
     assertJobNotTimedOut(deadlineMs);
-    state = await updateJobState(jobDir, state, {
+    state = await recordJobEvent(jobDir, state, "planning_started", "Repository scan started.", {}, {
       status: "planning",
       current_step: "repo_scan"
     });
-    await appendJobEvent(jobDir, "planning", "Repository scan started.");
     const resolvedAutonomyMode = resolveAutonomyMode(state.autonomy_mode, state.user_request);
     state = await updateJobState(jobDir, state, {
       resolved_autonomy_mode: resolvedAutonomyMode
@@ -745,6 +753,10 @@ export async function runCodexJobWorker(jobDir) {
     await writeJobFile(jobDir, "opportunity_backlog.md", planning.backlogMarkdown);
     await writeJobFile(jobDir, "selected_scope.md", planning.selectedScopeMarkdown);
     await writeJobFile(jobDir, "execution_plan.md", planning.executionPlanMarkdown);
+    state = await recordJobEvent(jobDir, state, "planning_finished", "Planning artifacts written.", {
+      candidateCount: planning.candidates?.length || 0,
+      selectedScope: planning.selectedScope?.title || "User-specified task"
+    });
 
     assertJobNotTimedOut(deadlineMs);
     const tempRoot = await mkdtemp(join(tmpdir(), `weaveflow-codex-job-${state.job_id}-`));
@@ -784,7 +796,9 @@ export async function runCodexJobWorker(jobDir) {
     });
     await writeJobFile(jobDir, "codex_prompt.md", prompt);
 
-    state = await updateJobState(jobDir, state, {
+    state = await recordJobEvent(jobDir, state, "codex_started", "Codex execution started.", {
+      sandboxMode: "workspace-write"
+    }, {
       status: "running",
       current_step: "codex_exec"
     });
@@ -802,6 +816,10 @@ export async function runCodexJobWorker(jobDir) {
       codex_termination: firstCodexResult.termination
     });
     if (firstCodexResult.code !== 0 || firstCodexResult.termination !== "exit") {
+      state = await recordJobEvent(jobDir, state, "codex_finished", "Codex execution finished with an error.", {
+        exitCode: firstCodexResult.code,
+        termination: firstCodexResult.termination
+      });
       throw new Error(`Codex failed: exit=${firstCodexResult.code} termination=${firstCodexResult.termination}`);
     }
 
@@ -823,11 +841,27 @@ export async function runCodexJobWorker(jobDir) {
         codex_sandbox_mode: "danger-full-access"
       });
       if (fallbackResult.code !== 0 || fallbackResult.termination !== "exit") {
+        state = await recordJobEvent(jobDir, state, "codex_finished", "Codex sandbox fallback finished with an error.", {
+          sandboxMode: "danger-full-access",
+          exitCode: fallbackResult.code,
+          termination: fallbackResult.termination
+        });
         throw new Error(`Codex sandbox fallback failed: exit=${fallbackResult.code} termination=${fallbackResult.termination}`);
       }
       changedFiles = await currentChangedFiles(worktreeRoot, state.repo_root);
     }
+    state = await recordJobEvent(jobDir, state, "codex_finished", "Codex execution finished.", {
+      sandboxMode: state.codex_sandbox_mode,
+      changedFileCount: changedFiles.length
+    });
     let tests = { run: false, passed: null, checks: [] };
+    state = await recordJobEvent(jobDir, state, "tests_started", "Job checks started.", {
+      changedFileCount: changedFiles.length
+    }, {
+      status: "testing",
+      current_step: "run_checks",
+      changed_files: changedFiles
+    });
     if (state.run_tests) {
       for (let attempt = 0; attempt <= state.max_fix_attempts; attempt += 1) {
         assertJobNotTimedOut(deadlineMs);
@@ -849,8 +883,11 @@ export async function runCodexJobWorker(jobDir) {
         if (tests.passed) break;
         if (attempt >= state.max_fix_attempts) break;
 
-        await appendJobEvent(jobDir, "fixing", "Checks failed. Running Codex fix attempt.", {
+        state = await recordJobEvent(jobDir, state, "fix_attempt_started", "Checks failed. Running Codex fix attempt.", {
           attempt: attempt + 1
+        }, {
+          status: "fixing",
+          current_step: `fix_attempt_${attempt + 1}`
         });
         const fixPrompt = buildCodexJobFixPrompt({
           state,
@@ -868,9 +905,20 @@ export async function runCodexJobWorker(jobDir) {
           deadlineMs
         });
         if (fixResult.code !== 0 || fixResult.termination !== "exit") {
+          state = await recordJobEvent(jobDir, state, "fix_attempt_finished", "Codex fix attempt finished with an error.", {
+            attempt: attempt + 1,
+            exitCode: fixResult.code,
+            termination: fixResult.termination
+          });
           throw new Error(`Codex fix attempt ${attempt + 1} failed: exit=${fixResult.code} termination=${fixResult.termination}`);
         }
         changedFiles = await currentChangedFiles(worktreeRoot, state.repo_root);
+        state = await recordJobEvent(jobDir, state, "fix_attempt_finished", "Codex fix attempt finished.", {
+          attempt: attempt + 1,
+          changedFileCount: changedFiles.length
+        }, {
+          changed_files: changedFiles
+        });
       }
     } else {
       const diffCheck = await runCheck({
@@ -886,6 +934,12 @@ export async function runCodexJobWorker(jobDir) {
       await writeJobFile(jobDir, "test_output.log", renderJobTestOutput(tests));
       state = await updateJobState(jobDir, state, { tests });
     }
+    state = await recordJobEvent(jobDir, state, "tests_finished", "Job checks finished.", {
+      passed: tests.passed,
+      checkCount: tests.checks?.length || 0
+    }, {
+      tests
+    });
 
     changedFiles = await currentChangedFiles(worktreeRoot, state.repo_root);
     if (!changedFiles.length) {
@@ -905,7 +959,9 @@ export async function runCodexJobWorker(jobDir) {
     });
     await writeJobFile(jobDir, "diff.patch", diffResult.stdout);
 
-    state = await updateJobState(jobDir, state, {
+    state = await recordJobEvent(jobDir, state, "commit_started", "Git commit stage started.", {
+      changedFileCount: changedFiles.length
+    }, {
       status: "committing",
       current_step: "git_commit",
       changed_files: changedFiles
@@ -946,9 +1002,12 @@ export async function runCodexJobWorker(jobDir) {
     state = await updateJobState(jobDir, state, {
       commit_hash: commitHashResult.stdout.trim()
     });
+    state = await recordJobEvent(jobDir, state, "commit_finished", "Git commit stage finished.", {
+      commitHash: state.commit_hash
+    });
 
     if (state.push) {
-      state = await updateJobState(jobDir, state, {
+      state = await recordJobEvent(jobDir, state, "push_started", "Git push stage started.", {}, {
         status: "pushing",
         current_step: "git_push"
       });
@@ -966,33 +1025,41 @@ export async function runCodexJobWorker(jobDir) {
           throw new Error(`git push failed: ${safeOneLine(pushResult.stderr || pushResult.stdout)}`);
         }
         state = await updateJobState(jobDir, state, { pushed: true });
+        state = await recordJobEvent(jobDir, state, "push_finished", "Git push stage finished.", {
+          branch: state.branch,
+          pushed: true
+        });
+      } else {
+        state = await recordJobEvent(jobDir, state, "push_finished", "Git push skipped because no remote is configured.", {
+          branch: state.branch,
+          pushed: false
+        });
       }
     }
 
-    state = await updateJobState(jobDir, state, {
+    state = await recordJobEvent(jobDir, state, "job_completed", "Codex job completed.", {
+      commitHash: state.commit_hash,
+      pushed: state.pushed
+    }, {
       status: "completed",
       current_step: "completed",
-      finished_at: new Date().toISOString(),
       result_artifact_path: join(jobDir, "result.md"),
       error: null
     });
     await writeJobFile(jobDir, "result.md", renderCodexJobResultMarkdown(state, planning));
-    await appendJobEvent(jobDir, "completed", "Codex job completed.", {
-      commitHash: state.commit_hash,
-      pushed: state.pushed
-    });
   } catch (error) {
     const message = safeOneLine(error instanceof Error ? error.message : String(error));
     const status = message.includes("exceeded max runtime") ? "timeout" : "failed";
-    state = await updateJobState(jobDir, state, {
+    const eventName = status === "timeout" ? "job_timeout" : "job_failed";
+    state = await recordJobEvent(jobDir, state, eventName, "Codex job stopped.", {
+      error: message
+    }, {
       status,
       current_step: status,
-      finished_at: new Date().toISOString(),
       result_artifact_path: join(jobDir, "result.md"),
       error: message
     });
     await writeJobFile(jobDir, "result.md", renderCodexJobResultMarkdown(state, null));
-    await appendJobEvent(jobDir, status, "Codex job stopped.", { error: message });
     process.exitCode = 1;
   }
 }
@@ -1003,6 +1070,7 @@ export async function checkWeaveflowCodexJob(options) {
   const workspaceRoot = resolve(cleanOptionalString(options?.workspaceRoot) || repoRoot);
   const jobDir = join(jobRootForWorkspace(workspaceRoot), jobId);
   const state = await readJobState(jobDir);
+  const recentEvents = await readRecentJobEvents(jobDir, 5);
   return {
     ok: true,
     jobId: state.job_id,
@@ -1010,12 +1078,18 @@ export async function checkWeaveflowCodexJob(options) {
     status: state.status,
     currentStep: state.current_step,
     elapsedSeconds: elapsedSeconds(state.started_at, state.finished_at),
+    elapsedMs: normalizedElapsedMs(state),
+    stageDurations: jobStageDurations(state),
+    budgetUsagePercent: budgetUsagePercent(state),
+    timeline: buildJobTimeline(state),
     goal: await readOptionalFile(join(jobDir, "goal.md")),
     timeBudgetMinutes: state.time_budget_minutes,
     selectedScope: await readOptionalFile(join(jobDir, "selected_scope.md")),
     branch: state.branch,
     changedFiles: state.changed_files || [],
+    recentEvents,
     recentLogs: await recentJobLogs(jobDir),
+    tests: state.tests,
     commitHash: state.commit_hash,
     pushed: state.pushed,
     resultArtifactPath: state.result_artifact_path,
@@ -1051,15 +1125,13 @@ export async function cancelWeaveflowCodexJob(options) {
     } else {
       cancelled = true;
     }
-    state = await updateJobState(jobDir, state, {
-      status: "cancelled",
-      current_step: "cancelled",
-      finished_at: new Date().toISOString(),
-      error: signalError || null
-    });
-    await appendJobEvent(jobDir, "cancelled", "Codex job cancelled by request.", {
+    state = await recordJobEvent(jobDir, state, "job_cancelled", "Codex job cancelled by request.", {
       previousStatus,
       signalError
+    }, {
+      status: "cancelled",
+      current_step: "cancelled",
+      error: signalError || null
     });
   }
 
@@ -1094,12 +1166,20 @@ export function formatCodexJobStatusSummary(summary) {
   const selected = summarizeMarkdown(summary.selectedScope, 800) || "아직 선택된 범위가 없습니다.";
   const logs = summarizeMarkdown(summary.recentLogs, 900) || "최근 로그가 없습니다.";
   const changed = summary.changedFiles?.length ? summary.changedFiles.map((file) => `- ${file}`).join("\n") : "- 없음";
+  const stageDurations = formatStageDurations(summary.stageDurations);
+  const budgetUsage = summary.budgetUsagePercent === null || summary.budgetUsagePercent === undefined
+    ? "없음"
+    : `${summary.budgetUsagePercent}%`;
+  const recentEvents = formatRecentEvents(summary.recentEvents);
+  const testResult = formatTestResult(summary.tests);
   const lines = [
     `작업 ID: ${summary.jobId}`,
     `태스크 ID: ${summary.taskId || "없음"}`,
     `상태: ${summary.status}`,
     `현재 단계: ${summary.currentStep || "없음"}`,
-    `경과 시간: ${formatElapsed(summary.elapsedSeconds)}`,
+    `총 경과 시간: ${formatDurationMs(summary.elapsedMs ?? summary.elapsedSeconds * 1000)}`,
+    `단계별 소요 시간: ${stageDurations}`,
+    `시간 예산 대비 사용률: ${budgetUsage}`,
     "목표:",
     goal,
     `시간 예산: ${summary.timeBudgetMinutes ? `${summary.timeBudgetMinutes}분` : "없음"}`,
@@ -1108,6 +1188,9 @@ export function formatCodexJobStatusSummary(summary) {
     selected,
     "변경 파일:",
     changed,
+    `테스트 결과: ${testResult}`,
+    "최근 이벤트 5개:",
+    recentEvents,
     "최근 로그:",
     logs
   ];
@@ -1633,12 +1716,47 @@ async function readJobState(jobDir) {
 }
 
 async function updateJobState(jobDir, state, updates) {
+  const updatedAt = new Date().toISOString();
+  const finishedAt = updates.finished_at || state.finished_at || null;
   const next = {
     ...state,
     ...updates,
-    updated_at: new Date().toISOString()
+    updated_at: updatedAt
   };
+  next.elapsed_ms = elapsedMsBetween(next.started_at, finishedAt || updatedAt);
   await writeJobState(jobDir, next);
+  return next;
+}
+
+async function recordJobEvent(jobDir, state, event, message, fields = {}, updates = {}) {
+  const timestamp = new Date().toISOString();
+  const timing = applyJobTimingEvent(state, event, timestamp, fields);
+  const terminal = terminalEventStatus(event);
+  const next = {
+    ...state,
+    ...updates,
+    ...timing.updates,
+    last_event: event,
+    updated_at: timestamp
+  };
+  if (terminal) {
+    next.status = updates.status || terminal;
+    next.current_step = updates.current_step || terminal;
+    next.finished_at = updates.finished_at || timestamp;
+  }
+  next.elapsed_ms = elapsedMsBetween(next.started_at, next.finished_at || timestamp);
+  await writeJobState(jobDir, next);
+  await appendJobEvent(
+    jobDir,
+    event,
+    message,
+    {
+      ...fields,
+      duration_ms: timing.durationMs
+    },
+    next,
+    timestamp
+  );
   return next;
 }
 
@@ -1646,14 +1764,97 @@ async function writeJobFile(jobDir, name, content) {
   await writeFile(join(jobDir, name), String(content || ""), "utf8");
 }
 
-async function appendJobEvent(jobDir, type, message, fields = {}) {
-  const event = {
-    time: new Date().toISOString(),
-    type,
+async function appendJobEvent(jobDir, event, message, fields = {}, state = null, timestamp = new Date().toISOString()) {
+  const effectiveState = state || await readOptionalJobState(jobDir);
+  const payload = {
+    timestamp,
+    time: timestamp,
     message,
-    ...fields
+    event,
+    type: event,
+    status: effectiveState?.status || fields.status || null,
+    current_step: effectiveState?.current_step || fields.current_step || null
   };
-  await appendFile(join(jobDir, "events.jsonl"), `${JSON.stringify(event)}\n`, "utf8");
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== undefined && value !== null && !["status", "current_step"].includes(key)) {
+      payload[key] = value;
+    }
+  }
+  await appendFile(join(jobDir, "events.jsonl"), `${JSON.stringify(payload)}\n`, "utf8");
+}
+
+async function readOptionalJobState(jobDir) {
+  try {
+    return await readJobState(jobDir);
+  } catch {
+    return null;
+  }
+}
+
+function applyJobTimingEvent(state, event, timestamp, fields = {}) {
+  const stageTimestamps = { ...(state.stage_timestamps || {}) };
+  const key = eventTimingKey(event, fields.attempt);
+  stageTimestamps[key] = timestamp;
+
+  const updates = {
+    stage_timestamps: stageTimestamps
+  };
+  const startEvent = matchingStartEvent(event, fields.attempt);
+  let durationMs = undefined;
+  if (startEvent) {
+    durationMs = elapsedMsBetween(stageTimestamps[startEvent], timestamp);
+    const durationField = durationFieldForEvent(event);
+    if (durationField) {
+      if (durationField === "fix_attempts_elapsed_ms") {
+        updates[durationField] = Number(state[durationField] || 0) + durationMs;
+      } else {
+        updates[durationField] = durationMs;
+      }
+    }
+  }
+  return { updates, durationMs };
+}
+
+function eventTimingKey(event, attempt) {
+  return event.startsWith("fix_attempt_") && attempt ? `${event}_${attempt}` : event;
+}
+
+function matchingStartEvent(event, attempt) {
+  const pairs = {
+    planning_finished: "planning_started",
+    codex_finished: "codex_started",
+    tests_finished: "tests_started",
+    commit_finished: "commit_started",
+    push_finished: "push_started",
+    job_completed: "job_created",
+    job_failed: "job_created",
+    job_cancelled: "job_created",
+    job_timeout: "job_created"
+  };
+  if (event === "fix_attempt_finished" && attempt) {
+    return `fix_attempt_started_${attempt}`;
+  }
+  return pairs[event] || null;
+}
+
+function durationFieldForEvent(event) {
+  return {
+    planning_finished: "planning_elapsed_ms",
+    codex_finished: "codex_elapsed_ms",
+    tests_finished: "tests_elapsed_ms",
+    commit_finished: "commit_elapsed_ms",
+    push_finished: "push_elapsed_ms",
+    fix_attempt_finished: "fix_attempts_elapsed_ms"
+  }[event] || null;
+}
+
+function terminalEventStatus(event) {
+  return {
+    job_completed: "completed",
+    job_failed: "failed",
+    job_cancelled: "cancelled",
+    job_timeout: "timeout"
+  }[event] || "";
 }
 
 async function startBackgroundJobProcess({ jobDir, repoRoot }) {
@@ -2080,7 +2281,9 @@ function buildCodexJobSandboxFallbackPrompt(originalPrompt) {
 
 async function runLoggedCommand({ jobDir, command, args, cwd, env, input, timeoutMs }) {
   await appendJobEvent(jobDir, "command", `${command} ${args.join(" ")}`, { cwd });
+  const started = Date.now();
   const result = await runCommand(command, args, { cwd, env, input, timeoutMs });
+  const durationMs = Date.now() - started;
   const commandLine = `$ ${command} ${args.join(" ")}\n`;
   if (result.stdout) {
     await appendFile(join(jobDir, "stdout.log"), `${commandLine}${result.stdout}\n`, "utf8");
@@ -2090,7 +2293,8 @@ async function runLoggedCommand({ jobDir, command, args, cwd, env, input, timeou
   }
   await appendJobEvent(jobDir, "command_completed", `${command} exited.`, {
     code: result.code,
-    termination: result.termination
+    termination: result.termination,
+    duration_ms: durationMs
   });
   return result;
 }
@@ -2140,11 +2344,13 @@ function buildJobCommitMessage(planning, userRequest) {
   return `chore: ${slugifyForCommit(title)}`;
 }
 
-function renderCodexJobResultMarkdown(state, planning) {
+export function renderCodexJobResultMarkdown(state, planning) {
   const checks = formatTestResult(state.tests);
   const changedFiles = state.changed_files?.length
     ? state.changed_files.map((file) => `- ${file}`).join("\n")
     : "- 없음";
+  const timeline = buildJobTimeline(state);
+  const warnings = jobWarnings(state);
   return [
     "# Weaveflow Codex Job Result",
     "",
@@ -2153,6 +2359,9 @@ function renderCodexJobResultMarkdown(state, planning) {
       ? "Codex 작업이 완료되었습니다. 선택된 범위를 구현했고 검사를 통과한 뒤 커밋/푸시 단계를 처리했습니다."
       : `Codex 작업이 완료되지 않았습니다. 상태: ${state.status}`,
     "",
+    "## Requested Goal",
+    state.user_request || "(not recorded)",
+    "",
     "## Fields",
     fenced(JSON.stringify({
       job_id: state.job_id,
@@ -2160,6 +2369,13 @@ function renderCodexJobResultMarkdown(state, planning) {
       status: state.status,
       branch: state.branch,
       worktree: state.worktree,
+      elapsed_ms: normalizedElapsedMs(state),
+      planning_elapsed_ms: state.planning_elapsed_ms,
+      codex_elapsed_ms: state.codex_elapsed_ms,
+      tests_elapsed_ms: state.tests_elapsed_ms,
+      commit_elapsed_ms: state.commit_elapsed_ms,
+      push_elapsed_ms: state.push_elapsed_ms,
+      fix_attempts_used: state.fix_attempts_used,
       commit_hash: state.commit_hash,
       pushed: state.pushed,
       changed_files: state.changed_files,
@@ -2170,12 +2386,30 @@ function renderCodexJobResultMarkdown(state, planning) {
     "## Selected Scope",
     planning?.selectedScopeMarkdown || "(not available)",
     "",
+    "## Timeline",
+    renderTimelineTable(timeline),
+    "",
     "## Changed Files",
     changedFiles,
     "",
-    `## Checks: ${checks}`,
+    "## Tests and Checks",
+    checks,
     "",
-    `Result artifact path: ${state.result_artifact_path || join(state.job_dir, "result.md")}`,
+    renderChecksList(state.tests),
+    "",
+    "## Commit and Branch",
+    `- Branch: ${state.branch || "없음"}`,
+    `- Commit hash: ${state.commit_hash || "없음"}`,
+    `- Pushed: ${state.pushed ? "yes" : "no"}`,
+    "",
+    "## Artifact Paths",
+    `- Job directory: ${state.job_dir || "없음"}`,
+    `- Result artifact: ${state.result_artifact_path || join(state.job_dir, "result.md")}`,
+    `- Diff patch: ${state.job_dir ? join(state.job_dir, "diff.patch") : "없음"}`,
+    `- Test output: ${state.job_dir ? join(state.job_dir, "test_output.log") : "없음"}`,
+    "",
+    "## Limitations or Warnings",
+    warnings.length ? warnings.map((warning) => `- ${warning}`).join("\n") : "- 없음",
     ""
   ].join("\n");
 }
@@ -2202,11 +2436,100 @@ async function recentJobLogs(jobDir) {
   ].join("\n").trim();
 }
 
+async function readRecentJobEvents(jobDir, count) {
+  const raw = await readOptionalFile(join(jobDir, "events.jsonl"));
+  return tailLines(raw, count)
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return {
+          timestamp: "",
+          event: "unparseable",
+          message: line
+        };
+      }
+    });
+}
+
 function elapsedSeconds(startedAt, finishedAt) {
+  return Math.round(elapsedMsBetween(startedAt, finishedAt || new Date().toISOString()) / 1000);
+}
+
+function elapsedMsBetween(startedAt, finishedAt) {
   const start = Date.parse(startedAt || "");
-  if (!Number.isFinite(start)) return 0;
-  const end = finishedAt ? Date.parse(finishedAt) : Date.now();
-  return Math.max(0, Math.round((end - start) / 1000));
+  const end = Date.parse(finishedAt || "");
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return 0;
+  return Math.max(0, end - start);
+}
+
+function normalizedElapsedMs(state) {
+  if (Number.isFinite(state?.elapsed_ms)) return state.elapsed_ms;
+  return elapsedMsBetween(state?.started_at, state?.finished_at || new Date().toISOString());
+}
+
+export function jobStageDurations(state) {
+  return {
+    planning: state?.planning_elapsed_ms ?? null,
+    codex: state?.codex_elapsed_ms ?? null,
+    tests: state?.tests_elapsed_ms ?? null,
+    fixes: state?.fix_attempts_elapsed_ms ?? null,
+    commit: state?.commit_elapsed_ms ?? null,
+    push: state?.push_elapsed_ms ?? null
+  };
+}
+
+function budgetUsagePercent(state) {
+  const budget = Number(state?.time_budget_minutes || 0) * 60 * 1000;
+  if (!budget) return null;
+  return Math.min(999, Math.round((normalizedElapsedMs(state) / budget) * 100));
+}
+
+export function buildJobTimeline(state) {
+  const timestamps = state?.stage_timestamps || {};
+  const rows = [
+    ["job_created", "작업 생성", timestamps.job_created],
+    ["planning", "계획", timestamps.planning_started, timestamps.planning_finished, state?.planning_elapsed_ms],
+    ["codex", "Codex 실행", timestamps.codex_started, timestamps.codex_finished, state?.codex_elapsed_ms],
+    ["tests", "검사", timestamps.tests_started, timestamps.tests_finished, state?.tests_elapsed_ms],
+    ["fixes", "수정 재시도", firstFixStartedAt(timestamps), lastFixFinishedAt(timestamps), state?.fix_attempts_elapsed_ms],
+    ["commit", "커밋", timestamps.commit_started, timestamps.commit_finished, state?.commit_elapsed_ms],
+    ["push", "푸시", timestamps.push_started, timestamps.push_finished, state?.push_elapsed_ms],
+    ["job_completed", "작업 완료", timestamps.job_completed],
+    ["job_failed", "작업 실패", timestamps.job_failed],
+    ["job_cancelled", "작업 취소", timestamps.job_cancelled],
+    ["job_timeout", "작업 시간 초과", timestamps.job_timeout]
+  ];
+  return rows
+    .filter((row) => row[2] || row[3])
+    .map(([key, label, startedAt, finishedAt, durationMs]) => ({
+      key,
+      label,
+      startedAt: startedAt || "",
+      finishedAt: finishedAt || "",
+      durationMs: Number.isFinite(durationMs) ? durationMs : (
+        startedAt && finishedAt ? elapsedMsBetween(startedAt, finishedAt) : null
+      )
+    }));
+}
+
+function firstFixStartedAt(timestamps) {
+  return sortedTimestampValues(timestamps, /^fix_attempt_started_/)[0] || "";
+}
+
+function lastFixFinishedAt(timestamps) {
+  const values = sortedTimestampValues(timestamps, /^fix_attempt_finished_/);
+  return values[values.length - 1] || "";
+}
+
+function sortedTimestampValues(timestamps, pattern) {
+  return Object.entries(timestamps || {})
+    .filter(([key]) => pattern.test(key))
+    .map(([, value]) => value)
+    .filter(Boolean)
+    .sort();
 }
 
 function formatElapsed(seconds) {
@@ -2214,6 +2537,60 @@ function formatElapsed(seconds) {
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
   return `${minutes}분 ${rest}초`;
+}
+
+function formatDurationMs(ms) {
+  if (ms === null || ms === undefined || !Number.isFinite(ms)) return "없음";
+  if (ms < 1000) return `${ms}ms`;
+  return formatElapsed(Math.round(ms / 1000));
+}
+
+function formatStageDurations(stageDurations) {
+  const entries = [
+    ["계획", stageDurations?.planning],
+    ["Codex", stageDurations?.codex],
+    ["검사", stageDurations?.tests],
+    ["수정", stageDurations?.fixes],
+    ["커밋", stageDurations?.commit],
+    ["푸시", stageDurations?.push]
+  ].filter(([, value]) => value !== null && value !== undefined);
+  if (!entries.length) return "아직 기록 없음";
+  return entries.map(([label, value]) => `${label} ${formatDurationMs(value)}`).join(", ");
+}
+
+function formatRecentEvents(events) {
+  if (!events?.length) return "- 없음";
+  return events.map((event) => {
+    const duration = Number.isFinite(event.duration_ms) ? ` (${formatDurationMs(event.duration_ms)})` : "";
+    return `- ${event.timestamp || event.time || ""} ${event.event || event.type || "event"}: ${event.message || ""}${duration}`;
+  }).join("\n");
+}
+
+function renderTimelineTable(timeline) {
+  if (!timeline?.length) return "(timeline not available)";
+  return [
+    "| Stage | Started | Finished | Duration |",
+    "| --- | --- | --- | --- |",
+    ...timeline.map((row) => `| ${row.label} | ${row.startedAt || "-"} | ${row.finishedAt || "-"} | ${formatDurationMs(row.durationMs)} |`)
+  ].join("\n");
+}
+
+function renderChecksList(tests) {
+  if (!tests?.run) return "- 실행 안 함";
+  if (!tests.checks?.length) return "- 검사 기록 없음";
+  return tests.checks.map((check) => `- ${check.name}: ${check.passed ? "통과" : "실패"} (${check.command})`).join("\n");
+}
+
+function jobWarnings(state) {
+  const warnings = [];
+  if (state?.codex_sandbox_mode === "danger-full-access") {
+    warnings.push("workspace-write sandbox 실패 후 isolated worktree 안에서 danger-full-access fallback을 사용했습니다.");
+  }
+  if (state?.error) warnings.push(state.error);
+  if (state?.status && !["completed"].includes(state.status)) {
+    warnings.push(`최종 상태가 completed가 아닙니다: ${state.status}`);
+  }
+  return warnings;
 }
 
 function summarizeMarkdown(value, maxLength) {

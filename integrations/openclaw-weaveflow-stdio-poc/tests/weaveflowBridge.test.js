@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   CONTRACT_VERSION,
+  buildJobTimeline,
   buildJobPlanningArtifacts,
   buildCodexAutomationPrompt,
   buildBridgeRequest,
@@ -19,6 +20,8 @@ import {
   formatCodexJobStatusSummary,
   initializeWeaveflowWorkspace,
   isBroadAutonomousRequest,
+  jobStageDurations,
+  renderCodexJobResultMarkdown,
   resolveAutonomyMode,
   startWeaveflowCodexJob,
   runWeaveflowStdioPoc
@@ -135,6 +138,18 @@ test("Codex job start creates file-based state without starting worker when requ
   assert.equal(jobState.status, "queued");
   assert.equal(jobState.time_budget_minutes, 30);
   assert.equal(jobState.max_fix_attempts, 2);
+  assert.equal(jobState.elapsed_ms >= 0, true);
+  assert.equal(jobState.last_event, "job_created");
+  assert.equal(jobState.stage_timestamps.job_created.length > 0, true);
+
+  const rawEvents = (await readFile(join(start.jobDir, "events.jsonl"), "utf8"))
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => JSON.parse(line));
+  assert.equal(rawEvents[0].event, "job_created");
+  assert.equal(rawEvents[0].status, "queued");
+  assert.equal(rawEvents[0].current_step, "queued");
+  assert.equal(typeof rawEvents[0].timestamp, "string");
 
   const status = await checkWeaveflowCodexJob({
     workspaceRoot,
@@ -142,8 +157,12 @@ test("Codex job start creates file-based state without starting worker when requ
     jobId: start.jobId
   });
   assert.equal(status.status, "queued");
+  assert.equal(status.elapsedMs >= 0, true);
+  assert.deepEqual(Object.keys(status.stageDurations), ["planning", "codex", "tests", "fixes", "commit", "push"]);
   assert.match(formatCodexJobStartSummary(start), /Weaveflow Codex 작업을 시작했습니다/);
   assert.match(formatCodexJobStatusSummary(status), /작업 ID:/);
+  assert.match(formatCodexJobStatusSummary(status), /총 경과 시간:/);
+  assert.match(formatCodexJobStatusSummary(status), /최근 이벤트 5개:/);
 
   const cancel = await cancelWeaveflowCodexJob({
     workspaceRoot,
@@ -152,6 +171,87 @@ test("Codex job start creates file-based state without starting worker when requ
   });
   assert.equal(cancel.cancelled, true);
   assert.match(formatCodexJobCancelSummary(cancel), /취소 처리: 예/);
+
+  const cancelledState = JSON.parse(await readFile(join(start.jobDir, "job.yaml"), "utf8"));
+  assert.equal(cancelledState.status, "cancelled");
+  assert.equal(cancelledState.last_event, "job_cancelled");
+  assert.equal(cancelledState.elapsed_ms >= 0, true);
+  assert.equal(cancelledState.stage_timestamps.job_cancelled.length > 0, true);
+});
+
+test("Codex job timeline and result report include durations and observability fields", () => {
+  const state = {
+    job_id: "JOB-0001",
+    task_id: "TASK-0001",
+    status: "completed",
+    current_step: "completed",
+    user_request: "Improve documentation.",
+    branch: "codex/JOB-0001-improve-documentation",
+    worktree: "/tmp/weaveflow-job/repo",
+    job_dir: "/tmp/weaveflow-job",
+    started_at: "2026-05-12T00:00:00.000Z",
+    updated_at: "2026-05-12T00:00:12.000Z",
+    finished_at: "2026-05-12T00:00:12.000Z",
+    elapsed_ms: 12000,
+    planning_elapsed_ms: 2000,
+    codex_elapsed_ms: 5000,
+    tests_elapsed_ms: 3000,
+    commit_elapsed_ms: 1000,
+    push_elapsed_ms: 1000,
+    fix_attempts_elapsed_ms: 0,
+    fix_attempts_used: 0,
+    stage_timestamps: {
+      job_created: "2026-05-12T00:00:00.000Z",
+      planning_started: "2026-05-12T00:00:00.000Z",
+      planning_finished: "2026-05-12T00:00:02.000Z",
+      codex_started: "2026-05-12T00:00:02.000Z",
+      codex_finished: "2026-05-12T00:00:07.000Z",
+      tests_started: "2026-05-12T00:00:07.000Z",
+      tests_finished: "2026-05-12T00:00:10.000Z",
+      commit_started: "2026-05-12T00:00:10.000Z",
+      commit_finished: "2026-05-12T00:00:11.000Z",
+      push_started: "2026-05-12T00:00:11.000Z",
+      push_finished: "2026-05-12T00:00:12.000Z",
+      job_completed: "2026-05-12T00:00:12.000Z"
+    },
+    last_event: "job_completed",
+    commit_hash: "abc1234",
+    pushed: true,
+    changed_files: ["docs/example.md"],
+    tests: {
+      run: true,
+      passed: true,
+      checks: [
+        {
+          name: "git diff --check",
+          command: "git diff --check",
+          passed: true
+        }
+      ]
+    },
+    result_artifact_path: "/tmp/weaveflow-job/result.md",
+    error: null
+  };
+
+  assert.deepEqual(jobStageDurations(state), {
+    planning: 2000,
+    codex: 5000,
+    tests: 3000,
+    fixes: 0,
+    commit: 1000,
+    push: 1000
+  });
+  const timeline = buildJobTimeline(state);
+  assert.equal(timeline.some((row) => row.key === "planning" && row.durationMs === 2000), true);
+
+  const result = renderCodexJobResultMarkdown(state, {
+    selectedScopeMarkdown: "# Selected Scope\n\nImprove docs."
+  });
+  assert.match(result, /## Requested Goal/);
+  assert.match(result, /## Timeline/);
+  assert.match(result, /## Tests and Checks/);
+  assert.match(result, /## Commit and Branch/);
+  assert.match(result, /abc1234/);
 });
 
 test("smoke sequence works against a temporary Weaveflow workspace", async () => {
