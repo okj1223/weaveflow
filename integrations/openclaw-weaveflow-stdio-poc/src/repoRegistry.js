@@ -2,7 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 
-export const DEFAULT_REPO_ROOT = "/home/robros0/Desktop/ws/weaveflow";
+export const DEFAULT_REPO_ROOT = process.cwd();
 
 const DEFAULT_ALIASES = [
   "weaveflow",

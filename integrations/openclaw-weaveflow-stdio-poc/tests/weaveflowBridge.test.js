@@ -105,14 +105,35 @@ test("Codex job planning detects broad timeboxed work and selects a bounded scop
       projectTypes: ["Python package", "Node package", "documentation-heavy repo"],
       sourceDirs: ["src", "integrations"],
       docsDirs: ["docs", "integrations/openclaw-weaveflow-stdio-poc"],
-      testCommands: ["git diff --check"]
+      testDirs: ["tests"],
+      pluginDirs: ["integrations/openclaw-weaveflow-stdio-poc"],
+      testCommands: ["git diff --check", "npm test --prefix integrations/openclaw-weaveflow-stdio-poc"],
+      buildCommands: []
+    },
+    intake: {
+      original_request: "Spend about 30 minutes improving the OpenClaw Codex documentation yourself.",
+      inferred_intent: "documentation",
+      risk_level: "low",
+      time_budget_minutes: 30
+    },
+    policy: {
+      riskLevel: "low",
+      runTests: true
+    },
+    verificationPlan: {
+      mode: "fast",
+      commands: [{ command: "git diff --check" }],
+      korean_summary: "검증 계획: fast"
     }
   });
 
   assert.equal(planning.resolvedMode, "timeboxed");
   assert.match(planning.backlogMarkdown, /Opportunity Backlog/);
+  assert.match(planning.backlogMarkdown, /docs-readme-usage-notes/);
   assert.match(planning.selectedScopeMarkdown, /Selected Scope/);
+  assert.match(planning.selectedScopeMarkdown, /선택된 범위/);
   assert.match(planning.executionPlanMarkdown, /Execution Plan/);
+  assert.match(planning.executionPlanMarkdown, /검증 계획: fast/);
 });
 
 test("Codex job start creates file-based state without starting worker when requested", async () => {
@@ -120,7 +141,7 @@ test("Codex job start creates file-based state without starting worker when requ
   const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
   const start = await startWeaveflowCodexJob({
     workspaceRoot,
-    repoRoot,
+    repoRoot: "weaveflow",
     userRequest: "Spend about 30 minutes improving the OpenClaw Codex documentation yourself.",
     timeBudgetMinutes: 30,
     autonomyMode: "timeboxed",
@@ -136,6 +157,12 @@ test("Codex job start creates file-based state without starting worker when requ
 
   const jobState = JSON.parse(await readFile(join(start.jobDir, "job.yaml"), "utf8"));
   assert.equal(jobState.status, "queued");
+  assert.equal(jobState.repo_root, repoRoot);
+  assert.equal(jobState.repo_resolution.repoAlias, "weaveflow");
+  assert.equal(jobState.job_policy.riskLevel, "low");
+  assert.equal(jobState.job_policy.runTests, true);
+  assert.equal(jobState.job_policy.maxFixAttempts, 2);
+  assert.equal(jobState.job_policy.timeBudgetMinutes, 30);
   assert.equal(jobState.time_budget_minutes, 30);
   assert.equal(jobState.max_fix_attempts, 2);
   assert.equal(jobState.elapsed_ms >= 0, true);
@@ -157,10 +184,13 @@ test("Codex job start creates file-based state without starting worker when requ
     jobId: start.jobId
   });
   assert.equal(status.status, "queued");
+  assert.equal(status.jobPolicy.riskLevel, "low");
+  assert.equal(status.repoResolution.repoAlias, "weaveflow");
   assert.equal(status.elapsedMs >= 0, true);
   assert.deepEqual(Object.keys(status.stageDurations), ["planning", "codex", "tests", "fixes", "commit", "push"]);
   assert.match(formatCodexJobStartSummary(start), /Weaveflow Codex 작업 시작/);
   assert.match(formatCodexJobStatusSummary(status), /Weaveflow Codex 작업 상태/);
+  assert.match(formatCodexJobStatusSummary(status), /Codex 작업 정책/);
   assert.match(formatCodexJobStatusSummary(status), /총 경과 시간:/);
   assert.match(formatCodexJobStatusSummary(status), /최근 이벤트:/);
   assert.match(formatCodexJobStatusSummary(status), /job_created/);

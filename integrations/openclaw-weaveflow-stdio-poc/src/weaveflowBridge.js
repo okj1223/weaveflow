@@ -6,6 +6,12 @@ import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  formatOpportunityBacklogMarkdown,
+  formatSelectedScopeMarkdown,
+  generateOpportunityBacklog,
+  selectScopeForTimeBudget
+} from "./autonomousScope.js";
+import {
   appendEvent as appendArtifactEvent,
   calculateElapsedMs,
   calculateTimeline,
@@ -17,6 +23,7 @@ import {
   writeJsonAtomic
 } from "./jobArtifacts.js";
 import { normalizeJobRequest } from "./jobIntake.js";
+import { isAutoActionAllowed, resolveJobPolicy } from "./jobPolicy.js";
 import {
   formatJobCancelledKorean,
   formatJobCompletedKorean,
@@ -25,6 +32,12 @@ import {
   formatJobStatusKorean
 } from "./koreanJobReport.js";
 import { scanRepoContext } from "./repoContext.js";
+import { buildDefaultRepoRegistry, resolveRepoRoot } from "./repoRegistry.js";
+import {
+  normalizeCommandPlan,
+  planVerificationCommands,
+  summarizeVerificationPlanKorean
+} from "./verificationPlanner.js";
 
 export const CONTRACT_VERSION = "weaveflow.v1";
 export const DEFAULT_TASK_TEXT = "OpenClaw stdio bridge POC task";
@@ -46,6 +59,19 @@ const JOB_TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled", "time
 
 export function defaultProjectRoot() {
   return resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+}
+
+function resolveJobRepoRoot(options = {}) {
+  const defaultRepoRoot = resolve(cleanOptionalString(options?.projectRoot) || defaultProjectRoot());
+  const registry = buildDefaultRepoRegistry({
+    defaultRepoRoot,
+    aliases: options?.repoAliases || options?.repo_aliases || {}
+  });
+  const result = resolveRepoRoot(cleanOptionalString(options?.repoRoot), registry);
+  if (!result.ok) {
+    throw new Error(`저장소를 해석할 수 없습니다. ${result.korean_summary}`);
+  }
+  return result;
 }
 
 export function buildBridgeRequest(bridgeRequestId, type, payload = {}) {
@@ -641,20 +667,31 @@ export function buildCodexAutomationPrompt({ userRequest, taskSpec, plan, brief,
 export async function startWeaveflowCodexJob(options) {
   const userRequest = requireString(options?.userRequest, "userRequest");
   const intake = normalizeJobRequest(userRequest);
-  const repoRoot = resolve(cleanOptionalString(options?.repoRoot) || options?.projectRoot || defaultProjectRoot());
+  const repoResolution = resolveJobRepoRoot(options);
+  const repoRoot = repoResolution.repoRoot;
   const workspaceRoot = resolve(cleanOptionalString(options?.workspaceRoot) || repoRoot);
   const pythonCommand = cleanOptionalString(options?.pythonCommand) || "python3";
   const timeoutMs = options?.timeoutMs || DEFAULT_TIMEOUT_MS;
   const requestedTimeBudgetMinutes = normalizeOptionalPositiveInteger(options?.timeBudgetMinutes);
-  const timeBudgetMinutes = requestedTimeBudgetMinutes ?? intake.time_budget_minutes ?? undefined;
-  const maxRuntimeMinutes = normalizeOptionalPositiveInteger(options?.maxRuntimeMinutes) ||
-    timeBudgetMinutes ||
-    DEFAULT_JOB_MAX_RUNTIME_MINUTES;
-  const maxFixAttempts = normalizeOptionalPositiveInteger(options?.maxFixAttempts) ?? DEFAULT_JOB_FIX_ATTEMPTS;
   const requestedAutonomyMode = normalizeAutonomyMode(options?.autonomyMode);
-  const autonomyMode = requestedAutonomyMode === "auto" ? intake.autonomy_mode : requestedAutonomyMode;
-  const pushRequested = options?.push !== false;
-  const runTests = options?.runTests !== false;
+  const policy = resolveJobPolicy({
+    userRequest,
+    timeBudgetMinutes: requestedTimeBudgetMinutes ?? intake.time_budget_minutes,
+    maxRuntimeMinutes: normalizeOptionalPositiveInteger(options?.maxRuntimeMinutes),
+    maxFixAttempts: normalizeOptionalPositiveInteger(options?.maxFixAttempts),
+    autonomyMode: requestedAutonomyMode === "auto" ? undefined : requestedAutonomyMode,
+    push: options?.push,
+    runTests: options?.runTests
+  });
+  if (!isAutoActionAllowed("commit_changes", policy)) {
+    throw new Error(`작업 정책이 자동 커밋을 차단했습니다. ${policy.korean_summary}`);
+  }
+  const timeBudgetMinutes = policy.timeBudgetMinutes;
+  const maxRuntimeMinutes = policy.maxRuntimeMinutes || DEFAULT_JOB_MAX_RUNTIME_MINUTES;
+  const maxFixAttempts = policy.maxFixAttempts ?? DEFAULT_JOB_FIX_ATTEMPTS;
+  const autonomyMode = policy.autonomyMode || (requestedAutonomyMode === "auto" ? intake.autonomy_mode : requestedAutonomyMode);
+  const pushRequested = policy.push !== false && isAutoActionAllowed("push_branch", policy);
+  const runTests = policy.runTests !== false && isAutoActionAllowed("run_tests", policy);
   const jobsRoot = jobRootForWorkspace(workspaceRoot);
 
   await mkdir(jobsRoot, { recursive: true });
@@ -692,6 +729,9 @@ export async function startWeaveflowCodexJob(options) {
     user_request: userRequest,
     normalized_goal: intake.normalized_goal,
     job_intake: intake,
+    repo_resolution: repoResolution,
+    job_policy: policy,
+    verification_plan: null,
     requested_autonomy_mode: requestedAutonomyMode,
     autonomy_mode: autonomyMode,
     resolved_autonomy_mode: null,
@@ -740,7 +780,10 @@ export async function startWeaveflowCodexJob(options) {
     branch,
     normalizedGoal: intake.normalized_goal,
     autonomyMode,
-    timeBudgetMinutes: timeBudgetMinutes ?? null
+    timeBudgetMinutes: timeBudgetMinutes ?? null,
+    riskLevel: policy.riskLevel,
+    repoRoot,
+    repoAlias: repoResolution.repoAlias
   }, state, now);
 
   if (options?.startWorker === false) {
@@ -772,13 +815,21 @@ export async function runCodexJobWorker(jobDir) {
       timeoutMs: DEFAULT_TIMEOUT_MS
     });
     await writeJobFile(jobDir, "repo_scan.md", renderRepoScanMarkdown(scan));
+    const initialVerificationPlan = buildVerificationPlan(scan, state.job_policy || {}, { cwd: "." });
+    await writeJobFile(jobDir, "verification_plan.md", renderVerificationPlanMarkdown(initialVerificationPlan));
+    state = await updateJobState(jobDir, state, {
+      verification_plan: initialVerificationPlan
+    });
 
     const planning = buildJobPlanningArtifacts({
       userRequest: state.normalized_goal || state.user_request,
       originalUserRequest: state.user_request,
       autonomyMode: resolvedAutonomyMode,
       timeBudgetMinutes: state.time_budget_minutes,
-      scan
+      scan,
+      intake: state.job_intake,
+      policy: state.job_policy,
+      verificationPlan: initialVerificationPlan
     });
     await writeJobFile(jobDir, "goal.md", planning.goalMarkdown);
     await writeJobFile(jobDir, "opportunity_backlog.md", planning.backlogMarkdown);
@@ -893,7 +944,20 @@ export async function runCodexJobWorker(jobDir) {
       current_step: "run_checks",
       changed_files: changedFiles
     });
-    if (state.run_tests) {
+    const verificationPlan = buildVerificationPlan(scan, {
+      ...(state.job_policy || {}),
+      runTests: state.run_tests,
+      changedFiles
+    }, {
+      cwd: worktreeRoot,
+      changedFiles
+    });
+    await writeJobFile(jobDir, "verification_plan.md", renderVerificationPlanMarkdown(verificationPlan));
+    state = await updateJobState(jobDir, state, {
+      verification_plan: verificationPlan
+    });
+
+    if (state.run_tests && verificationPlan.commands.length) {
       for (let attempt = 0; attempt <= state.max_fix_attempts; attempt += 1) {
         assertJobNotTimedOut(deadlineMs);
         state = await updateJobState(jobDir, state, {
@@ -906,7 +970,8 @@ export async function runCodexJobWorker(jobDir) {
           worktreeRoot,
           changedFiles,
           pythonCommand: state.python_command || "python3",
-          timeoutMs: 120000
+          timeoutMs: 120000,
+          verificationPlan
         });
         await writeJobFile(jobDir, "test_output.log", renderJobTestOutput(tests));
         state = await updateJobState(jobDir, state, { tests });
@@ -952,16 +1017,12 @@ export async function runCodexJobWorker(jobDir) {
         });
       }
     } else {
-      const diffCheck = await runCheck({
-        name: "git diff --check",
-        command: "git diff --check",
-        executable: "git",
-        args: ["diff", "--check"],
-        cwd: worktreeRoot,
-        env: process.env,
-        timeoutMs: 120000
-      });
-      tests = { run: true, passed: diffCheck.passed, checks: [diffCheck] };
+      tests = {
+        run: false,
+        passed: null,
+        checks: [],
+        plan: verificationPlan
+      };
       await writeJobFile(jobDir, "test_output.log", renderJobTestOutput(tests));
       state = await updateJobState(jobDir, state, { tests });
     }
@@ -1097,7 +1158,7 @@ export async function runCodexJobWorker(jobDir) {
 
 export async function checkWeaveflowCodexJob(options) {
   const jobId = requireString(options?.jobId, "jobId");
-  const repoRoot = resolve(cleanOptionalString(options?.repoRoot) || defaultProjectRoot());
+  const repoRoot = resolveJobRepoRoot(options).repoRoot;
   const workspaceRoot = resolve(cleanOptionalString(options?.workspaceRoot) || repoRoot);
   const jobDir = join(jobRootForWorkspace(workspaceRoot), jobId);
   const state = await readJobState(jobDir);
@@ -1126,6 +1187,9 @@ export async function checkWeaveflowCodexJob(options) {
     pushed: state.pushed,
     resultArtifactPath: state.result_artifact_path,
     error: state.error,
+    repoResolution: state.repo_resolution,
+    jobPolicy: state.job_policy,
+    verificationPlan: state.verification_plan,
     jobDir,
     worktree: state.worktree
   };
@@ -1133,7 +1197,7 @@ export async function checkWeaveflowCodexJob(options) {
 
 export async function cancelWeaveflowCodexJob(options) {
   const jobId = requireString(options?.jobId, "jobId");
-  const repoRoot = resolve(cleanOptionalString(options?.repoRoot) || defaultProjectRoot());
+  const repoRoot = resolveJobRepoRoot(options).repoRoot;
   const workspaceRoot = resolve(cleanOptionalString(options?.workspaceRoot) || repoRoot);
   const jobDir = join(jobRootForWorkspace(workspaceRoot), jobId);
   let state = await readJobState(jobDir);
@@ -1185,10 +1249,12 @@ export function formatCodexJobStartSummary(summary) {
   });
   return [
     report,
+    `저장소: ${summary.repoRoot || summary.repoResolution?.repoRoot || "없음"}`,
+    summary.jobPolicy?.korean_summary ? `정책:\n${summary.jobPolicy.korean_summary}` : "",
     `상태 확인: weaveflow_check_codex_job jobId=${summary.jobId}`,
     `취소: weaveflow_cancel_codex_job jobId=${summary.jobId}`,
     `작업 디렉터리: ${summary.jobDir}`
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 export function formatCodexJobStatusSummary(summary) {
@@ -1203,10 +1269,12 @@ export function formatCodexJobStatusSummary(summary) {
     goal,
     "선택된 작업 범위:",
     selected,
+    summary.jobPolicy?.korean_summary ? `정책:\n${summary.jobPolicy.korean_summary}` : "",
+    summary.verificationPlan?.korean_summary ? `검증 계획:\n${summary.verificationPlan.korean_summary}` : "",
     "최근 로그:",
     logs
   ];
-  return lines.join("\n");
+  return lines.filter(Boolean).join("\n");
 }
 
 export function formatCodexJobCancelSummary(summary) {
@@ -1411,7 +1479,25 @@ async function currentRepoStatus(projectRoot, timeoutMs) {
   ].join("\n");
 }
 
-async function runTargetedChecks({ worktreeRoot, changedFiles, pythonCommand, timeoutMs }) {
+async function runTargetedChecks({ worktreeRoot, changedFiles, pythonCommand, timeoutMs, verificationPlan = null }) {
+  if (verificationPlan?.commands?.length) {
+    const plannedChecks = [];
+    for (const command of verificationPlan.commands) {
+      plannedChecks.push(await runPlannedCheck({
+        command,
+        worktreeRoot,
+        pythonCommand,
+        timeoutMs
+      }));
+    }
+    return {
+      run: true,
+      passed: plannedChecks.every((check) => check.passed || check.required === false),
+      checks: plannedChecks,
+      plan: verificationPlan
+    };
+  }
+
   const checks = [];
   checks.push(await runCheck({
     name: "git diff --check",
@@ -1469,7 +1555,25 @@ async function runTargetedChecks({ worktreeRoot, changedFiles, pythonCommand, ti
   };
 }
 
-async function runCheck({ name, command, executable, args, cwd, env, timeoutMs }) {
+async function runPlannedCheck({ command, worktreeRoot, pythonCommand, timeoutMs }) {
+  const parsed = parseVerificationCommand(command.command, {
+    cwd: command.cwd || worktreeRoot,
+    worktreeRoot,
+    pythonCommand
+  });
+  return runCheck({
+    name: command.name || command.command,
+    command: command.command,
+    executable: parsed.executable,
+    args: parsed.args,
+    cwd: parsed.cwd,
+    env: parsed.env,
+    timeoutMs: command.timeoutMs || timeoutMs,
+    required: command.required !== false
+  });
+}
+
+async function runCheck({ name, command, executable, args, cwd, env, timeoutMs, required = true }) {
   const result = await runCommand(executable, args, {
     cwd,
     env,
@@ -1481,8 +1585,40 @@ async function runCheck({ name, command, executable, args, cwd, env, timeoutMs }
     exitCode: result.code,
     termination: result.termination,
     passed: result.code === 0 && result.termination === "exit",
+    required,
     stdout: truncateText(result.stdout, 12000),
     stderr: truncateText(result.stderr, 12000)
+  };
+}
+
+function parseVerificationCommand(command, { cwd, worktreeRoot, pythonCommand }) {
+  const env = { ...process.env };
+  const parts = String(command || "").trim().split(/\s+/).filter(Boolean);
+  while (parts.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(parts[0])) {
+    const assignment = parts.shift();
+    const index = assignment.indexOf("=");
+    env[assignment.slice(0, index)] = assignment.slice(index + 1);
+  }
+  if (!parts.length) {
+    throw new Error("Verification command is empty.");
+  }
+
+  let executable = parts.shift();
+  if (executable === "python" || executable === "python3") {
+    executable = cleanOptionalString(pythonCommand) || executable;
+    const pythonEnv = buildPythonEnv(worktreeRoot);
+    for (const [key, value] of Object.entries(pythonEnv)) {
+      if (env[key] === undefined) {
+        env[key] = value;
+      }
+    }
+  }
+
+  return {
+    executable,
+    args: parts,
+    cwd,
+    env
   };
 }
 
@@ -1727,6 +1863,7 @@ async function writeRequiredJobPlaceholders(jobDir, userRequest, intake = null) 
     "opportunity_backlog.md": "# Opportunity Backlog\n\n대기 중입니다.\n",
     "selected_scope.md": "# Selected Scope\n\n대기 중입니다.\n",
     "execution_plan.md": "# Execution Plan\n\n대기 중입니다.\n",
+    "verification_plan.md": "# Verification Plan\n\n대기 중입니다.\n",
     "codex_prompt.md": "# Codex Prompt\n\n대기 중입니다.\n",
     "events.jsonl": "",
     "stdout.log": "",
@@ -1928,6 +2065,10 @@ function buildJobStartDetails(state) {
     timeBudgetMinutes: state.time_budget_minutes,
     normalizedGoal: state.normalized_goal,
     selectedScope: state.normalized_goal,
+    repoRoot: state.repo_root,
+    repoResolution: state.repo_resolution,
+    jobPolicy: state.job_policy,
+    verificationPlan: state.verification_plan,
     recentEvents: [
       {
         timestamp: state.stage_timestamps?.job_created || state.started_at,
@@ -2071,6 +2212,55 @@ function renderRepoScanMarkdown(scan) {
   ].join("\n");
 }
 
+function buildVerificationPlan(scan, policy, options = {}) {
+  const basePlan = planVerificationCommands(scan, policy, options);
+  if (basePlan.mode === "none") {
+    return basePlan;
+  }
+
+  const cwd = cleanOptionalString(options.cwd) || ".";
+  const commands = normalizeCommandPlan([
+    ...(basePlan.commands || []),
+    ...((scan.testCommands || []).map((command) => ({
+      command,
+      cwd,
+      reason: "repo scan에서 감지된 검증 명령입니다."
+    })))
+  ], { cwd });
+  const mergedPlan = {
+    ...basePlan,
+    commands
+  };
+  return {
+    ...mergedPlan,
+    korean_summary: summarizeVerificationPlanKorean(mergedPlan)
+  };
+}
+
+function renderVerificationPlanMarkdown(plan = {}) {
+  const commands = Array.isArray(plan.commands) ? plan.commands : [];
+  return [
+    "# Verification Plan",
+    "",
+    plan.korean_summary || summarizeVerificationPlanKorean(plan),
+    "",
+    "## Commands",
+    commands.length
+      ? commands.map((command) => [
+        `- ${command.name || command.command}`,
+        `  - command: \`${command.command}\``,
+        `  - cwd: \`${command.cwd || "."}\``,
+        `  - required: ${command.required === false ? "no" : "yes"}`,
+        `  - reason: ${command.reason || "n/a"}`
+      ].join("\n")).join("\n")
+      : "- none",
+    "",
+    "## Warnings",
+    plan.warnings?.length ? plan.warnings.map((warning) => `- ${warning}`).join("\n") : "- none",
+    ""
+  ].join("\n");
+}
+
 function contextProjectTypes(types = []) {
   return types.map((type) => ({
     documentation: "documentation-heavy repo",
@@ -2081,7 +2271,16 @@ function contextProjectTypes(types = []) {
   }[type] || type));
 }
 
-export function buildJobPlanningArtifacts({ userRequest, originalUserRequest = "", autonomyMode, timeBudgetMinutes, scan }) {
+export function buildJobPlanningArtifacts({
+  userRequest,
+  originalUserRequest = "",
+  autonomyMode,
+  timeBudgetMinutes,
+  scan,
+  intake = null,
+  policy = null,
+  verificationPlan = null
+}) {
   const resolvedMode = resolveAutonomyMode(autonomyMode, userRequest);
   const goalMarkdown = [
     "# Goal",
@@ -2094,7 +2293,13 @@ export function buildJobPlanningArtifacts({ userRequest, originalUserRequest = "
     "## Repository Context",
     `Project type: ${scan.projectTypes?.join(", ") || "unknown"}`,
     `Likely checks: ${scan.testCommands?.join(", ") || "git diff --check"}`,
-    `Likely builds: ${scan.buildCommands?.join(", ") || "none detected"}`
+    `Likely builds: ${scan.buildCommands?.join(", ") || "none detected"}`,
+    "",
+    "## Job Policy",
+    policy?.korean_summary || "정책 정보가 없습니다.",
+    "",
+    "## Verification Plan",
+    verificationPlan?.korean_summary || "검증 계획이 아직 없습니다."
   ].join("\n");
 
   if (resolvedMode === "specific") {
@@ -2130,24 +2335,45 @@ export function buildJobPlanningArtifacts({ userRequest, originalUserRequest = "
         "",
         "1. Apply only the user-specified repository change.",
         "2. Keep the diff small and focused.",
-        "3. Run targeted checks.",
+        `3. Run targeted checks: ${formatVerificationCommandsInline(verificationPlan) || "git diff --check"}.`,
         "4. Report the result in Korean."
       ].join("\n")
     };
   }
 
-  const candidates = buildOpportunityCandidates(userRequest, scan);
   const budget = timeBudgetMinutes || 60;
-  const selectedScope = candidates.find((candidate) => candidate.estimatedMinutes <= Math.max(10, budget * 0.85)) ||
-    candidates[candidates.length - 1];
+  const scopePolicy = scopePolicyFromJobPolicy(policy);
+  const candidates = generateOpportunityBacklog({
+    normalizedJobRequest: intake || {
+      original_request: originalUserRequest || userRequest,
+      normalized_goal: userRequest,
+      time_budget_minutes: budget,
+      risk_level: policy?.riskLevel
+    },
+    repoContext: scan,
+    jobPolicy: scopePolicy,
+    timeBudgetMinutes: budget
+  });
+  const scopeSelection = selectScopeForTimeBudget(candidates, budget, scopePolicy);
+  const selectedScope = selectedScopeFromSelection(scopeSelection) ||
+    selectedScopeFromCandidate(candidates[0]) ||
+    {
+      title: "User-specified task",
+      value: "direct",
+      risk: "low",
+      estimatedMinutes: budget,
+      filesLikelyAffected: ["as requested"],
+      rationale: "No autonomous scope candidate was generated."
+    };
   return {
     resolvedMode,
     goalMarkdown,
     candidates,
     selectedScope,
-    backlogMarkdown: renderOpportunityBacklog(candidates, scan),
-    selectedScopeMarkdown: renderSelectedScope(selectedScope, scan),
-    executionPlanMarkdown: renderExecutionPlan(selectedScope, scan)
+    scopeSelection,
+    backlogMarkdown: appendPlanningRepoContext(formatOpportunityBacklogMarkdown(candidates), scan),
+    selectedScopeMarkdown: appendPlanningRepoContext(formatSelectedScopeMarkdown(scopeSelection), scan),
+    executionPlanMarkdown: renderExecutionPlan(selectedScope, scan, verificationPlan)
   };
 }
 
@@ -2247,8 +2473,10 @@ function renderSelectedScope(scope, scan) {
   ].join("\n");
 }
 
-function renderExecutionPlan(scope, scan) {
-  const checks = scan.testCommands.length ? scan.testCommands : ["git diff --check"];
+function renderExecutionPlan(scope, scan, verificationPlan = null) {
+  const checks = verificationPlan?.commands?.length
+    ? verificationPlan.commands.map((command) => command.command)
+    : scan.testCommands.length ? scan.testCommands : ["git diff --check"];
   const builds = scan.buildCommands?.length ? scan.buildCommands : [];
   return [
     "# Execution Plan",
@@ -2259,8 +2487,51 @@ function renderExecutionPlan(scope, scan) {
     `4. Run targeted checks: ${checks.map((command) => `\`${command}\``).join(", ")}.`,
     builds.length ? `5. If relevant, run likely build commands: ${builds.map((command) => `\`${command}\``).join(", ")}.` : "5. No build command was detected; do not invent one unless the changed files clearly require it.",
     "6. If checks fail, use the failure output to make one focused fix attempt before retrying.",
-    "7. Return a Korean summary of changed files and checks."
+    "7. Return a Korean summary of changed files and checks.",
+    "",
+    "## Verification Plan",
+    verificationPlan?.korean_summary || "검증 계획이 아직 없습니다."
   ].join("\n");
+}
+
+function scopePolicyFromJobPolicy(policy = {}) {
+  const riskLevel = policy?.riskLevel === "low" ? "low" : "medium";
+  return {
+    maxRisk: riskLevel,
+    allowHighRisk: false,
+    includeHighRiskCandidates: false
+  };
+}
+
+function selectedScopeFromSelection(selection) {
+  const item = selection?.selectedItems?.[0];
+  return item ? selectedScopeFromCandidate(item) : null;
+}
+
+function selectedScopeFromCandidate(candidate) {
+  if (!candidate) return null;
+  return {
+    title: candidate.title,
+    value: candidate.value,
+    risk: candidate.risk,
+    estimatedMinutes: candidate.estimatedMinutes,
+    filesLikelyAffected: candidate.likelyFiles || candidate.filesLikelyAffected || [],
+    rationale: candidate.reason || candidate.rationale || ""
+  };
+}
+
+function appendPlanningRepoContext(markdown, scan) {
+  return [
+    String(markdown || "").trimEnd(),
+    "",
+    renderPlanningRepoContext(scan),
+    ""
+  ].join("\n");
+}
+
+function formatVerificationCommandsInline(plan) {
+  const commands = plan?.commands?.map((command) => command.command).filter(Boolean) || [];
+  return commands.map((command) => `\`${command}\``).join(", ");
 }
 
 function renderPlanningRepoContext(scan = {}) {
@@ -2453,11 +2724,13 @@ function renderJobTestOutput(tests) {
   return [
     `run: ${tests.run ? "yes" : "no"}`,
     `passed: ${tests.passed === null ? "unknown" : tests.passed ? "yes" : "no"}`,
+    `plan: ${tests.plan?.korean_summary || "none"}`,
     "",
     ...((tests.checks || []).map((check) => [
       `## ${check.name}`,
       "",
       `command: ${check.command}`,
+      `required: ${check.required === false ? "no" : "yes"}`,
       `exit_code: ${check.exitCode}`,
       `termination: ${check.termination}`,
       `passed: ${check.passed ? "yes" : "no"}`,
@@ -2510,6 +2783,8 @@ export function renderCodexJobResultMarkdown(state, planning) {
       commit_elapsed_ms: state.commit_elapsed_ms,
       push_elapsed_ms: state.push_elapsed_ms,
       fix_attempts_used: state.fix_attempts_used,
+      job_policy: state.job_policy,
+      verification_plan: state.verification_plan,
       commit_hash: state.commit_hash,
       pushed: state.pushed,
       changed_files: state.changed_files,
