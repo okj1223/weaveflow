@@ -1,17 +1,26 @@
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
 import {
   CONTRACT_VERSION,
+  buildJobPlanningArtifacts,
   buildCodexAutomationPrompt,
   buildBridgeRequest,
   buildOpenClawLikePayload,
   buildPocRequests,
+  cancelWeaveflowCodexJob,
+  checkWeaveflowCodexJob,
   formatCodexAutomationSummary,
+  formatCodexJobCancelSummary,
+  formatCodexJobStartSummary,
+  formatCodexJobStatusSummary,
   initializeWeaveflowWorkspace,
+  isBroadAutonomousRequest,
+  resolveAutonomyMode,
+  startWeaveflowCodexJob,
   runWeaveflowStdioPoc
 } from "../src/weaveflowBridge.js";
 
@@ -78,6 +87,71 @@ test("Codex automation formatter returns Korean Discord-facing summary", () => {
   assert.match(text, /작업 ID: TASK-0001/);
   assert.match(text, /푸시 여부: 예/);
   assert.match(text, /테스트 결과: 통과/);
+});
+
+test("Codex job planning detects broad timeboxed work and selects a bounded scope", () => {
+  assert.equal(isBroadAutonomousRequest("웹사이트 3시간 동안 강화해"), true);
+  assert.equal(resolveAutonomyMode("auto", "Update docs/foo.md with X."), "specific");
+  assert.equal(resolveAutonomyMode("auto", "Spend about 30 minutes improving docs yourself."), "timeboxed");
+
+  const planning = buildJobPlanningArtifacts({
+    userRequest: "Spend about 30 minutes improving the OpenClaw Codex documentation yourself.",
+    autonomyMode: "timeboxed",
+    timeBudgetMinutes: 30,
+    scan: {
+      projectTypes: ["Python package", "Node package", "documentation-heavy repo"],
+      sourceDirs: ["src", "integrations"],
+      docsDirs: ["docs", "integrations/openclaw-weaveflow-stdio-poc"],
+      testCommands: ["git diff --check"]
+    }
+  });
+
+  assert.equal(planning.resolvedMode, "timeboxed");
+  assert.match(planning.backlogMarkdown, /Opportunity Backlog/);
+  assert.match(planning.selectedScopeMarkdown, /Selected Scope/);
+  assert.match(planning.executionPlanMarkdown, /Execution Plan/);
+});
+
+test("Codex job start creates file-based state without starting worker when requested", async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "weaveflow-job-runner-test-"));
+  const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
+  const start = await startWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    userRequest: "Spend about 30 minutes improving the OpenClaw Codex documentation yourself.",
+    timeBudgetMinutes: 30,
+    autonomyMode: "timeboxed",
+    push: false,
+    runTests: true,
+    maxFixAttempts: 2,
+    startWorker: false
+  });
+
+  assert.match(start.jobId, /^JOB-\d{4}$/);
+  assert.match(start.taskId, /^TASK-\d{4}$/);
+  assert.match(start.branch, /^codex\/JOB-\d{4}-/);
+
+  const jobState = JSON.parse(await readFile(join(start.jobDir, "job.yaml"), "utf8"));
+  assert.equal(jobState.status, "queued");
+  assert.equal(jobState.time_budget_minutes, 30);
+  assert.equal(jobState.max_fix_attempts, 2);
+
+  const status = await checkWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    jobId: start.jobId
+  });
+  assert.equal(status.status, "queued");
+  assert.match(formatCodexJobStartSummary(start), /Weaveflow Codex 작업을 시작했습니다/);
+  assert.match(formatCodexJobStatusSummary(status), /작업 ID:/);
+
+  const cancel = await cancelWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    jobId: start.jobId
+  });
+  assert.equal(cancel.cancelled, true);
+  assert.match(formatCodexJobCancelSummary(cancel), /취소 처리: 예/);
 });
 
 test("smoke sequence works against a temporary Weaveflow workspace", async () => {
