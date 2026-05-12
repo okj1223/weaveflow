@@ -8,6 +8,7 @@ import {
   CONTRACT_VERSION,
   buildJobTimeline,
   buildJobPlanningArtifacts,
+  buildCodexJobQualityReview,
   buildCodexAutomationPrompt,
   buildBridgeRequest,
   buildOpenClawLikePayload,
@@ -136,6 +137,130 @@ test("Codex job planning detects broad timeboxed work and selects a bounded scop
   assert.match(planning.executionPlanMarkdown, /검증 계획: fast/);
 });
 
+test("Codex job quality review accepts docs-only scoped changes", () => {
+  const review = buildCodexJobQualityReview({
+    state: {
+      user_request: "Update README usage notes for the OpenClaw Codex job runner.",
+      normalized_goal: "OpenClaw Codex job runner README 사용성 설명 보강",
+      job_policy: {
+        riskLevel: "low",
+        push: true,
+        allowedActions: ["commit_changes", "push_branch"],
+        maxFixAttempts: 1
+      },
+      max_fix_attempts: 1,
+      session_mode: "single"
+    },
+    planning: {
+      scopeSelection: {
+        selectedItems: [
+          {
+            id: "readme-usage-notes",
+            title: "README usage notes",
+            likelyFiles: ["README.md"]
+          }
+        ],
+        expectedCategories: ["docs"]
+      },
+      selectedScopeMarkdown: "# Selected Scope\n\n- README.md usage notes"
+    },
+    changedFiles: ["README.md"],
+    tests: {
+      run: true,
+      passed: true,
+      checks: [{ name: "git diff --check", passed: true }]
+    },
+    codexFinalMessage: "README 사용성 설명을 보강했고 git diff --check 검증이 통과했습니다."
+  });
+
+  assert.equal(review.changeReview.scope_alignment, "strong");
+  assert.equal(review.qualityGate.decision, "accept");
+  assert.equal(review.qualityGate.should_commit, true);
+  assert.equal(review.qualityGate.should_push, true);
+  assert.match(review.outcomeContract.markdown, /Outcome Contract/);
+  assert.match(review.qualityGate.korean_summary, /품질 게이트: 승인/);
+});
+
+test("Codex job quality review requests a fix for unrelated scoped changes", () => {
+  const review = buildCodexJobQualityReview({
+    state: {
+      user_request: "Update documentation only.",
+      normalized_goal: "문서만 업데이트",
+      job_policy: {
+        riskLevel: "low",
+        allowedActions: ["commit_changes"],
+        maxFixAttempts: 1
+      },
+      max_fix_attempts: 1
+    },
+    planning: {
+      scopeSelection: {
+        selectedItems: [
+          {
+            id: "docs-only",
+            title: "Docs-only update",
+            likelyFiles: ["README.md"]
+          }
+        ],
+        expectedCategories: ["docs"]
+      }
+    },
+    changedFiles: ["README.md", "src/index.js"],
+    tests: {
+      run: true,
+      passed: true,
+      checks: [{ name: "git diff --check", passed: true }]
+    },
+    codexFinalMessage: "문서 업데이트 중 관련 소스 파일도 함께 수정했습니다."
+  });
+
+  assert.equal(review.changeReview.scope_alignment, "partial");
+  assert.equal(review.changeReview.unrelated_changes.some((finding) => finding.file === "src/index.js"), true);
+  assert.equal(review.qualityGate.decision, "needs_fix");
+  assert.equal(review.qualityGate.should_commit, false);
+  assert.match(review.qualityGate.recommended_fix_prompt, /가장 작은 범위/);
+});
+
+test("Codex job quality review rejects risky env changes before commit", () => {
+  const review = buildCodexJobQualityReview({
+    state: {
+      user_request: "Update documentation only.",
+      normalized_goal: "문서만 업데이트",
+      job_policy: {
+        riskLevel: "low",
+        allowedActions: ["commit_changes", "push_branch"],
+        maxFixAttempts: 2
+      },
+      max_fix_attempts: 2
+    },
+    planning: {
+      scopeSelection: {
+        selectedItems: [
+          {
+            id: "docs-only",
+            title: "Docs-only update",
+            likelyFiles: ["README.md"]
+          }
+        ],
+        expectedCategories: ["docs"]
+      }
+    },
+    changedFiles: [".env.production"],
+    tests: {
+      run: true,
+      passed: true,
+      checks: [{ name: "git diff --check", passed: true }]
+    },
+    codexFinalMessage: "문서 작업 중 .env.production 파일이 변경되었습니다."
+  });
+
+  assert.equal(review.qualityGate.decision, "reject");
+  assert.equal(review.qualityGate.should_commit, false);
+  assert.equal(review.qualityGate.should_push, false);
+  assert.equal(review.qualityGate.reasons.includes("high_risk_change_detected"), true);
+  assert.match(review.qualityGate.risky_changes.join("\n"), /\.env\.production/);
+});
+
 test("Codex job start creates file-based state without starting worker when requested", async () => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), "weaveflow-job-runner-test-"));
   const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
@@ -166,8 +291,12 @@ test("Codex job start creates file-based state without starting worker when requ
   assert.equal(jobState.time_budget_minutes, 30);
   assert.equal(jobState.max_fix_attempts, 2);
   assert.equal(jobState.elapsed_ms >= 0, true);
-  assert.equal(jobState.last_event, "job_created");
+  assert.equal(jobState.last_event, "outcome_contract_created");
   assert.equal(jobState.stage_timestamps.job_created.length > 0, true);
+  assert.equal(jobState.outcome_contract_path, join(start.jobDir, "outcome_contract.md"));
+  assert.equal(jobState.quality_review_status, "pending");
+  assert.match(await readFile(join(start.jobDir, "outcome_contract.md"), "utf8"), /Outcome Contract/);
+  assert.equal(JSON.parse(await readFile(join(start.jobDir, "outcome_contract.json"), "utf8")).contract_id.length > 0, true);
 
   const rawEvents = (await readFile(join(start.jobDir, "events.jsonl"), "utf8"))
     .trim()
@@ -191,6 +320,7 @@ test("Codex job start creates file-based state without starting worker when requ
   assert.match(formatCodexJobStartSummary(start), /Weaveflow Codex 작업 시작/);
   assert.match(formatCodexJobStatusSummary(status), /Weaveflow Codex 작업 상태/);
   assert.match(formatCodexJobStatusSummary(status), /Codex 작업 정책/);
+  assert.match(formatCodexJobStatusSummary(status), /품질 검토/);
   assert.match(formatCodexJobStatusSummary(status), /총 경과 시간:/);
   assert.match(formatCodexJobStatusSummary(status), /최근 이벤트:/);
   assert.match(formatCodexJobStatusSummary(status), /job_created/);
@@ -429,6 +559,15 @@ test("Codex job timeline and result report include durations and observability f
         }
       ]
     },
+    outcome_contract_path: "/tmp/weaveflow-job/outcome_contract.md",
+    change_review_path: "/tmp/weaveflow-job/change_review.md",
+    quality_gate_path: "/tmp/weaveflow-job/quality_gate.md",
+    quality_gate_decision_path: "/tmp/weaveflow-job/quality_gate_decision.md",
+    quality_gate_decision: "accept",
+    quality_score: 96,
+    quality_issues: [],
+    quality_review_status: "accept",
+    quality_fix_attempts_used: 0,
     result_artifact_path: "/tmp/weaveflow-job/result.md",
     error: null
   };
@@ -450,6 +589,11 @@ test("Codex job timeline and result report include durations and observability f
   assert.match(result, /## Requested Goal/);
   assert.match(result, /## Timeline/);
   assert.match(result, /## Tests and Checks/);
+  assert.match(result, /## Outcome Contract/);
+  assert.match(result, /## Change Review/);
+  assert.match(result, /## Quality Gate/);
+  assert.match(result, /Quality score: 96/);
+  assert.match(result, /Commit\/push proceeded because accepted: yes/);
   assert.match(result, /## Commit and Branch/);
   assert.match(result, /abc1234/);
 });

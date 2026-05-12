@@ -15,6 +15,10 @@ import {
   writeAdaptiveArtifacts
 } from "./adaptiveLoop.js";
 import {
+  formatChangeReviewKorean,
+  reviewChangedFiles
+} from "./changeReview.js";
+import {
   formatOpportunityBacklogMarkdown,
   formatSelectedScopeMarkdown,
   generateOpportunityBacklog,
@@ -40,6 +44,16 @@ import {
   formatJobStartedKorean,
   formatJobStatusKorean
 } from "./koreanJobReport.js";
+import {
+  buildOutcomeContract,
+  formatOutcomeContractKorean
+} from "./outcomeContract.js";
+import {
+  buildQualityFixPrompt,
+  decideQualityGate,
+  formatQualityGateKorean,
+  summarizeQualityForCheckKorean
+} from "./qualityGate.js";
 import { scanRepoContext } from "./repoContext.js";
 import { buildDefaultRepoRegistry, resolveRepoRoot } from "./repoRegistry.js";
 import {
@@ -762,6 +776,20 @@ export async function startWeaveflowCodexJob(options) {
     repo_resolution: repoResolution,
     job_policy: policy,
     verification_plan: null,
+    outcome_contract_path: join(jobDir, "outcome_contract.md"),
+    outcome_contract_json_path: join(jobDir, "outcome_contract.json"),
+    change_review_path: join(jobDir, "change_review.md"),
+    change_review_json_path: join(jobDir, "change_review.json"),
+    quality_gate_path: join(jobDir, "quality_gate.md"),
+    quality_gate_json_path: join(jobDir, "quality_gate.json"),
+    quality_gate_decision_path: join(jobDir, "quality_gate_decision.md"),
+    quality_gate_decision: null,
+    quality_score: null,
+    quality_issues: [],
+    quality_review_status: "pending",
+    quality_review_started_at: null,
+    quality_review_finished_at: null,
+    quality_fix_attempts_used: 0,
     session_mode: sessionMode,
     adaptive_mode: sessionMode === "adaptive_loop",
     step_review_mode: stepReviewMode,
@@ -835,6 +863,13 @@ export async function startWeaveflowCodexJob(options) {
     repoRoot,
     repoAlias: repoResolution.repoAlias
   }, state, now);
+  state = await createAndRecordOutcomeContract({
+    jobDir,
+    state,
+    planning: null,
+    scan: null,
+    verificationPlan: null
+  });
 
   if (sessionMode === "multi_step") {
     state = await prepareInitialWorkSession({
@@ -905,6 +940,13 @@ export async function runCodexJobWorker(jobDir) {
     state = await recordJobEvent(jobDir, state, "planning_finished", "Planning artifacts written.", {
       candidateCount: planning.candidates?.length || 0,
       selectedScope: planning.selectedScope?.title || "User-specified task"
+    });
+    state = await createAndRecordOutcomeContract({
+      jobDir,
+      state,
+      planning,
+      scan,
+      verificationPlan: initialVerificationPlan
     });
 
     if (state.session_mode === "multi_step") {
@@ -1140,6 +1182,22 @@ export async function runCodexJobWorker(jobDir) {
       timeoutMs: DEFAULT_TIMEOUT_MS
     });
     await writeJobFile(jobDir, "diff.patch", diffResult.stdout);
+    const qualityResult = await runQualityGateWithFixes({
+      jobDir,
+      state,
+      planning,
+      scan,
+      verificationPlan,
+      worktreeRoot,
+      changedFiles,
+      diffText: diffResult.stdout,
+      tests,
+      codexFinalMessage: firstCodexResult.lastMessage || "",
+      deadlineMs
+    });
+    state = qualityResult.state;
+    changedFiles = qualityResult.changedFiles;
+    tests = qualityResult.tests || tests;
 
     state = await recordJobEvent(jobDir, state, "commit_started", "Git commit stage started.", {
       changedFileCount: changedFiles.length
@@ -1292,6 +1350,17 @@ export async function checkWeaveflowCodexJob(options) {
     repoResolution: state.repo_resolution,
     jobPolicy: state.job_policy,
     verificationPlan: state.verification_plan,
+    outcomeContractPath: state.outcome_contract_path,
+    changeReviewPath: state.change_review_path,
+    qualityGatePath: state.quality_gate_path,
+    qualityGateDecisionPath: state.quality_gate_decision_path,
+    qualityGateDecision: state.quality_gate_decision,
+    qualityScore: state.quality_score,
+    qualityIssues: state.quality_issues || [],
+    qualityReviewStatus: state.quality_review_status,
+    qualityReviewStartedAt: state.quality_review_started_at,
+    qualityReviewFinishedAt: state.quality_review_finished_at,
+    qualityFixAttemptsUsed: state.quality_fix_attempts_used || 0,
     sessionMode: state.session_mode || "single",
     totalSteps: state.total_steps || 0,
     currentStepIndex: state.current_step_index || 0,
@@ -1376,6 +1445,14 @@ export async function cancelWeaveflowCodexJob(options) {
     completedSteps: state.completed_steps,
     failedSteps: state.failed_steps,
     skippedSteps: state.skipped_steps,
+    qualityGateDecision: state.quality_gate_decision,
+    qualityScore: state.quality_score,
+    qualityIssues: state.quality_issues || [],
+    qualityReviewStatus: state.quality_review_status,
+    qualityFixAttemptsUsed: state.quality_fix_attempts_used || 0,
+    outcomeContractPath: state.outcome_contract_path,
+    changeReviewPath: state.change_review_path,
+    qualityGatePath: state.quality_gate_path,
     currentSessionStep: state.current_session_step,
     recentSessionResult: state.recent_session_result,
     adaptiveMode: state.adaptive_mode === true,
@@ -1398,6 +1475,7 @@ export function formatCodexJobStartSummary(summary) {
     report,
     `저장소: ${summary.repoRoot || summary.repoResolution?.repoRoot || "없음"}`,
     summary.jobPolicy?.korean_summary ? `정책:\n${summary.jobPolicy.korean_summary}` : "",
+    formatQualitySummaryForJob(summary),
     summary.sessionMode === "multi_step" ? summarizeSessionProgressKorean(sessionProgressFromSummary(summary)) : "",
     summary.sessionMode === "adaptive_loop" ? formatAdaptiveLoopSummaryKorean(adaptiveStateFromSummary(summary)) : "",
     `상태 확인: weaveflow_check_codex_job jobId=${summary.jobId}`,
@@ -1420,6 +1498,7 @@ export function formatCodexJobStatusSummary(summary) {
     selected,
     summary.jobPolicy?.korean_summary ? `정책:\n${summary.jobPolicy.korean_summary}` : "",
     summary.verificationPlan?.korean_summary ? `검증 계획:\n${summary.verificationPlan.korean_summary}` : "",
+    formatQualitySummaryForJob(summary),
     summary.sessionMode === "multi_step" ? summarizeSessionProgressKorean(sessionProgressFromSummary(summary)) : "",
     summary.sessionMode === "adaptive_loop" ? formatAdaptiveLoopSummaryKorean(adaptiveStateFromSummary(summary)) : "",
     "최근 로그:",
@@ -1439,6 +1518,7 @@ export function formatCodexJobCancelSummary(summary) {
     `취소 처리: ${summary.cancelled ? "예" : "아니오"}`,
     `현재 상태: ${summary.status}`,
     `보존된 worktree: ${summary.preservedWorktree || "없음"}`,
+    formatQualitySummaryForJob(summary),
     summary.sessionMode === "multi_step" ? summarizeSessionProgressKorean(sessionProgressFromSummary(summary)) : "",
     summary.sessionMode === "adaptive_loop" ? formatAdaptiveLoopSummaryKorean(adaptiveStateFromSummary(summary)) : "",
     summary.sessionMode === "adaptive_loop" ? `Adaptive artifacts: ${summary.adaptiveStatePath || "없음"}, ${summary.adaptiveLoopPath || "없음"}` : "",
@@ -1475,6 +1555,35 @@ function adaptiveStateFromSummary(summary = {}) {
     stop_reason: summary.stopReason || "",
     reflections: summary.recentReflection ? [summary.recentReflection] : []
   };
+}
+
+function formatQualitySummaryForJob(summary = {}) {
+  const decision = summary.qualityGateDecision || "pending";
+  const issues = Array.isArray(summary.qualityIssues) ? summary.qualityIssues : [];
+  const waiting = !["accept", "reject"].includes(decision) && !JOB_TERMINAL_STATUSES.has(summary.status);
+  const compactSummary = ["accept", "needs_fix", "reject"].includes(decision)
+    ? summarizeQualityForCheckKorean({
+      decision,
+      quality_score: summary.qualityScore,
+      reasons: issues,
+      missing_requirements: decision === "needs_fix" ? issues : [],
+      risky_changes: decision === "reject" ? issues : [],
+      should_commit: decision === "accept",
+      should_push: decision === "accept" && summary.pushed === true
+    })
+    : "";
+  return [
+    "품질 검토",
+    compactSummary ? `요약: ${compactSummary}` : "",
+    `상태: ${summary.qualityReviewStatus || "pending"}`,
+    `결정: ${decision}`,
+    `품질 점수: ${summary.qualityScore ?? "없음"}`,
+    `주요 이슈: ${issues.length ? issues.slice(0, 5).join(" / ") : "없음"}`,
+    `커밋/푸시 대기: ${waiting ? "예" : "아니오"}`,
+    summary.qualityGateDecision === "needs_fix" ? "다음 행동: 품질 게이트 수정 prompt로 보완 후 재검증" : "",
+    summary.qualityGateDecision === "reject" ? "실패 사유: 품질 게이트가 커밋을 차단했습니다." : "",
+    `artifacts: ${summary.outcomeContractPath || "없음"}, ${summary.changeReviewPath || "없음"}, ${summary.qualityGatePath || "없음"}`
+  ].filter(Boolean).join("\n");
 }
 
 async function runBridgeProcess({ pythonCommand, projectRoot, workspaceRoot, requests, timeoutMs }) {
@@ -2048,6 +2157,13 @@ async function writeRequiredJobPlaceholders(jobDir, userRequest, intake = null) 
     "selected_scope.md": "# Selected Scope\n\n대기 중입니다.\n",
     "execution_plan.md": "# Execution Plan\n\n대기 중입니다.\n",
     "verification_plan.md": "# Verification Plan\n\n대기 중입니다.\n",
+    "outcome_contract.md": "# Outcome Contract\n\n대기 중입니다.\n",
+    "outcome_contract.json": "{}\n",
+    "change_review.md": "# Change Review\n\n대기 중입니다.\n",
+    "change_review.json": "{}\n",
+    "quality_gate.md": "# Quality Gate\n\n대기 중입니다.\n",
+    "quality_gate.json": "{}\n",
+    "quality_gate_decision.md": "pending\n",
     "session_plan.md": "# Multi-step Work Session Plan\n\nsingle session mode 또는 계획 대기 중입니다.\n",
     "session_steps.json": "[]\n",
     "session_summary.md": "# Multi-step Work Session Summary\n\nsingle session mode 또는 결과 대기 중입니다.\n",
@@ -2261,6 +2377,15 @@ function buildJobStartDetails(state) {
     repoResolution: state.repo_resolution,
     jobPolicy: state.job_policy,
     verificationPlan: state.verification_plan,
+    outcomeContractPath: state.outcome_contract_path,
+    changeReviewPath: state.change_review_path,
+    qualityGatePath: state.quality_gate_path,
+    qualityGateDecisionPath: state.quality_gate_decision_path,
+    qualityGateDecision: state.quality_gate_decision,
+    qualityScore: state.quality_score,
+    qualityIssues: state.quality_issues || [],
+    qualityReviewStatus: state.quality_review_status,
+    qualityFixAttemptsUsed: state.quality_fix_attempts_used || 0,
     sessionMode: state.session_mode || "single",
     totalSteps: state.total_steps || 0,
     currentStepIndex: state.current_step_index || 0,
@@ -2473,6 +2598,363 @@ function renderVerificationPlanMarkdown(plan = {}) {
     plan.warnings?.length ? plan.warnings.map((warning) => `- ${warning}`).join("\n") : "- none",
     ""
   ].join("\n");
+}
+
+async function createAndRecordOutcomeContract({ jobDir, state, planning = null, scan = null, verificationPlan = null }) {
+  const contract = buildCodexOutcomeContract({
+    state,
+    planning,
+    scan,
+    verificationPlan
+  });
+  await writeOutcomeContractArtifacts(jobDir, contract);
+  return recordJobEvent(jobDir, state, "outcome_contract_created", "Outcome contract created.", {
+    contractId: contract.contract_id,
+    strictness: contract.strictness,
+    criteriaCount: contract.success_criteria?.length || 0
+  }, {
+    outcome_contract_path: join(jobDir, "outcome_contract.md"),
+    outcome_contract_json_path: join(jobDir, "outcome_contract.json")
+  });
+}
+
+function buildCodexOutcomeContract({ state, planning = null, scan = null, verificationPlan = null }) {
+  return buildOutcomeContract({
+    userRequest: state.user_request,
+    normalizedJobRequest: state.job_intake,
+    normalizedGoal: state.normalized_goal,
+    selectedScope: qualitySelectedScope(planning, state),
+    deferredScope: planning?.scopeSelection?.deferredItems || planning?.deferred_items || [],
+    jobPolicy: state.job_policy,
+    repoContext: scan,
+    verificationPlan: verificationPlan || state.verification_plan,
+    timeBudgetMinutes: state.time_budget_minutes,
+    sessionMode: state.session_mode,
+    maxSteps: state.max_steps
+  });
+}
+
+async function writeOutcomeContractArtifacts(jobDir, contract) {
+  await writeJobFile(jobDir, "outcome_contract.md", contract.markdown || formatOutcomeContractKorean(contract));
+  await writeJsonAtomic(join(jobDir, "outcome_contract.json"), contract);
+}
+
+export function buildCodexJobQualityReview(input = {}) {
+  const state = input.state || {};
+  const planning = input.planning || null;
+  const scan = input.scan || null;
+  const verificationPlan = input.verificationPlan || input.verification_plan || state.verification_plan || null;
+  const outcomeContract = input.outcomeContract || input.outcome_contract || buildCodexOutcomeContract({
+    state,
+    planning,
+    scan,
+    verificationPlan
+  });
+  const selectedScope = qualitySelectedScope(planning, state);
+  const changeReview = reviewChangedFiles({
+    changedFiles: input.changedFiles || input.changed_files || state.changed_files || [],
+    diffText: input.diffText || input.diff_text || "",
+    selectedScope,
+    outcomeContract,
+    jobPolicy: state.job_policy,
+    repoContext: scan,
+    userRequest: state.user_request
+  });
+  const qualityGate = decideQualityGate({
+    outcomeContract,
+    changeReview,
+    testResults: input.tests || input.testResults || state.tests,
+    verificationResults: input.tests || input.verificationResults || state.tests,
+    changedFiles: input.changedFiles || input.changed_files || state.changed_files || [],
+    selectedScope,
+    userRequest: state.user_request,
+    jobPolicy: state.job_policy,
+    attemptsUsed: Number(state.fix_attempts_used || 0) + Number(state.quality_fix_attempts_used || 0),
+    maxFixAttempts: state.max_fix_attempts,
+    codexFinalMessage: input.codexFinalMessage || input.codex_final_message || ""
+  });
+  return {
+    outcomeContract,
+    changeReview,
+    qualityGate
+  };
+}
+
+async function runQualityGateReview({ jobDir, state, planning = null, scan = null, verificationPlan = null, changedFiles = [], diffText = "", tests = null, codexFinalMessage = "" }) {
+  const startedAt = new Date().toISOString();
+  state = await recordJobEvent(jobDir, state, "quality_review_started", "Quality review started.", {
+    changedFileCount: changedFiles.length
+  }, {
+    quality_review_status: "running",
+    quality_review_started_at: startedAt
+  });
+  const review = buildCodexJobQualityReview({
+    state,
+    planning,
+    scan,
+    verificationPlan,
+    changedFiles,
+    diffText,
+    tests,
+    codexFinalMessage
+  });
+  await writeOutcomeContractArtifacts(jobDir, review.outcomeContract);
+  await writeChangeReviewArtifacts(jobDir, review.changeReview);
+  state = await recordJobEvent(jobDir, state, "change_review_completed", "Change review completed.", {
+    riskScore: review.changeReview.risk_score,
+    scopeAlignment: review.changeReview.scope_alignment,
+    riskyChangeCount: review.changeReview.risky_changes?.length || 0,
+    unrelatedChangeCount: review.changeReview.unrelated_changes?.length || 0
+  }, {
+    outcome_contract_path: join(jobDir, "outcome_contract.md"),
+    outcome_contract_json_path: join(jobDir, "outcome_contract.json"),
+    change_review_path: join(jobDir, "change_review.md"),
+    change_review_json_path: join(jobDir, "change_review.json")
+  });
+  await writeQualityGateArtifacts(jobDir, review.qualityGate);
+  const finishedAt = new Date().toISOString();
+  state = await recordJobEvent(jobDir, state, "quality_gate_decided", "Quality gate decided.", {
+    decision: review.qualityGate.decision,
+    qualityScore: review.qualityGate.quality_score
+  }, {
+    quality_gate_path: join(jobDir, "quality_gate.md"),
+    quality_gate_json_path: join(jobDir, "quality_gate.json"),
+    quality_gate_decision_path: join(jobDir, "quality_gate_decision.md"),
+    quality_gate_decision: review.qualityGate.decision,
+    quality_score: review.qualityGate.quality_score,
+    quality_issues: qualityIssuesFromGate(review.qualityGate),
+    quality_review_status: review.qualityGate.decision,
+    quality_review_finished_at: finishedAt
+  });
+  const eventByDecision = {
+    accept: "quality_gate_accepted",
+    needs_fix: "quality_gate_needs_fix",
+    reject: "quality_gate_rejected"
+  }[review.qualityGate.decision] || "quality_gate_decided";
+  state = await recordJobEvent(jobDir, state, eventByDecision, "Quality gate decision recorded.", {
+    decision: review.qualityGate.decision,
+    qualityScore: review.qualityGate.quality_score,
+    issueCount: qualityIssuesFromGate(review.qualityGate).length
+  });
+  return {
+    ...review,
+    state
+  };
+}
+
+async function runQualityGateWithFixes({ jobDir, state, planning = null, scan = null, verificationPlan = null, worktreeRoot, changedFiles = [], diffText = "", tests = null, codexFinalMessage = "", deadlineMs }) {
+  let currentChangedFiles = changedFiles;
+  let currentDiffText = diffText;
+  let currentTests = tests;
+  let currentMessage = codexFinalMessage;
+  let review = await runQualityGateReview({
+    jobDir,
+    state,
+    planning,
+    scan,
+    verificationPlan,
+    changedFiles: currentChangedFiles,
+    diffText: currentDiffText,
+    tests: currentTests,
+    codexFinalMessage: currentMessage
+  });
+  state = review.state;
+
+  while (review.qualityGate.decision === "needs_fix" && remainingQualityFixAttempts(state) > 0) {
+    const attempt = Number(state.quality_fix_attempts_used || 0) + 1;
+    const prompt = buildCodexJobQualityFixPrompt({
+      state,
+      planning,
+      review,
+      attempt
+    });
+    await writeJobFile(jobDir, `quality_fix_prompt_${attempt}.md`, prompt);
+    state = await recordJobEvent(jobDir, state, "quality_fix_prompt_created", "Quality fix prompt created.", {
+      attempt,
+      decision: review.qualityGate.decision
+    }, {
+      status: "fixing",
+      current_step: `quality_fix_attempt_${attempt}`,
+      quality_fix_attempts_used: attempt
+    });
+    const fixResult = await runCodexJobAttempt({
+      jobDir,
+      state,
+      worktreeRoot,
+      prompt,
+      attemptLabel: `quality-fix-${attempt}`,
+      sandboxMode: state.codex_sandbox_mode || "workspace-write",
+      deadlineMs
+    });
+    state = await updateJobState(jobDir, state, {
+      codex_exit_code: fixResult.code,
+      codex_termination: fixResult.termination
+    });
+    if (fixResult.code !== 0 || fixResult.termination !== "exit") {
+      throw new Error(`Quality fix attempt ${attempt} failed: exit=${fixResult.code} termination=${fixResult.termination}`);
+    }
+    currentChangedFiles = await currentChangedFilesForQuality(worktreeRoot, state.repo_root);
+    const nextVerificationPlan = buildVerificationPlan(scan || {}, {
+      ...(state.job_policy || {}),
+      runTests: state.run_tests,
+      changedFiles: currentChangedFiles
+    }, {
+      cwd: worktreeRoot,
+      changedFiles: currentChangedFiles
+    });
+    currentTests = await runTargetedChecks({
+      worktreeRoot,
+      changedFiles: currentChangedFiles,
+      pythonCommand: state.python_command || "python3",
+      timeoutMs: 120000,
+      verificationPlan: nextVerificationPlan
+    });
+    await writeJobFile(jobDir, `quality_fix_test_output_${attempt}.log`, renderJobTestOutput(currentTests));
+    await writeJobFile(jobDir, "test_output.log", renderJobTestOutput(currentTests));
+    state = await updateJobState(jobDir, {
+      ...state,
+      verification_plan: nextVerificationPlan
+    }, {
+      tests: currentTests,
+      changed_files: currentChangedFiles
+    });
+    currentDiffText = await gitDiffTextForQuality(jobDir, state, worktreeRoot);
+    currentMessage = fixResult.lastMessage || "";
+    review = await runQualityGateReview({
+      jobDir,
+      state,
+      planning,
+      scan,
+      verificationPlan: nextVerificationPlan,
+      changedFiles: currentChangedFiles,
+      diffText: currentDiffText,
+      tests: currentTests,
+      codexFinalMessage: currentMessage
+    });
+    state = review.state;
+  }
+
+  if (review.qualityGate.decision !== "accept") {
+    throw new Error(`Quality gate rejected commit: ${review.qualityGate.reasons?.join(", ") || review.qualityGate.decision}`);
+  }
+  if (review.qualityGate.should_commit === false) {
+    throw new Error("Quality gate did not allow commit.");
+  }
+  return {
+    state,
+    changedFiles: currentChangedFiles,
+    diffText: currentDiffText,
+    tests: currentTests,
+    review
+  };
+}
+
+function buildCodexJobQualityFixPrompt({ state, planning, review, attempt }) {
+  return [
+    "You are still running inside the same isolated worktree for a Weaveflow/Codex job.",
+    "The quality gate found fixable issues. Make the smallest focused fix only.",
+    "Do not commit, push, merge, or modify files outside this worktree.",
+    "Do not broaden the selected scope or add unrelated changes.",
+    "When finished, respond in Korean with what you fixed.",
+    "",
+    `Job ID: ${state.job_id}`,
+    `Quality fix attempt: ${attempt} of ${state.max_fix_attempts}`,
+    "",
+    "## Selected Scope",
+    planning?.selectedScopeMarkdown || "(not available)",
+    "",
+    "## Quality Gate",
+    review.qualityGate.markdown || formatQualityGateKorean(review.qualityGate),
+    "",
+    "## Change Review",
+    review.changeReview.markdown || formatChangeReviewKorean(review.changeReview),
+    "",
+    "## Outcome Contract",
+    review.outcomeContract.markdown || formatOutcomeContractKorean(review.outcomeContract),
+    "",
+    "## Focused Quality Fix Prompt",
+    buildQualityFixPrompt({
+      outcomeContract: review.outcomeContract,
+      changeReview: review.changeReview,
+      testResults: state.tests,
+      changedFiles: state.changed_files,
+      selectedScope: qualitySelectedScope(planning, state),
+      userRequest: state.user_request,
+      jobPolicy: state.job_policy,
+      attemptsUsed: Number(state.fix_attempts_used || 0) + Number(state.quality_fix_attempts_used || 0),
+      maxFixAttempts: state.max_fix_attempts
+    })
+  ].join("\n");
+}
+
+async function writeChangeReviewArtifacts(jobDir, changeReview) {
+  await writeJobFile(jobDir, "change_review.md", changeReview.markdown || formatChangeReviewKorean(changeReview));
+  await writeJsonAtomic(join(jobDir, "change_review.json"), changeReview);
+}
+
+async function writeQualityGateArtifacts(jobDir, qualityGate) {
+  await writeJobFile(jobDir, "quality_gate.md", qualityGate.markdown || formatQualityGateKorean(qualityGate));
+  await writeJsonAtomic(join(jobDir, "quality_gate.json"), qualityGate);
+  await writeJobFile(jobDir, "quality_gate_decision.md", [
+    `decision: ${qualityGate.decision}`,
+    `quality_score: ${qualityGate.quality_score}`,
+    "",
+    qualityGate.korean_summary || formatQualityGateKorean(qualityGate),
+    ""
+  ].join("\n"));
+}
+
+function qualitySelectedScope(planning, state = {}) {
+  if (planning?.scopeSelection) {
+    return planning.scopeSelection;
+  }
+  if (planning?.selectedScope) {
+    return planning.selectedScope;
+  }
+  if (planning?.selectedScopeMarkdown) {
+    return {
+      markdown: planning.selectedScopeMarkdown,
+      title: planning.selectedScope?.title || state.normalized_goal || state.user_request
+    };
+  }
+  return {
+    title: state.normalized_goal || state.user_request || "User request",
+    description: state.user_request || state.normalized_goal || "",
+    likelyFiles: []
+  };
+}
+
+function qualityIssuesFromGate(gate = {}) {
+  return [
+    ...(gate.reasons || []),
+    ...(gate.missing_requirements || []),
+    ...(gate.risky_changes || []),
+    ...(gate.unrelated_changes || []),
+    ...(gate.failed_checks || [])
+  ].filter(Boolean);
+}
+
+function remainingQualityFixAttempts(state = {}) {
+  const maxFixAttempts = Number(state.max_fix_attempts || DEFAULT_JOB_FIX_ATTEMPTS);
+  const used = Number(state.fix_attempts_used || 0) + Number(state.quality_fix_attempts_used || 0);
+  return Math.max(0, maxFixAttempts - used);
+}
+
+async function gitDiffTextForQuality(jobDir, state, worktreeRoot) {
+  const diffResult = await runLoggedCommand({
+    jobDir,
+    command: "git",
+    args: ["-C", worktreeRoot, "diff", "--binary"],
+    cwd: state.repo_root,
+    env: process.env,
+    timeoutMs: DEFAULT_TIMEOUT_MS
+  });
+  await writeJobFile(jobDir, "diff.patch", diffResult.stdout);
+  return diffResult.stdout;
+}
+
+async function currentChangedFilesForQuality(worktreeRoot, repoRoot) {
+  return currentChangedFiles(worktreeRoot, repoRoot);
 }
 
 async function prepareInitialWorkSession({ jobDir, state, maxSteps, timeoutMs }) {
@@ -3267,13 +3749,28 @@ async function runMultiStepCodexSession({ jobDir, state, scan, planning, verific
     timeoutMs: DEFAULT_TIMEOUT_MS
   });
   await writeJobFile(jobDir, "diff.patch", diffResult.stdout);
+  const qualityResult = await runQualityGateWithFixes({
+    jobDir,
+    state,
+    planning,
+    scan,
+    verificationPlan,
+    worktreeRoot,
+    changedFiles,
+    diffText: diffResult.stdout,
+    tests: state.tests,
+    codexFinalMessage: state.recent_session_result?.result_summary || "",
+    deadlineMs
+  });
+  state = qualityResult.state;
+  const qualityChangedFiles = qualityResult.changedFiles;
 
   state = await recordJobEvent(jobDir, state, "commit_started", "Git commit stage started.", {
-    changedFileCount: changedFiles.length
+    changedFileCount: qualityChangedFiles.length
   }, {
     status: "committing",
     current_step: "git_commit",
-    changed_files: changedFiles
+    changed_files: qualityChangedFiles
   });
   const addResult = await runLoggedCommand({
     jobDir,
@@ -3659,13 +4156,28 @@ async function runAdaptiveCodexLoop({ jobDir, state, scan, planning, verificatio
     timeoutMs: DEFAULT_TIMEOUT_MS
   });
   await writeJobFile(jobDir, "diff.patch", diffResult.stdout);
+  const qualityResult = await runQualityGateWithFixes({
+    jobDir,
+    state,
+    planning,
+    scan,
+    verificationPlan,
+    worktreeRoot,
+    changedFiles,
+    diffText: diffResult.stdout,
+    tests: state.tests,
+    codexFinalMessage: state.recent_session_result?.result_summary || "",
+    deadlineMs
+  });
+  state = qualityResult.state;
+  const qualityChangedFiles = qualityResult.changedFiles;
 
   state = await recordJobEvent(jobDir, state, "commit_started", "Git commit stage started.", {
-    changedFileCount: changedFiles.length
+    changedFileCount: qualityChangedFiles.length
   }, {
     status: "committing",
     current_step: "git_commit",
-    changed_files: changedFiles
+    changed_files: qualityChangedFiles
   });
   const addResult = await runLoggedCommand({
     jobDir,
@@ -3887,6 +4399,8 @@ function attemptNumberForLabel(label) {
   if (adaptiveMatch) return 200 + Number(adaptiveMatch[1]);
   const adaptiveFixMatch = String(label || "").match(/^adaptive-step-(\d+)-fix-(\d+)$/);
   if (adaptiveFixMatch) return 200 + Number(adaptiveFixMatch[1]) * 10 + Number(adaptiveFixMatch[2]);
+  const qualityFixMatch = String(label || "").match(/^quality-fix-(\d+)$/);
+  if (qualityFixMatch) return 300 + Number(qualityFixMatch[1]);
   const match = String(label || "").match(/^fix-(\d+)$/);
   if (match) return 10 + Number(match[1]);
   return 99;
@@ -4075,6 +4589,21 @@ export function renderCodexJobResultMarkdown(state, planning) {
     "## Selected Scope",
     planning?.selectedScopeMarkdown || "(not available)",
     "",
+    "## Outcome Contract",
+    `- Path: ${state.outcome_contract_path || "없음"}`,
+    "",
+    "## Change Review",
+    `- Path: ${state.change_review_path || "없음"}`,
+    `- 품질 검토 상태: ${state.quality_review_status || "pending"}`,
+    "",
+    "## Quality Gate",
+    `- Decision: ${state.quality_gate_decision || "pending"}`,
+    `- Quality score: ${state.quality_score ?? "없음"}`,
+    `- Issues: ${state.quality_issues?.length ? state.quality_issues.join(" / ") : "없음"}`,
+    `- Fix attempts used: ${state.quality_fix_attempts_used || 0}`,
+    `- Commit/push proceeded because accepted: ${state.quality_gate_decision === "accept" ? "yes" : "no"}`,
+    `- Path: ${state.quality_gate_path || "없음"}`,
+    "",
     state.session_mode === "multi_step" ? "## Session Summary" : "",
     state.session_mode === "multi_step" ? summarizeSessionProgressKorean(sessionProgressFromSummary({
       totalSteps: state.total_steps,
@@ -4124,6 +4653,10 @@ export function renderCodexJobResultMarkdown(state, planning) {
     `- Result artifact: ${state.result_artifact_path || join(state.job_dir, "result.md")}`,
     `- Diff patch: ${state.job_dir ? join(state.job_dir, "diff.patch") : "없음"}`,
     `- Test output: ${state.job_dir ? join(state.job_dir, "test_output.log") : "없음"}`,
+    `- Outcome contract: ${state.outcome_contract_path || "없음"}`,
+    `- Change review: ${state.change_review_path || "없음"}`,
+    `- Quality gate: ${state.quality_gate_path || "없음"}`,
+    `- Quality decision: ${state.quality_gate_decision_path || "없음"}`,
     state.session_mode === "adaptive_loop" ? `- Adaptive state: ${state.adaptive_state_path || "없음"}` : "",
     state.session_mode === "adaptive_loop" ? `- Adaptive loop: ${state.adaptive_loop_path || "없음"}` : "",
     "",
