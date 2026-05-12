@@ -17,6 +17,9 @@ final report, and proposed memory update.
   directories.
 - A Python service boundary in `weaveflow.service` that external interfaces
   can call without going through Typer.
+- A separate OpenClaw stdio POC under
+  `integrations/openclaw-weaveflow-stdio-poc/` for exercising the local bridge
+  and Codex job-runner workflow without changing the core MVP boundary.
 - A testable Python package built with Typer, Pydantic, PyYAML, SQLite, and
   pytest.
 
@@ -24,14 +27,14 @@ final report, and proposed memory update.
 
 - It is not a chatbot.
 - It is not a thin Codex wrapper.
-- It does not control Codex automatically.
+- The core CLI does not control Codex automatically.
 - It does not call the OpenAI API.
-- It does not integrate OpenClaw yet.
+- It does not provide a production OpenClaw integration.
 - It does not expose network, bot, desktop, or web adapters yet.
-- It does not run autonomous agents.
+- The core MVP does not run autonomous agents.
 - It does not implement vector memory.
 - It does not provide a web UI.
-- It does not orchestrate multiple workers.
+- The core MVP does not orchestrate multiple workers.
 
 The MVP intentionally keeps Codex interaction manual: `weaveflow task brief` generates
 a `worker_brief_codex.md` file, and a developer copies that brief into Codex.
@@ -66,20 +69,28 @@ memory_diff.md
 
 ## Installation
 
-Use Python 3.11 or newer.
+Use Python 3.11 or newer. From the repository root:
 
 ```bash
 python3.11 -m pip install -e ".[dev]"
 ```
 
-Run tests with:
+Confirm the CLI entry point and Python test suite with:
 
 ```bash
-python3.11 -m pytest
+weaveflow --help
+PYTHONPATH=src python3 -m pytest
 ```
 
 If your local machine uses `python` or `python3` for Python 3.11+, those commands
 are fine too.
+
+The OpenClaw stdio POC uses plain Node ESM and the built-in Node test runner.
+It has no package dependencies to install:
+
+```bash
+npm test --prefix integrations/openclaw-weaveflow-stdio-poc
+```
 
 ## CLI Commands
 
@@ -122,16 +133,6 @@ and validated by schemas in [schemas/](schemas/). Current JSON outputs use
 Future adapter expectations are documented in
 [docs/external_adapter_interface.md](docs/external_adapter_interface.md).
 
-## Repository Hygiene
-
-Weaveflow is local-first, so `.weaveflow/` contains runtime workspace state.
-Source code, tests, docs, schemas, and reviewed examples should be version
-controlled. Local task history, SQLite state, and workspace memory are ignored
-by default unless deliberately preserved elsewhere.
-
-See [docs/repository_hygiene.md](docs/repository_hygiene.md) for the commit and
-ignore policy.
-
 Plan and brief work:
 
 ```bash
@@ -164,6 +165,49 @@ task directory/index consistency, task status consistency, expected generated
 files for each status, and referenced artifact files. It exits with code `1`
 when errors are found. Warnings, such as a completed task without
 `memory_diff.md`, do not fail the command by themselves.
+
+## OpenClaw/Codex POC Operator Workflow
+
+The repository includes a local OpenClaw stdio POC at
+`integrations/openclaw-weaveflow-stdio-poc/`. Treat it as a development harness:
+Weaveflow remains the local task system, `.weaveflow/` remains the source of
+truth, and OpenClaw is only the future channel surface for invoking local tools.
+
+For a first-read local validation pass, run:
+
+```bash
+weaveflow init
+weaveflow doctor
+PYTHONPATH=src python3 -m pytest
+npm test --prefix integrations/openclaw-weaveflow-stdio-poc
+```
+
+When using the Codex job-runner tools from the OpenClaw POC:
+
+1. Start with `weaveflow_start_codex_job`, passing at least `repoRoot` and
+   `userRequest`. Add `timeBudgetMinutes`, `sessionMode: "multi_step"`, and
+   `maxSteps` when the request should be split into bounded steps.
+2. Monitor with `weaveflow_check_codex_job jobId=JOB-0001`. The status output
+   points to job artifacts, recent logs, the selected scope, checks, branch,
+   and session-step progress.
+3. Stop an in-flight job with `weaveflow_cancel_codex_job jobId=JOB-0001` when
+   the operator needs to preserve logs and the temporary worktree for review.
+4. Review `.weaveflow/jobs/JOB-0001/` for `job.yaml`, `events.jsonl`,
+   `result.md`, and, in multi-step mode, `session_plan.md`,
+   `session_summary.md`, and `steps/`.
+
+The POC README has plugin-specific smoke and OpenClaw inspection commands:
+[integrations/openclaw-weaveflow-stdio-poc/README.md](integrations/openclaw-weaveflow-stdio-poc/README.md).
+
+## Repository Hygiene
+
+Weaveflow is local-first, so `.weaveflow/` contains runtime workspace state.
+Source code, tests, docs, schemas, and reviewed examples should be version
+controlled. Local task history, SQLite state, and workspace memory are ignored
+by default unless deliberately preserved elsewhere.
+
+See [docs/repository_hygiene.md](docs/repository_hygiene.md) for the commit and
+ignore policy.
 
 ## Python Service Boundary
 
