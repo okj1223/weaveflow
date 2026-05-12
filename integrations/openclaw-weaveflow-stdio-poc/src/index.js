@@ -4,11 +4,13 @@ import {
   DEFAULT_TASK_TEXT,
   formatCodexAutomationSummary,
   formatCodexJobCancelSummary,
+  formatCodexJobRecoverySummary,
   formatCodexJobStartSummary,
   formatCodexJobStatusSummary,
   formatPocSummary,
   cancelWeaveflowCodexJob,
   checkWeaveflowCodexJob,
+  recoverWeaveflowCodexJob,
   runWeaveflowCodexAutoRun,
   runWeaveflowStdioPoc,
   startWeaveflowCodexJob
@@ -19,6 +21,7 @@ const CODEX_AUTO_TOOL_NAME = "weaveflow_codex_auto_run";
 const CODEX_JOB_START_TOOL_NAME = "weaveflow_start_codex_job";
 const CODEX_JOB_CHECK_TOOL_NAME = "weaveflow_check_codex_job";
 const CODEX_JOB_CANCEL_TOOL_NAME = "weaveflow_cancel_codex_job";
+const CODEX_JOB_RECOVER_TOOL_NAME = "weaveflow_recover_codex_job";
 
 export default definePluginEntry({
   id: "weaveflow-stdio-poc",
@@ -352,6 +355,90 @@ export default definePluginEntry({
       },
       { optional: true }
     );
+
+    api.registerTool(
+      {
+        name: CODEX_JOB_RECOVER_TOOL_NAME,
+        label: "Weaveflow Recover Codex Job",
+        description: "Diagnose a stale or inconsistent Codex job and optionally apply a safe recovery action.",
+        parameters: {
+          type: "object",
+          additionalProperties: false,
+          required: ["jobId"],
+          properties: {
+            jobId: {
+              type: "string",
+              description: "Job id, for example JOB-0001."
+            },
+            repoRoot: {
+              type: "string",
+              description: "Git repository root. Defaults to the current Weaveflow repo."
+            },
+            apply: {
+              type: "boolean",
+              description: "Apply the selected recovery action. Defaults to false dry-run planning."
+            },
+            action: {
+              type: "string",
+              enum: [
+                "auto",
+                "diagnose",
+                "resume_codex",
+                "rerun_checks",
+                "reconstruct_result",
+                "mark_completed",
+                "mark_failed",
+                "cleanup_completed_worktree",
+                "cleanup_cancelled_worktree"
+              ],
+              description: "Recovery action to plan or apply. Defaults to auto."
+            },
+            allowCleanup: {
+              type: "boolean",
+              description: "Allow destructive cleanup planning. Defaults to false; cleanup apply is not automatic."
+            },
+            allowResume: {
+              type: "boolean",
+              description: "Allow resume planning. Defaults to true."
+            },
+            pythonCommand: {
+              type: "string",
+              description: "Python command for safe rerun_checks recovery. Defaults to python3."
+            }
+          }
+        },
+        async execute(_toolCallId, params) {
+          const jobId = readOptionalString(params, "jobId");
+          if (!jobId) {
+            return failedCodexJobToolResult("jobId 값이 필요합니다.");
+          }
+
+          try {
+            const summary = await recoverWeaveflowCodexJob({
+              jobId,
+              repoRoot: readOptionalString(params, "repoRoot"),
+              apply: readOptionalBoolean(params, "apply", false),
+              action: readOptionalString(params, "action") || "auto",
+              allowCleanup: readOptionalBoolean(params, "allowCleanup", false),
+              allowResume: readOptionalBoolean(params, "allowResume", true),
+              pythonCommand: readOptionalString(params, "pythonCommand")
+            });
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: formatCodexJobRecoverySummary(summary)
+                }
+              ],
+              details: summary
+            };
+          } catch (error) {
+            return failedCodexJobToolResult(safeErrorMessage(error));
+          }
+        }
+      },
+      { optional: true }
+    );
   }
 });
 
@@ -359,6 +446,7 @@ export {
   CODEX_AUTO_TOOL_NAME,
   CODEX_JOB_CANCEL_TOOL_NAME,
   CODEX_JOB_CHECK_TOOL_NAME,
+  CODEX_JOB_RECOVER_TOOL_NAME,
   CODEX_JOB_START_TOOL_NAME,
   TOOL_NAME
 };

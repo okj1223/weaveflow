@@ -38,6 +38,11 @@ import {
 import { normalizeJobRequest } from "./jobIntake.js";
 import { isAutoActionAllowed, resolveJobPolicy } from "./jobPolicy.js";
 import {
+  formatJobStateDiagnosticsMarkdown,
+  inspectJobDirectory,
+  summarizeJobStateKorean
+} from "./jobStateDiagnostics.js";
+import {
   formatJobCancelledKorean,
   formatJobCompletedKorean,
   formatJobFailedKorean,
@@ -54,6 +59,15 @@ import {
   formatQualityGateKorean,
   summarizeQualityForCheckKorean
 } from "./qualityGate.js";
+import {
+  buildMarkCompletedPlan,
+  buildMarkFailedPlan,
+  buildRecoveryPlan,
+  buildReconstructResultPlan,
+  buildResumeCodexPrompt,
+  formatRecoveryPlanKorean,
+  formatRecoveryPlanMarkdown
+} from "./recoveryPlanner.js";
 import { scanRepoContext } from "./repoContext.js";
 import { buildDefaultRepoRegistry, resolveRepoRoot } from "./repoRegistry.js";
 import {
@@ -73,6 +87,11 @@ import {
   summarizeSessionProgressKorean,
   updateSessionStep
 } from "./workSession.js";
+import {
+  formatWorktreeRecoveryMarkdown,
+  inspectWorktreeState,
+  summarizeWorktreeRecoveryKorean
+} from "./worktreeRecovery.js";
 
 export const CONTRACT_VERSION = "weaveflow.v1";
 export const DEFAULT_TASK_TEXT = "OpenClaw stdio bridge POC task";
@@ -91,6 +110,19 @@ const STEP_ORDER = [
 ];
 
 const JOB_TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled", "timeout"]);
+const RECOVERY_EXPOSE_HEALTH = new Set([
+  "stale_running",
+  "invalid_state",
+  "missing_state",
+  "incomplete_completed",
+  "failed"
+]);
+const RECOVERY_MUTATING_ACTIONS = new Set([
+  "reconstruct_result",
+  "mark_failed",
+  "mark_completed",
+  "rerun_checks"
+]);
 
 export function defaultProjectRoot() {
   return resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -790,6 +822,16 @@ export async function startWeaveflowCodexJob(options) {
     quality_review_started_at: null,
     quality_review_finished_at: null,
     quality_fix_attempts_used: 0,
+    recovery_status: null,
+    recovery_action: null,
+    recovery_plan_path: join(jobDir, "recovery_plan.md"),
+    recovery_result_path: join(jobDir, "recovery_result.md"),
+    recovery_diagnostics_path: join(jobDir, "recovery_diagnostics.md"),
+    worktree_recovery_path: join(jobDir, "worktree_recovery.md"),
+    last_recovery_checked_at: null,
+    stale_detected: false,
+    recoverable: null,
+    recovery_confidence: null,
     session_mode: sessionMode,
     adaptive_mode: sessionMode === "adaptive_loop",
     step_review_mode: stepReviewMode,
@@ -1320,10 +1362,74 @@ export async function checkWeaveflowCodexJob(options) {
   const repoRoot = resolveJobRepoRoot(options).repoRoot;
   const workspaceRoot = resolve(cleanOptionalString(options?.workspaceRoot) || repoRoot);
   const jobDir = join(jobRootForWorkspace(workspaceRoot), jobId);
-  const state = await readJobState(jobDir);
+  if (!existsSync(jobDir)) {
+    throw new Error(`Codex job does not exist: ${jobId}`);
+  }
+  let state = null;
+  let stateReadError = "";
+  try {
+    state = await readJobState(jobDir);
+  } catch (error) {
+    stateReadError = safeOneLine(error instanceof Error ? error.message : String(error));
+  }
+  if (!state) {
+    const recovery = await buildCodexJobRecoveryContext({
+      jobDir,
+      repoRoot,
+      state: null,
+      allowResume: true,
+      allowCleanup: false,
+      action: "diagnose",
+      now: options?.recoveryNow,
+      staleAfterMs: options?.recoveryStaleAfterMs,
+      processChecker: options?.recoveryProcessChecker,
+      commandRunner: options?.commandRunner
+    });
+    return {
+      ok: false,
+      jobId,
+      taskId: null,
+      status: "unknown",
+      currentStep: "unknown",
+      elapsedSeconds: 0,
+      elapsedMs: 0,
+      stageDurations: jobStageDurations({}),
+      budgetUsagePercent: null,
+      timeline: [],
+      goal: "",
+      timeBudgetMinutes: null,
+      selectedScope: "",
+      branch: "",
+      changedFiles: [],
+      recentEvents: recovery.diagnostics.events?.slice(-5) || [],
+      recentLogs: await recentJobLogs(jobDir),
+      tests: null,
+      commitHash: null,
+      pushed: false,
+      resultArtifactPath: null,
+      error: stateReadError || recovery.diagnostics.recovery_hint,
+      repoResolution: null,
+      jobPolicy: null,
+      verificationPlan: null,
+      sessionMode: "unknown",
+      recovery,
+      recoveryDiagnostics: recovery.diagnostics,
+      worktreeRecovery: recovery.worktree,
+      recoveryPlan: recovery.plan,
+      recoverySummaryKorean: formatCodexRecoverySummaryKorean(recovery),
+      jobDir,
+      worktree: null
+    };
+  }
   const allEvents = await readRecentEvents(jobDir);
   const recentEvents = allEvents.slice(-5);
   const adaptiveState = state.session_mode === "adaptive_loop" ? await readAdaptiveState(jobDir) : null;
+  const recovery = await maybeBuildCheckRecoveryContext({
+    jobDir,
+    repoRoot,
+    state,
+    options
+  });
   return {
     ok: true,
     jobId: state.job_id,
@@ -1380,9 +1486,163 @@ export async function checkWeaveflowCodexJob(options) {
     stopReason: state.stop_reason || adaptiveState?.stop_reason || null,
     goalProgressSummary: state.goal_progress_summary || adaptiveState?.goal_progress_summary || "",
     recentReflection: adaptiveState?.reflections?.length ? adaptiveState.reflections[adaptiveState.reflections.length - 1] : null,
+    recovery,
+    recoveryDiagnostics: recovery?.diagnostics || null,
+    worktreeRecovery: recovery?.worktree || null,
+    recoveryPlan: recovery?.plan || null,
+    recoverySummaryKorean: recovery ? formatCodexRecoverySummaryKorean(recovery) : "",
+    recoveryStatus: state.recovery_status,
+    recoveryAction: state.recovery_action,
+    recoveryPlanPath: state.recovery_plan_path,
+    recoveryResultPath: state.recovery_result_path,
+    recoveryDiagnosticsPath: state.recovery_diagnostics_path,
+    worktreeRecoveryPath: state.worktree_recovery_path,
+    lastRecoveryCheckedAt: state.last_recovery_checked_at,
+    staleDetected: state.stale_detected === true || recovery?.staleDetected === true,
+    recoverable: state.recoverable,
+    recoveryConfidence: state.recovery_confidence,
     jobDir,
     worktree: state.worktree
   };
+}
+
+export async function recoverWeaveflowCodexJob(options) {
+  const jobId = requireString(options?.jobId, "jobId");
+  const repoRoot = resolveJobRepoRoot(options).repoRoot;
+  const workspaceRoot = resolve(cleanOptionalString(options?.workspaceRoot) || repoRoot);
+  const jobDir = join(jobRootForWorkspace(workspaceRoot), jobId);
+  if (!existsSync(jobDir)) {
+    throw new Error(`Codex job does not exist: ${jobId}`);
+  }
+
+  const apply = options?.apply === true;
+  const requestedAction = normalizeRecoveryAction(options?.action || "auto");
+  const allowCleanup = options?.allowCleanup === true;
+  const allowResume = options?.allowResume !== false;
+  const pythonCommand = cleanOptionalString(options?.pythonCommand) || "python3";
+  let state = await readOptionalJobState(jobDir);
+  const recovery = await buildCodexJobRecoveryContext({
+    jobDir,
+    repoRoot,
+    state,
+    allowCleanup,
+    allowResume,
+    action: requestedAction,
+    now: options?.recoveryNow,
+    staleAfterMs: options?.recoveryStaleAfterMs,
+    processChecker: options?.recoveryProcessChecker,
+    commandRunner: options?.commandRunner
+  });
+
+  await writeRecoveryPlanArtifacts(jobDir, recovery.plan);
+
+  if (!apply) {
+    return {
+      ok: true,
+      applied: false,
+      dryRun: true,
+      jobId,
+      action: recovery.plan.recovery_action,
+      requestedAction,
+      recovery,
+      recoveryPlanPath: join(jobDir, "recovery_plan.md"),
+      recoveryPlanJsonPath: join(jobDir, "recovery_plan.json"),
+      koreanSummary: formatCodexRecoveryDryRunKorean(recovery),
+      mutated: ["recovery_plan.md", "recovery_plan.json"]
+    };
+  }
+
+  if (!state) {
+    return recoveryApplyBlockedResult({
+      jobId,
+      requestedAction,
+      recovery,
+      reason: "job_state_unreadable"
+    });
+  }
+
+  await writeRecoveryDiagnosticsArtifacts(jobDir, recovery.diagnostics);
+  await writeWorktreeRecoveryArtifacts(jobDir, recovery.worktree);
+  state = await recordJobEvent(jobDir, state, "recovery_apply_started", "Recovery apply started.", {
+    requestedAction,
+    plannedAction: recovery.plan.recovery_action
+  }, recoveryStateUpdates({
+    recovery,
+    status: "applying",
+    action: recovery.plan.recovery_action
+  }));
+
+  try {
+    const result = await applyCodexJobRecoveryAction({
+      jobDir,
+      state,
+      recovery,
+      requestedAction,
+      allowCleanup,
+      allowResume,
+      pythonCommand
+    });
+    await writeRecoveryResultArtifacts(jobDir, result);
+    const nextState = await recordJobEvent(jobDir, result.state || state, "recovery_apply_completed", "Recovery apply completed.", {
+      requestedAction,
+      appliedAction: result.action,
+      applied: result.applied
+    }, recoveryStateUpdates({
+      recovery,
+      status: result.applied ? "applied" : "blocked",
+      action: result.action,
+      resultPath: join(jobDir, "recovery_result.md"),
+      extra: result.state_updates || {}
+    }));
+    return {
+      ok: true,
+      applied: result.applied,
+      dryRun: false,
+      jobId,
+      action: result.action,
+      requestedAction,
+      recovery,
+      recoveryResult: result,
+      recoveryPlanPath: join(jobDir, "recovery_plan.md"),
+      recoveryResultPath: join(jobDir, "recovery_result.md"),
+      koreanSummary: formatCodexRecoveryApplyKorean(result),
+      status: nextState.status,
+      worktree: nextState.worktree
+    };
+  } catch (error) {
+    const message = safeOneLine(error instanceof Error ? error.message : String(error));
+    const failedResult = {
+      applied: false,
+      action: recovery.plan.recovery_action,
+      status: "failed",
+      reason: message,
+      korean_summary: `복구 적용 실패: ${message}`
+    };
+    await writeRecoveryResultArtifacts(jobDir, failedResult);
+    await recordJobEvent(jobDir, state, "recovery_apply_failed", "Recovery apply failed.", {
+      requestedAction,
+      plannedAction: recovery.plan.recovery_action,
+      error: message
+    }, recoveryStateUpdates({
+      recovery,
+      status: "failed",
+      action: recovery.plan.recovery_action,
+      resultPath: join(jobDir, "recovery_result.md")
+    }));
+    return {
+      ok: false,
+      applied: false,
+      dryRun: false,
+      jobId,
+      action: recovery.plan.recovery_action,
+      requestedAction,
+      recovery,
+      recoveryResult: failedResult,
+      recoveryResultPath: join(jobDir, "recovery_result.md"),
+      koreanSummary: failedResult.korean_summary,
+      error: message
+    };
+  }
 }
 
 export async function cancelWeaveflowCodexJob(options) {
@@ -1453,6 +1713,16 @@ export async function cancelWeaveflowCodexJob(options) {
     outcomeContractPath: state.outcome_contract_path,
     changeReviewPath: state.change_review_path,
     qualityGatePath: state.quality_gate_path,
+    recoveryStatus: state.recovery_status,
+    recoveryAction: state.recovery_action,
+    recoveryPlanPath: state.recovery_plan_path,
+    recoveryResultPath: state.recovery_result_path,
+    recoveryDiagnosticsPath: state.recovery_diagnostics_path,
+    worktreeRecoveryPath: state.worktree_recovery_path,
+    lastRecoveryCheckedAt: state.last_recovery_checked_at,
+    staleDetected: state.stale_detected === true,
+    recoverable: state.recoverable,
+    recoveryConfidence: state.recovery_confidence,
     currentSessionStep: state.current_session_step,
     recentSessionResult: state.recent_session_result,
     adaptiveMode: state.adaptive_mode === true,
@@ -1499,6 +1769,7 @@ export function formatCodexJobStatusSummary(summary) {
     summary.jobPolicy?.korean_summary ? `정책:\n${summary.jobPolicy.korean_summary}` : "",
     summary.verificationPlan?.korean_summary ? `검증 계획:\n${summary.verificationPlan.korean_summary}` : "",
     formatQualitySummaryForJob(summary),
+    formatRecoverySummaryForJob(summary),
     summary.sessionMode === "multi_step" ? summarizeSessionProgressKorean(sessionProgressFromSummary(summary)) : "",
     summary.sessionMode === "adaptive_loop" ? formatAdaptiveLoopSummaryKorean(adaptiveStateFromSummary(summary)) : "",
     "최근 로그:",
@@ -1519,6 +1790,7 @@ export function formatCodexJobCancelSummary(summary) {
     `현재 상태: ${summary.status}`,
     `보존된 worktree: ${summary.preservedWorktree || "없음"}`,
     formatQualitySummaryForJob(summary),
+    formatRecoverySummaryForJob(summary),
     summary.sessionMode === "multi_step" ? summarizeSessionProgressKorean(sessionProgressFromSummary(summary)) : "",
     summary.sessionMode === "adaptive_loop" ? formatAdaptiveLoopSummaryKorean(adaptiveStateFromSummary(summary)) : "",
     summary.sessionMode === "adaptive_loop" ? `Adaptive artifacts: ${summary.adaptiveStatePath || "없음"}, ${summary.adaptiveLoopPath || "없음"}` : "",
@@ -1584,6 +1856,35 @@ function formatQualitySummaryForJob(summary = {}) {
     summary.qualityGateDecision === "reject" ? "실패 사유: 품질 게이트가 커밋을 차단했습니다." : "",
     `artifacts: ${summary.outcomeContractPath || "없음"}, ${summary.changeReviewPath || "없음"}, ${summary.qualityGatePath || "없음"}`
   ].filter(Boolean).join("\n");
+}
+
+function formatRecoverySummaryForJob(summary = {}) {
+  const recovery = summary.recovery;
+  if (!recovery && !summary.recoverySummaryKorean) {
+    return "";
+  }
+  const diagnosis = recovery?.diagnostics || summary.recoveryDiagnostics || {};
+  const plan = recovery?.plan || summary.recoveryPlan || {};
+  const worktree = recovery?.worktree || summary.worktreeRecovery || {};
+  return [
+    "복구 진단",
+    summary.recoverySummaryKorean || recovery?.koreanSummary || "",
+    `job health: ${diagnosis.health || "unknown"}`,
+    `pid alive: ${diagnosis.pid ? (diagnosis.pid_alive ? "yes" : "no") : "none"}`,
+    `stale: ${recovery?.staleDetected || summary.staleDetected ? "yes" : "no"}`,
+    `worktree state: ${worktree.recovery_state || "unknown"}`,
+    `recovery action: ${plan.recovery_action || summary.recoveryAction || "none"}`,
+    `confidence: ${plan.confidence || summary.recoveryConfidence || "unknown"}`,
+    `hint: ${diagnosis.recovery_hint || "없음"}`,
+    `artifacts: ${summary.recoveryDiagnosticsPath || recovery?.diagnosticsPath || "없음"}, ${summary.worktreeRecoveryPath || recovery?.worktreePath || "없음"}, ${summary.recoveryPlanPath || recovery?.planPath || "없음"}`
+  ].filter(Boolean).join("\n");
+}
+
+export function formatCodexJobRecoverySummary(summary = {}) {
+  if (summary.dryRun) {
+    return summary.koreanSummary || formatCodexRecoveryDryRunKorean(summary.recovery || {});
+  }
+  return summary.koreanSummary || formatCodexRecoveryApplyKorean(summary.recoveryResult || summary);
 }
 
 async function runBridgeProcess({ pythonCommand, projectRoot, workspaceRoot, requests, timeoutMs }) {
@@ -2164,6 +2465,14 @@ async function writeRequiredJobPlaceholders(jobDir, userRequest, intake = null) 
     "quality_gate.md": "# Quality Gate\n\n대기 중입니다.\n",
     "quality_gate.json": "{}\n",
     "quality_gate_decision.md": "pending\n",
+    "recovery_diagnostics.md": "# Recovery Diagnostics\n\n대기 중입니다.\n",
+    "recovery_diagnostics.json": "{}\n",
+    "worktree_recovery.md": "# Worktree Recovery\n\n대기 중입니다.\n",
+    "worktree_recovery.json": "{}\n",
+    "recovery_plan.md": "# Recovery Plan\n\n대기 중입니다.\n",
+    "recovery_plan.json": "{}\n",
+    "recovery_result.md": "# Recovery Result\n\n대기 중입니다.\n",
+    "recovery_result.json": "{}\n",
     "session_plan.md": "# Multi-step Work Session Plan\n\nsingle session mode 또는 계획 대기 중입니다.\n",
     "session_steps.json": "[]\n",
     "session_summary.md": "# Multi-step Work Session Summary\n\nsingle session mode 또는 결과 대기 중입니다.\n",
@@ -2386,6 +2695,16 @@ function buildJobStartDetails(state) {
     qualityIssues: state.quality_issues || [],
     qualityReviewStatus: state.quality_review_status,
     qualityFixAttemptsUsed: state.quality_fix_attempts_used || 0,
+    recoveryStatus: state.recovery_status,
+    recoveryAction: state.recovery_action,
+    recoveryPlanPath: state.recovery_plan_path,
+    recoveryResultPath: state.recovery_result_path,
+    recoveryDiagnosticsPath: state.recovery_diagnostics_path,
+    worktreeRecoveryPath: state.worktree_recovery_path,
+    lastRecoveryCheckedAt: state.last_recovery_checked_at,
+    staleDetected: state.stale_detected === true,
+    recoverable: state.recoverable,
+    recoveryConfidence: state.recovery_confidence,
     sessionMode: state.session_mode || "single",
     totalSteps: state.total_steps || 0,
     currentStepIndex: state.current_step_index || 0,
@@ -2955,6 +3274,594 @@ async function gitDiffTextForQuality(jobDir, state, worktreeRoot) {
 
 async function currentChangedFilesForQuality(worktreeRoot, repoRoot) {
   return currentChangedFiles(worktreeRoot, repoRoot);
+}
+
+async function maybeBuildCheckRecoveryContext({ jobDir, repoRoot, state, options = {} }) {
+  const diagnosis = await inspectJobDirectory(jobDir, {
+    now: options?.recoveryNow,
+    staleAfterMs: options?.recoveryStaleAfterMs,
+    processChecker: options?.recoveryProcessChecker,
+    eventLimit: 20
+  });
+  if (!shouldExposeRecoveryDiagnostics(diagnosis, state)) {
+    return null;
+  }
+  const recovery = await buildCodexJobRecoveryContext({
+    jobDir,
+    repoRoot,
+    state,
+    allowResume: true,
+    allowCleanup: false,
+    action: "auto",
+    now: options?.recoveryNow,
+    staleAfterMs: options?.recoveryStaleAfterMs,
+    processChecker: options?.recoveryProcessChecker,
+    commandRunner: options?.commandRunner,
+    precomputedDiagnosis: diagnosis
+  });
+  await writeRecoveryDiagnosticsArtifacts(jobDir, recovery.diagnostics);
+  await writeWorktreeRecoveryArtifacts(jobDir, recovery.worktree);
+  await writeRecoveryPlanArtifacts(jobDir, recovery.plan);
+  if (state?.job_id) {
+    const staleEventState = recovery.staleDetected
+      ? await recordJobEvent(jobDir, state, "stale_job_detected", "Stale Codex job detected.", {
+        health: recovery.diagnostics.health,
+        hint: recovery.diagnostics.recovery_hint
+      }, recoveryStateUpdates({ recovery, status: "diagnosed", action: recovery.plan.recovery_action }))
+      : await recordJobEvent(jobDir, state, "recovery_diagnostics_completed", "Recovery diagnostics completed.", {
+        health: recovery.diagnostics.health,
+        action: recovery.plan.recovery_action
+      }, recoveryStateUpdates({ recovery, status: "diagnosed", action: recovery.plan.recovery_action }));
+    state = staleEventState;
+  }
+  return recovery;
+}
+
+async function buildCodexJobRecoveryContext({
+  jobDir,
+  repoRoot,
+  state = null,
+  allowCleanup = false,
+  allowResume = true,
+  action = "auto",
+  now = null,
+  staleAfterMs = null,
+  processChecker = null,
+  commandRunner = null,
+  precomputedDiagnosis = null
+}) {
+  const diagnostics = precomputedDiagnosis || await inspectJobDirectory(jobDir, {
+    now,
+    staleAfterMs,
+    processChecker,
+    eventLimit: 50
+  });
+  const stateForRecovery = state || (await readOptionalJobState(jobDir)) || {};
+  const remote = stateForRecovery.repo_root ? await firstGitRemoteSafe(stateForRecovery.repo_root) : await firstGitRemoteSafe(repoRoot);
+  const worktree = await inspectWorktreeState({
+    repoRoot: stateForRecovery.repo_root || repoRoot,
+    worktreePath: stateForRecovery.worktree,
+    branch: stateForRecovery.branch,
+    remote,
+    expectedCommitHash: stateForRecovery.commit_hash,
+    pushed: stateForRecovery.pushed
+  }, {
+    commandRunner
+  });
+  const selectedScope = await readOptionalFile(join(jobDir, "selected_scope.md"));
+  const plannerInput = buildRecoveryPlannerInput({
+    jobDir,
+    state: stateForRecovery,
+    diagnostics,
+    worktree,
+    allowCleanup,
+    allowResume,
+    selectedScope
+  });
+  const requestedAction = normalizeRecoveryAction(action);
+  const plan = buildRecoveryPlanForAction(requestedAction, plannerInput, {
+    allowCleanup,
+    allowResume
+  });
+  return {
+    diagnostics,
+    worktree,
+    plan,
+    requestedAction,
+    staleDetected: diagnostics.health === "stale_running",
+    recoverable: isRecoverablePlan(plan),
+    diagnosticsPath: join(jobDir, "recovery_diagnostics.md"),
+    worktreePath: join(jobDir, "worktree_recovery.md"),
+    planPath: join(jobDir, "recovery_plan.md"),
+    koreanSummary: [
+      summarizeJobStateKorean(diagnostics),
+      summarizeWorktreeRecoveryKorean(worktree),
+      formatRecoveryPlanKorean(plan)
+    ].join("\n\n")
+  };
+}
+
+function shouldExposeRecoveryDiagnostics(diagnosis = {}, state = {}) {
+  const health = diagnosis.health || "unknown";
+  const status = state?.status || diagnosis.status || "unknown";
+  if (status === "queued" && health === "recoverable") {
+    return false;
+  }
+  if (RECOVERY_EXPOSE_HEALTH.has(health)) {
+    return true;
+  }
+  if (health === "recoverable" && status !== "queued") {
+    return true;
+  }
+  return Boolean(diagnosis.missing_files?.length || diagnosis.suspicious_fields?.length);
+}
+
+function buildRecoveryPlannerInput({ jobDir, state = {}, diagnostics, worktree, allowCleanup, allowResume, selectedScope }) {
+  const resultPath = state.result_artifact_path || join(jobDir, "result.md");
+  return {
+    jobDiagnosis: {
+      jobId: state.job_id || diagnostics.job_id,
+      taskId: state.task_id,
+      status: state.status || diagnostics.status,
+      currentStep: state.current_step || diagnostics.current_step,
+      pidAlive: diagnostics.pid_alive,
+      stale: diagnostics.health === "stale_running",
+      pushed: state.pushed,
+      commitHash: state.commit_hash,
+      commitExists: Boolean(state.commit_hash || worktree?.commit_hash),
+      branch: state.branch || worktree?.branch,
+      userRequest: state.user_request,
+      error: state.error || diagnostics.recovery_hint,
+      changedFiles: state.changed_files || worktree?.changed_files || [],
+      testResults: state.tests,
+      verificationPlan: state.verification_plan,
+      attemptsUsed: Number(state.fix_attempts_used || 0) + Number(state.quality_fix_attempts_used || 0),
+      maxFixAttempts: state.max_fix_attempts || state.job_policy?.maxFixAttempts,
+      jobStatePath: join(jobDir, "job.yaml"),
+      eventsPath: join(jobDir, "events.jsonl")
+    },
+    worktreeState: {
+      exists: worktree?.worktree_exists,
+      path: worktree?.worktree_path || state.worktree,
+      branch: worktree?.branch || state.branch,
+      dirty: worktree?.has_uncommitted_changes,
+      clean: worktree?.has_uncommitted_changes === false,
+      changedFiles: worktree?.changed_files || state.changed_files || [],
+      hasUncommittedChanges: worktree?.has_uncommitted_changes,
+      diffSummary: worktree?.diff_summary,
+      commitHash: worktree?.commit_hash || state.commit_hash,
+      hasCommit: worktree?.has_commit,
+      pushed: worktree?.pushed,
+      ageHours: null
+    },
+    resultArtifacts: {
+      resultMdExists: diagnostics.result_exists,
+      resultPath,
+      resultArtifactPath: resultPath,
+      testResults: state.tests
+    },
+    jobPolicy: state.job_policy || {},
+    userRequest: state.user_request || diagnostics.recovery_hint,
+    selectedScope,
+    allowCleanup,
+    allowResume
+  };
+}
+
+function buildRecoveryPlanForAction(action, plannerInput, options = {}) {
+  if (action === "auto" || action === "diagnose") {
+    return ensureRecoveryPlanMarkdown(buildRecoveryPlan(plannerInput, options));
+  }
+  if (action === "reconstruct_result") {
+    return ensureRecoveryPlanMarkdown(buildReconstructResultPlan(plannerInput, options));
+  }
+  if (action === "mark_failed") {
+    return ensureRecoveryPlanMarkdown(buildMarkFailedPlan(plannerInput, options));
+  }
+  if (action === "mark_completed") {
+    return ensureRecoveryPlanMarkdown(buildMarkCompletedPlan({
+      ...plannerInput,
+      allowMarkCompleted: true
+    }, {
+      ...options,
+      allowMarkCompleted: true
+    }));
+  }
+  if (action === "resume_codex") {
+    return ensureRecoveryPlanMarkdown({
+      recovery_action: "resume_codex",
+      confidence: plannerInput.worktreeState?.dirty ? "medium" : "low",
+      reasons: ["explicit_resume_requested"],
+      prerequisites: [
+        "resume prompt를 사람이 검토해야 합니다.",
+        "현재 worktree diff와 로그를 보존해야 합니다."
+      ],
+      blocked_by: options.allowResume === false ? ["allowResume=false"] : ["resume_apply_not_implemented"],
+      commands_preview: [
+        plannerInput.worktreeState?.path ? `cd ${plannerInput.worktreeState.path}` : "",
+        "git status --short",
+        "# Use resume_prompt with a separate Codex execution step."
+      ].filter(Boolean),
+      files_to_preserve: [
+        plannerInput.jobDiagnosis?.jobStatePath || "job.yaml",
+        plannerInput.jobDiagnosis?.eventsPath || "events.jsonl",
+        plannerInput.worktreeState?.path ? `worktree:${plannerInput.worktreeState.path}` : ""
+      ].filter(Boolean),
+      files_to_update: [],
+      resume_prompt: buildResumeCodexPrompt(plannerInput, options),
+      cleanup_recommendation: "resume 복구는 이 POC에서 직접 실행하지 않고 계획만 제공합니다."
+    });
+  }
+  if (action === "rerun_checks") {
+    return ensureRecoveryPlanMarkdown({
+      recovery_action: "rerun_checks",
+      confidence: plannerInput.jobDiagnosis?.verificationPlan?.commands?.length ? "medium" : "low",
+      reasons: ["explicit_rerun_checks_requested"],
+      prerequisites: ["기존 verification_plan 또는 기본 git diff 검증을 재사용합니다."],
+      blocked_by: plannerInput.worktreeState?.exists === false ? ["worktree_missing"] : [],
+      commands_preview: recoveryCheckCommandPreview(plannerInput),
+      files_to_preserve: [
+        plannerInput.jobDiagnosis?.jobStatePath || "job.yaml",
+        plannerInput.jobDiagnosis?.eventsPath || "events.jsonl",
+        plannerInput.worktreeState?.path ? `worktree:${plannerInput.worktreeState.path}` : ""
+      ].filter(Boolean),
+      files_to_update: ["job.yaml", "events.jsonl", "test_output.log", "recovery_result.md"],
+      resume_prompt: "",
+      cleanup_recommendation: "검증 재실행은 cleanup 없이 상태와 test output만 갱신합니다."
+    });
+  }
+  if (action === "cleanup_completed_worktree" || action === "cleanup_cancelled_worktree") {
+    return ensureRecoveryPlanMarkdown({
+      recovery_action: action,
+      confidence: "low",
+      reasons: ["explicit_cleanup_requested"],
+      prerequisites: ["cleanup은 destructive 동작이므로 이 POC에서는 직접 실행하지 않습니다."],
+      blocked_by: options.allowCleanup ? ["cleanup_apply_not_implemented"] : ["allowCleanup=false"],
+      commands_preview: [plannerInput.worktreeState?.path ? `# preview only: rm -rf ${plannerInput.worktreeState.path}` : "# preview only: worktree unknown"],
+      files_to_preserve: [
+        plannerInput.jobDiagnosis?.jobStatePath || "job.yaml",
+        plannerInput.jobDiagnosis?.eventsPath || "events.jsonl",
+        plannerInput.resultArtifacts?.resultPath,
+        plannerInput.worktreeState?.path ? `worktree:${plannerInput.worktreeState.path}` : ""
+      ].filter(Boolean),
+      files_to_update: [],
+      resume_prompt: "",
+      cleanup_recommendation: options.allowCleanup
+        ? "cleanup은 별도 수동 확인 후 실행하세요."
+        : "cleanup은 명시적으로 허용되지 않았으므로 보류합니다."
+    });
+  }
+  return ensureRecoveryPlanMarkdown(buildRecoveryPlan(plannerInput, options));
+}
+
+function ensureRecoveryPlanMarkdown(plan = {}) {
+  const next = {
+    ...plan,
+    korean_summary: plan.korean_summary || formatRecoveryPlanKorean(plan)
+  };
+  return {
+    ...next,
+    markdown: plan.markdown || formatRecoveryPlanMarkdown(next)
+  };
+}
+
+function recoveryCheckCommandPreview(plannerInput = {}) {
+  const commands = plannerInput.jobDiagnosis?.verificationPlan?.commands || [];
+  if (commands.length) {
+    return commands.map((command) => command.command || command.name).filter(Boolean);
+  }
+  return ["git diff --check"];
+}
+
+async function applyCodexJobRecoveryAction({ jobDir, state, recovery, requestedAction, allowCleanup, pythonCommand }) {
+  const action = recovery.plan.recovery_action;
+  if (requestedAction === "diagnose" || action === "no_action" || action === "preserve_for_manual_review") {
+    return recoveryApplyBlockedResult({
+      jobId: state.job_id,
+      requestedAction,
+      recovery,
+      reason: action === "no_action" ? "no_action_needed" : "manual_review_required"
+    }).recoveryResult;
+  }
+  if ((action === "cleanup_completed_worktree" || action === "cleanup_cancelled_worktree") && !allowCleanup) {
+    return recoveryApplyBlockedResult({
+      jobId: state.job_id,
+      requestedAction,
+      recovery,
+      reason: "cleanup_requires_allowCleanup_true"
+    }).recoveryResult;
+  }
+  if (action === "cleanup_completed_worktree" || action === "cleanup_cancelled_worktree") {
+    return recoveryApplyBlockedResult({
+      jobId: state.job_id,
+      requestedAction,
+      recovery,
+      reason: "cleanup_apply_not_implemented"
+    }).recoveryResult;
+  }
+  if (action === "resume_codex") {
+    return recoveryApplyBlockedResult({
+      jobId: state.job_id,
+      requestedAction,
+      recovery,
+      reason: "resume_codex_apply_not_implemented"
+    }).recoveryResult;
+  }
+  if (!RECOVERY_MUTATING_ACTIONS.has(action)) {
+    return recoveryApplyBlockedResult({
+      jobId: state.job_id,
+      requestedAction,
+      recovery,
+      reason: `unsupported_recovery_action:${action}`
+    }).recoveryResult;
+  }
+  if (action === "reconstruct_result") {
+    await writeJobFile(jobDir, "result.md", renderCodexJobResultMarkdown({
+      ...state,
+      result_artifact_path: join(jobDir, "result.md")
+    }, null));
+    const nextState = await updateJobState(jobDir, state, {
+      result_artifact_path: join(jobDir, "result.md")
+    });
+    return {
+      applied: true,
+      action,
+      status: "applied",
+      state: nextState,
+      state_updates: {
+        result_artifact_path: join(jobDir, "result.md")
+      },
+      korean_summary: "복구 적용 완료: 누락된 result.md를 기존 job state 기반으로 재구성했습니다."
+    };
+  }
+  if (action === "mark_failed") {
+    const nextState = await updateJobState(jobDir, state, {
+      status: "failed",
+      current_step: "failed",
+      finished_at: state.finished_at || new Date().toISOString(),
+      error: state.error || "Recovery marked this job failed because no safe continuation evidence was available."
+    });
+    return {
+      applied: true,
+      action,
+      status: "applied",
+      state: nextState,
+      state_updates: {
+        status: "failed",
+        current_step: "failed",
+        error: nextState.error
+      },
+      korean_summary: "복구 적용 완료: 안전한 재개 근거가 부족해 작업을 failed로 표시했습니다."
+    };
+  }
+  if (action === "mark_completed") {
+    const evidence = hasStrongCompletionEvidence(state, recovery);
+    if (!evidence.ok) {
+      return recoveryApplyBlockedResult({
+        jobId: state.job_id,
+        requestedAction,
+        recovery,
+        reason: `mark_completed_requires_strong_evidence:${evidence.reason}`
+      }).recoveryResult;
+    }
+    const nextState = await updateJobState(jobDir, state, {
+      status: "completed",
+      current_step: "completed",
+      finished_at: state.finished_at || new Date().toISOString(),
+      result_artifact_path: state.result_artifact_path || join(jobDir, "result.md"),
+      error: null
+    });
+    return {
+      applied: true,
+      action,
+      status: "applied",
+      state: nextState,
+      state_updates: {
+        status: "completed",
+        current_step: "completed",
+        result_artifact_path: nextState.result_artifact_path
+      },
+      korean_summary: "복구 적용 완료: 커밋, 결과 artifact, 검증 근거가 확인되어 작업을 completed로 표시했습니다."
+    };
+  }
+  if (action === "rerun_checks") {
+    if (!state.worktree || recovery.worktree.worktree_exists === false) {
+      return recoveryApplyBlockedResult({
+        jobId: state.job_id,
+        requestedAction,
+        recovery,
+        reason: "worktree_missing"
+      }).recoveryResult;
+    }
+    const changedFiles = recovery.worktree.changed_files || state.changed_files || [];
+    const tests = await runTargetedChecks({
+      worktreeRoot: state.worktree,
+      changedFiles,
+      pythonCommand,
+      timeoutMs: 120000,
+      verificationPlan: state.verification_plan || null
+    });
+    await writeJobFile(jobDir, "test_output.log", renderJobTestOutput(tests));
+    const nextState = await updateJobState(jobDir, state, {
+      tests,
+      changed_files: changedFiles
+    });
+    return {
+      applied: true,
+      action,
+      status: "applied",
+      state: nextState,
+      state_updates: {
+        tests,
+        changed_files: changedFiles
+      },
+      korean_summary: `복구 적용 완료: 검증을 재실행했습니다. 결과: ${tests.passed ? "통과" : "실패"}`
+    };
+  }
+  throw new Error(`Unsupported recovery action: ${action}`);
+}
+
+function hasStrongCompletionEvidence(state = {}, recovery = {}) {
+  if (!state.commit_hash && !recovery.worktree?.commit_hash) {
+    return { ok: false, reason: "commit_hash_missing" };
+  }
+  if (!recovery.diagnostics?.result_exists && !existsSync(state.result_artifact_path || "")) {
+    return { ok: false, reason: "result_artifact_missing" };
+  }
+  if (state.tests?.run !== false && state.tests?.passed !== true) {
+    return { ok: false, reason: "checks_not_confirmed" };
+  }
+  if (state.push === true && state.pushed !== true && recovery.worktree?.pushed !== true) {
+    return { ok: false, reason: "push_not_confirmed" };
+  }
+  if (recovery.worktree?.has_uncommitted_changes) {
+    return { ok: false, reason: "uncommitted_changes_present" };
+  }
+  return { ok: true, reason: "strong_evidence_found" };
+}
+
+function recoveryApplyBlockedResult({ jobId, requestedAction, recovery, reason }) {
+  const action = recovery?.plan?.recovery_action || requestedAction || "auto";
+  const recoveryResult = {
+    applied: false,
+    action,
+    status: "blocked",
+    reason,
+    korean_summary: `복구 적용 보류: ${reason}`
+  };
+  return {
+    ok: true,
+    applied: false,
+    dryRun: false,
+    jobId,
+    action,
+    requestedAction,
+    recovery,
+    recoveryResult,
+    koreanSummary: recoveryResult.korean_summary
+  };
+}
+
+function recoveryStateUpdates({ recovery, status, action, resultPath = null, extra = {} }) {
+  return {
+    ...extra,
+    recovery_status: status,
+    recovery_action: action,
+    recovery_plan_path: recovery?.planPath || null,
+    recovery_result_path: resultPath,
+    recovery_diagnostics_path: recovery?.diagnosticsPath || null,
+    worktree_recovery_path: recovery?.worktreePath || null,
+    last_recovery_checked_at: new Date().toISOString(),
+    stale_detected: recovery?.staleDetected === true,
+    recoverable: recovery ? isRecoverablePlan(recovery.plan) : null,
+    recovery_confidence: recovery?.plan?.confidence || null
+  };
+}
+
+async function writeRecoveryDiagnosticsArtifacts(jobDir, diagnostics) {
+  await writeJobFile(jobDir, "recovery_diagnostics.md", diagnostics.markdown || formatJobStateDiagnosticsMarkdown(diagnostics));
+  await writeJsonAtomic(join(jobDir, "recovery_diagnostics.json"), diagnostics);
+}
+
+async function writeWorktreeRecoveryArtifacts(jobDir, worktree) {
+  await writeJobFile(jobDir, "worktree_recovery.md", worktree.markdown || formatWorktreeRecoveryMarkdown(worktree));
+  await writeJsonAtomic(join(jobDir, "worktree_recovery.json"), worktree);
+}
+
+async function writeRecoveryPlanArtifacts(jobDir, plan) {
+  await writeJobFile(jobDir, "recovery_plan.md", plan.markdown || formatRecoveryPlanMarkdown(plan));
+  await writeJsonAtomic(join(jobDir, "recovery_plan.json"), plan);
+}
+
+async function writeRecoveryResultArtifacts(jobDir, result) {
+  const markdown = [
+    "# Recovery Result",
+    "",
+    `- Applied: ${result.applied ? "yes" : "no"}`,
+    `- Action: \`${result.action || "unknown"}\``,
+    `- Status: \`${result.status || "unknown"}\``,
+    result.reason ? `- Reason: ${result.reason}` : "",
+    "",
+    "## Korean Summary",
+    "",
+    result.korean_summary || "복구 결과 요약이 없습니다.",
+    "",
+    "## Details",
+    "",
+    fenced(JSON.stringify(result, null, 2), "json"),
+    ""
+  ].filter(Boolean).join("\n");
+  await writeJobFile(jobDir, "recovery_result.md", markdown);
+  await writeJsonAtomic(join(jobDir, "recovery_result.json"), result);
+}
+
+function formatCodexRecoverySummaryKorean(recovery = {}) {
+  if (!recovery?.diagnostics) {
+    return "";
+  }
+  return [
+    "복구 진단 요약",
+    `상태 건강도: ${recovery.diagnostics.health || "unknown"}`,
+    `stale 감지: ${recovery.staleDetected ? "예" : "아니오"}`,
+    `worktree 상태: ${recovery.worktree?.recovery_state || "unknown"}`,
+    `권장 복구 행동: ${recovery.plan?.recovery_action || "none"}`,
+    `신뢰도: ${recovery.plan?.confidence || "unknown"}`,
+    `힌트: ${recovery.diagnostics.recovery_hint || "없음"}`
+  ].join("\n");
+}
+
+function formatCodexRecoveryDryRunKorean(recovery = {}) {
+  return [
+    "Weaveflow Codex 작업 복구 계획: dry-run",
+    "실제 job state, git, worktree는 변경하지 않았습니다.",
+    formatCodexRecoverySummaryKorean(recovery),
+    recovery.plan?.korean_summary || formatRecoveryPlanKorean(recovery.plan || {})
+  ].filter(Boolean).join("\n\n");
+}
+
+function formatCodexRecoveryApplyKorean(result = {}) {
+  return [
+    `Weaveflow Codex 작업 복구 적용: ${result.applied ? "완료" : "보류"}`,
+    `행동: ${result.action || "unknown"}`,
+    result.reason ? `사유: ${result.reason}` : "",
+    result.korean_summary || ""
+  ].filter(Boolean).join("\n");
+}
+
+function isRecoverablePlan(plan = {}) {
+  return [
+    "resume_codex",
+    "rerun_checks",
+    "reconstruct_result",
+    "mark_completed",
+    "mark_failed"
+  ].includes(plan.recovery_action);
+}
+
+function normalizeRecoveryAction(value) {
+  const action = cleanOptionalString(value) || "auto";
+  return [
+    "auto",
+    "diagnose",
+    "resume_codex",
+    "rerun_checks",
+    "reconstruct_result",
+    "mark_completed",
+    "mark_failed",
+    "cleanup_completed_worktree",
+    "cleanup_cancelled_worktree"
+  ].includes(action) ? action : "auto";
+}
+
+async function firstGitRemoteSafe(repoRoot) {
+  if (!repoRoot) {
+    return "";
+  }
+  try {
+    return await firstGitRemote(repoRoot, DEFAULT_TIMEOUT_MS);
+  } catch {
+    return "";
+  }
 }
 
 async function prepareInitialWorkSession({ jobDir, state, maxSteps, timeoutMs }) {
@@ -4579,6 +5486,11 @@ export function renderCodexJobResultMarkdown(state, planning) {
       next_action: state.next_action,
       stop_reason: state.stop_reason,
       goal_progress_summary: state.goal_progress_summary,
+      recovery_status: state.recovery_status,
+      recovery_action: state.recovery_action,
+      stale_detected: state.stale_detected,
+      recoverable: state.recoverable,
+      recovery_confidence: state.recovery_confidence,
       commit_hash: state.commit_hash,
       pushed: state.pushed,
       changed_files: state.changed_files,
@@ -4603,6 +5515,15 @@ export function renderCodexJobResultMarkdown(state, planning) {
     `- Fix attempts used: ${state.quality_fix_attempts_used || 0}`,
     `- Commit/push proceeded because accepted: ${state.quality_gate_decision === "accept" ? "yes" : "no"}`,
     `- Path: ${state.quality_gate_path || "없음"}`,
+    "",
+    "## Recovery",
+    `- Status: ${state.recovery_status || "none"}`,
+    `- Action: ${state.recovery_action || "none"}`,
+    `- Stale detected: ${state.stale_detected ? "yes" : "no"}`,
+    `- Recoverable: ${state.recoverable === null || state.recoverable === undefined ? "unknown" : state.recoverable ? "yes" : "no"}`,
+    `- Confidence: ${state.recovery_confidence || "none"}`,
+    `- Plan: ${state.recovery_plan_path || "없음"}`,
+    `- Result: ${state.recovery_result_path || "없음"}`,
     "",
     state.session_mode === "multi_step" ? "## Session Summary" : "",
     state.session_mode === "multi_step" ? summarizeSessionProgressKorean(sessionProgressFromSummary({
@@ -4657,6 +5578,10 @@ export function renderCodexJobResultMarkdown(state, planning) {
     `- Change review: ${state.change_review_path || "없음"}`,
     `- Quality gate: ${state.quality_gate_path || "없음"}`,
     `- Quality decision: ${state.quality_gate_decision_path || "없음"}`,
+    `- Recovery diagnostics: ${state.recovery_diagnostics_path || "없음"}`,
+    `- Worktree recovery: ${state.worktree_recovery_path || "없음"}`,
+    `- Recovery plan: ${state.recovery_plan_path || "없음"}`,
+    `- Recovery result: ${state.recovery_result_path || "없음"}`,
     state.session_mode === "adaptive_loop" ? `- Adaptive state: ${state.adaptive_state_path || "없음"}` : "",
     state.session_mode === "adaptive_loop" ? `- Adaptive loop: ${state.adaptive_loop_path || "없음"}` : "",
     "",

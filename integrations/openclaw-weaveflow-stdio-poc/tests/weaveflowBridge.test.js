@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -17,11 +17,13 @@ import {
   checkWeaveflowCodexJob,
   formatCodexAutomationSummary,
   formatCodexJobCancelSummary,
+  formatCodexJobRecoverySummary,
   formatCodexJobStartSummary,
   formatCodexJobStatusSummary,
   initializeWeaveflowWorkspace,
   isBroadAutonomousRequest,
   jobStageDurations,
+  recoverWeaveflowCodexJob,
   renderCodexJobResultMarkdown,
   resolveAutonomyMode,
   startWeaveflowCodexJob,
@@ -341,6 +343,250 @@ test("Codex job start creates file-based state without starting worker when requ
   assert.equal(cancelledState.stage_timestamps.job_cancelled.length > 0, true);
 });
 
+test("Codex job check includes recovery diagnostics for stale running job", async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "weaveflow-stale-check-test-"));
+  const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
+  const { jobDir } = await writeFakeCodexJob({
+    workspaceRoot,
+    jobId: "JOB-0091",
+    repoRoot,
+    state: {
+      status: "running",
+      current_step: "codex_exec",
+      pid: 999999,
+      updated_at: "2026-05-12T10:00:00.000Z",
+      worktree: "/tmp/weaveflow-missing-worktree-JOB-0091/repo",
+      branch: "codex/JOB-0091-stale",
+      error: null
+    }
+  });
+  const runner = createRecoveryGitRunner();
+
+  const status = await checkWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    jobId: "JOB-0091",
+    recoveryNow: "2026-05-12T12:00:00.000Z",
+    recoveryStaleAfterMs: 5 * 60 * 1000,
+    recoveryProcessChecker: () => false,
+    commandRunner: runner
+  });
+
+  assert.equal(status.recoveryDiagnostics.health, "stale_running");
+  assert.equal(status.recovery.staleDetected, true);
+  assert.equal(status.recoveryPlan.recovery_action, "mark_failed");
+  assert.match(formatCodexJobStatusSummary(status), /복구 진단/);
+  assert.match(formatCodexJobStatusSummary(status), /stale: yes/);
+  assert.match(await readFile(join(jobDir, "recovery_diagnostics.md"), "utf8"), /Job State Diagnostics/);
+  assert.match(await readFile(join(jobDir, "recovery_plan.md"), "utf8"), /Recovery Plan/);
+});
+
+test("Codex job check remains concise for queued healthy job", async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "weaveflow-healthy-check-test-"));
+  const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
+  const start = await startWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    userRequest: "Update README docs.",
+    push: false,
+    startWorker: false
+  });
+
+  const status = await checkWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    jobId: start.jobId
+  });
+
+  assert.equal(status.recovery, null);
+  assert.doesNotMatch(formatCodexJobStatusSummary(status), /복구 진단/);
+});
+
+test("Codex job recovery dry-run returns plan without mutating job state", async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "weaveflow-recovery-dry-run-test-"));
+  const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
+  const { jobDir } = await writeFakeCodexJob({
+    workspaceRoot,
+    jobId: "JOB-0092",
+    repoRoot,
+    state: {
+      status: "running",
+      current_step: "codex_exec",
+      pid: 999998,
+      updated_at: "2026-05-12T10:00:00.000Z",
+      worktree: "/tmp/weaveflow-missing-worktree-JOB-0092/repo",
+      branch: "codex/JOB-0092-stale"
+    }
+  });
+  const before = await readFile(join(jobDir, "job.yaml"), "utf8");
+  const runner = createRecoveryGitRunner();
+
+  const result = await recoverWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    jobId: "JOB-0092",
+    apply: false,
+    commandRunner: runner,
+    recoveryNow: "2026-05-12T12:00:00.000Z",
+    recoveryProcessChecker: () => false
+  });
+
+  assert.equal(result.dryRun, true);
+  assert.equal(result.applied, false);
+  assert.equal(result.action, "mark_failed");
+  assert.match(formatCodexJobRecoverySummary(result), /dry-run/);
+  assert.match(await readFile(join(jobDir, "recovery_plan.md"), "utf8"), /Recovery Plan/);
+  assert.equal(await readFile(join(jobDir, "job.yaml"), "utf8"), before);
+  assert.equal(runner.calls.some((call) => call.args.includes("worktree")), true);
+});
+
+test("Codex job recovery refuses destructive cleanup by default", async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "weaveflow-recovery-cleanup-test-"));
+  const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
+  await writeFakeCodexJob({
+    workspaceRoot,
+    jobId: "JOB-0093",
+    repoRoot,
+    state: {
+      status: "completed",
+      current_step: "completed",
+      commit_hash: "abc1234",
+      pushed: true,
+      tests: { run: true, passed: true, checks: [] },
+      worktree: "/tmp/weaveflow-clean-worktree-JOB-0093/repo",
+      branch: "codex/JOB-0093-completed"
+    },
+    result: "# Result\n\n완료\n"
+  });
+
+  const result = await recoverWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    jobId: "JOB-0093",
+    apply: true,
+    action: "cleanup_completed_worktree",
+    allowCleanup: false,
+    commandRunner: createRecoveryGitRunner({
+      worktreePath: "/tmp/weaveflow-clean-worktree-JOB-0093/repo",
+      branch: "codex/JOB-0093-completed",
+      worktreeExists: true,
+      branchExists: true,
+      status: "",
+      head: "abc1234"
+    })
+  });
+
+  assert.equal(result.applied, false);
+  assert.equal(result.recoveryResult.reason, "cleanup_requires_allowCleanup_true");
+  assert.match(formatCodexJobRecoverySummary(result), /보류/);
+});
+
+test("Codex job recovery reconstructs missing result artifact", async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "weaveflow-recovery-reconstruct-test-"));
+  const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
+  const { jobDir } = await writeFakeCodexJob({
+    workspaceRoot,
+    jobId: "JOB-0094",
+    repoRoot,
+    state: {
+      status: "completed",
+      current_step: "completed",
+      commit_hash: "abc1234",
+      pushed: true,
+      tests: { run: true, passed: true, checks: [{ name: "git diff --check", passed: true }] },
+      worktree: "/tmp/weaveflow-clean-worktree-JOB-0094/repo",
+      branch: "codex/JOB-0094-completed",
+      result_artifact_path: join(workspaceRoot, ".weaveflow", "jobs", "JOB-0094", "result.md")
+    },
+    result: null
+  });
+
+  const result = await recoverWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    jobId: "JOB-0094",
+    apply: true,
+    action: "reconstruct_result",
+    commandRunner: createRecoveryGitRunner({
+      worktreePath: "/tmp/weaveflow-clean-worktree-JOB-0094/repo",
+      branch: "codex/JOB-0094-completed",
+      worktreeExists: true,
+      branchExists: true,
+      status: "",
+      head: "abc1234"
+    })
+  });
+
+  assert.equal(result.applied, true);
+  assert.equal(result.action, "reconstruct_result");
+  assert.match(await readFile(join(jobDir, "result.md"), "utf8"), /Weaveflow Codex Job Result/);
+  assert.match(await readFile(join(jobDir, "recovery_result.md"), "utf8"), /Recovery Result/);
+});
+
+test("Codex job recovery can mark failed and requires strong evidence for mark completed", async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "weaveflow-recovery-apply-test-"));
+  const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
+  await writeFakeCodexJob({
+    workspaceRoot,
+    jobId: "JOB-0095",
+    repoRoot,
+    state: {
+      status: "running",
+      current_step: "codex_exec",
+      pid: 999997,
+      worktree: "/tmp/weaveflow-missing-worktree-JOB-0095/repo",
+      branch: "codex/JOB-0095-failed"
+    }
+  });
+  await writeFakeCodexJob({
+    workspaceRoot,
+    jobId: "JOB-0096",
+    repoRoot,
+    state: {
+      status: "running",
+      current_step: "codex_exec",
+      commit_hash: "abc1234",
+      pushed: false,
+      tests: { run: true, passed: false, checks: [{ name: "npm test", passed: false }] },
+      worktree: "/tmp/weaveflow-clean-worktree-JOB-0096/repo",
+      branch: "codex/JOB-0096-incomplete"
+    },
+    result: "# Result\n\n부분 완료\n"
+  });
+
+  const failed = await recoverWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    jobId: "JOB-0095",
+    apply: true,
+    action: "mark_failed",
+    commandRunner: createRecoveryGitRunner()
+  });
+  const completed = await recoverWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    jobId: "JOB-0096",
+    apply: true,
+    action: "mark_completed",
+    commandRunner: createRecoveryGitRunner({
+      worktreePath: "/tmp/weaveflow-clean-worktree-JOB-0096/repo",
+      branch: "codex/JOB-0096-incomplete",
+      worktreeExists: true,
+      branchExists: true,
+      status: "",
+      head: "abc1234"
+    })
+  });
+
+  const failedState = JSON.parse(await readFile(join(workspaceRoot, ".weaveflow", "jobs", "JOB-0095", "job.yaml"), "utf8"));
+  const completedState = JSON.parse(await readFile(join(workspaceRoot, ".weaveflow", "jobs", "JOB-0096", "job.yaml"), "utf8"));
+  assert.equal(failed.applied, true);
+  assert.equal(failedState.status, "failed");
+  assert.equal(completed.applied, false);
+  assert.match(completed.recoveryResult.reason, /mark_completed_requires_strong_evidence/);
+  assert.equal(completedState.status, "running");
+});
+
 test("Codex job start uses normalized intake fields for metadata and branch naming", async () => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), "weaveflow-job-intake-test-"));
   const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
@@ -627,3 +873,98 @@ test("smoke sequence does not target the production Weaveflow workspace", async 
   assert.equal(summary.ok, true, JSON.stringify(summary, null, 2));
   assert.match(resolve(workspaceRoot), /^\/tmp\//);
 });
+
+async function writeFakeCodexJob({ workspaceRoot, jobId, repoRoot, state = {}, result = "# Result\n\n대기\n" }) {
+  const jobDir = join(workspaceRoot, ".weaveflow", "jobs", jobId);
+  const now = "2026-05-12T11:00:00.000Z";
+  await mkdir(jobDir, { recursive: true });
+  const fullState = {
+    job_id: jobId,
+    task_id: jobId.replace("JOB", "TASK"),
+    status: "running",
+    current_step: "codex_exec",
+    user_request: "Recover fake Codex job.",
+    repo_root: repoRoot,
+    branch: `codex/${jobId}-recovery`,
+    worktree: `/tmp/weaveflow-${jobId}/repo`,
+    started_at: now,
+    updated_at: now,
+    finished_at: null,
+    elapsed_ms: 0,
+    last_event: "codex_started",
+    pushed: false,
+    changed_files: [],
+    tests: { run: true, passed: true, checks: [] },
+    job_policy: {
+      push: true,
+      runTests: true,
+      maxFixAttempts: 1,
+      allowedActions: ["commit_changes", "push_branch"]
+    },
+    verification_plan: {
+      mode: "fast",
+      commands: [{ name: "git diff --check", command: "git diff --check", required: true }]
+    },
+    ...state
+  };
+  await writeFile(join(jobDir, "job.yaml"), `${JSON.stringify(fullState, null, 2)}\n`, "utf8");
+  await writeFile(join(jobDir, "events.jsonl"), `${JSON.stringify({ timestamp: now, event: fullState.last_event, status: fullState.status })}\n`, "utf8");
+  await writeFile(join(jobDir, "goal.md"), `# Goal\n\n${fullState.user_request}\n`, "utf8");
+  await writeFile(join(jobDir, "selected_scope.md"), "# Selected Scope\n\n- fake recovery scope\n", "utf8");
+  await writeFile(join(jobDir, "stdout.log"), "", "utf8");
+  await writeFile(join(jobDir, "stderr.log"), "", "utf8");
+  if (result !== null) {
+    await writeFile(join(jobDir, "result.md"), result, "utf8");
+  }
+  return { jobDir, state: fullState };
+}
+
+function createRecoveryGitRunner(options = {}) {
+  const worktreePath = options.worktreePath || "/tmp/nonexistent-worktree";
+  const branch = options.branch || "codex/JOB-0091-stale";
+  const head = options.head || "abc1234";
+  const worktreeExists = options.worktreeExists === true;
+  const branchExists = options.branchExists === true;
+  const status = options.status || "";
+  const runner = async (command, args) => {
+    assert.equal(command, "git");
+    runner.calls.push({ args });
+    const serialized = JSON.stringify(args);
+    if (serialized === JSON.stringify(["worktree", "list", "--porcelain"])) {
+      return {
+        code: 0,
+        stdout: worktreeExists
+          ? [`worktree ${worktreePath}`, `HEAD ${head}`, `branch refs/heads/${branch}`].join("\n")
+          : "",
+        stderr: "",
+        termination: "exit"
+      };
+    }
+    if (args.includes("show-ref")) {
+      return {
+        code: branchExists ? 0 : 1,
+        stdout: branchExists ? `${head} refs/heads/${branch}\n` : "",
+        stderr: "",
+        termination: "exit"
+      };
+    }
+    if (args.includes("status")) {
+      return { code: 0, stdout: status, stderr: "", termination: "exit" };
+    }
+    if (args.includes("rev-parse")) {
+      return { code: 0, stdout: `${head}\n`, stderr: "", termination: "exit" };
+    }
+    if (args.includes("diff") && args.includes("--stat")) {
+      return { code: 0, stdout: status ? " README.md | 2 ++\n 1 file changed, 2 insertions(+)\n" : "", stderr: "", termination: "exit" };
+    }
+    if (args.includes("diff") && args.includes("--name-status")) {
+      return { code: 0, stdout: status ? "M\tREADME.md\n" : "", stderr: "", termination: "exit" };
+    }
+    if (args.includes("ls-remote")) {
+      return { code: 0, stdout: options.pushed ? `${head}\trefs/heads/${branch}\n` : "", stderr: "", termination: "exit" };
+    }
+    return { code: 0, stdout: "", stderr: "", termination: "exit" };
+  };
+  runner.calls = [];
+  return runner;
+}
