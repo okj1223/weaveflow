@@ -5,7 +5,7 @@ import {
 
 const DEFAULT_MAX_STEPS = 3;
 const DEFAULT_TIME_BUDGET_MINUTES = 30;
-const SESSION_MODES = new Set(["single", "multi_step"]);
+const SESSION_MODES = new Set(["single", "multi_step", "adaptive_loop"]);
 
 export function normalizeSessionMode(value) {
   const mode = cleanString(value);

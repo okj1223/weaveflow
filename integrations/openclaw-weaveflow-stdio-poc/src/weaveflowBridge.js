@@ -6,6 +6,15 @@ import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  applyStepOutcomeToAdaptiveState,
+  buildInitialAdaptiveState,
+  formatAdaptiveLoopSummaryKorean,
+  selectNextAction,
+  shouldContinueAdaptiveLoop,
+  summarizeStepOutcome,
+  writeAdaptiveArtifacts
+} from "./adaptiveLoop.js";
+import {
   formatOpportunityBacklogMarkdown,
   formatSelectedScopeMarkdown,
   generateOpportunityBacklog,
@@ -686,7 +695,9 @@ export async function startWeaveflowCodexJob(options) {
   const timeoutMs = options?.timeoutMs || DEFAULT_TIMEOUT_MS;
   const requestedTimeBudgetMinutes = normalizeOptionalPositiveInteger(options?.timeBudgetMinutes);
   const requestedAutonomyMode = normalizeAutonomyMode(options?.autonomyMode);
-  const sessionMode = normalizeSessionMode(options?.sessionMode);
+  const adaptiveMode = options?.adaptiveMode === true || options?.adaptive_mode === true;
+  const sessionMode = adaptiveMode ? "adaptive_loop" : normalizeSessionMode(options?.sessionMode);
+  const stepReviewMode = normalizeStepReviewMode(options?.stepReviewMode || options?.step_review_mode);
   const maxSteps = normalizeOptionalPositiveInteger(options?.maxSteps) || null;
   const policy = resolveJobPolicy({
     userRequest,
@@ -721,6 +732,8 @@ export async function startWeaveflowCodexJob(options) {
   const sessionPlanPath = sessionMode === "multi_step" ? join(jobDir, "session_plan.md") : null;
   const sessionSummaryPath = sessionMode === "multi_step" ? join(jobDir, "session_summary.md") : null;
   const sessionStepsPath = sessionMode === "multi_step" ? join(jobDir, "session_steps.json") : null;
+  const adaptiveStatePath = sessionMode === "adaptive_loop" ? join(jobDir, "adaptive_state.json") : null;
+  const adaptiveLoopPath = sessionMode === "adaptive_loop" ? join(jobDir, "adaptive_loop.md") : null;
   const branch = await chooseJobBranchName({
     jobId,
     userRequest,
@@ -750,6 +763,8 @@ export async function startWeaveflowCodexJob(options) {
     job_policy: policy,
     verification_plan: null,
     session_mode: sessionMode,
+    adaptive_mode: sessionMode === "adaptive_loop",
+    step_review_mode: stepReviewMode,
     max_steps: maxSteps,
     total_steps: 0,
     current_step_index: 0,
@@ -761,6 +776,12 @@ export async function startWeaveflowCodexJob(options) {
     session_steps_path: sessionStepsPath,
     current_session_step: null,
     recent_session_result: null,
+    adaptive_state_path: adaptiveStatePath,
+    adaptive_loop_path: adaptiveLoopPath,
+    current_adaptive_step: 0,
+    next_action: null,
+    stop_reason: null,
+    goal_progress_summary: null,
     requested_autonomy_mode: requestedAutonomyMode,
     autonomy_mode: autonomyMode,
     resolved_autonomy_mode: null,
@@ -817,6 +838,14 @@ export async function startWeaveflowCodexJob(options) {
 
   if (sessionMode === "multi_step") {
     state = await prepareInitialWorkSession({
+      jobDir,
+      state,
+      maxSteps,
+      timeoutMs
+    });
+  }
+  if (sessionMode === "adaptive_loop") {
+    state = await prepareInitialAdaptiveLoop({
       jobDir,
       state,
       maxSteps,
@@ -880,6 +909,17 @@ export async function runCodexJobWorker(jobDir) {
 
     if (state.session_mode === "multi_step") {
       state = await runMultiStepCodexSession({
+        jobDir,
+        state,
+        scan,
+        planning,
+        verificationPlan: initialVerificationPlan,
+        deadlineMs
+      });
+      return;
+    }
+    if (state.session_mode === "adaptive_loop") {
+      state = await runAdaptiveCodexLoop({
         jobDir,
         state,
         scan,
@@ -1198,6 +1238,9 @@ export async function runCodexJobWorker(jobDir) {
         state = await updateSessionStateFromSteps(jobDir, state, steps);
       }
     }
+    if (state.session_mode === "adaptive_loop") {
+      state = await markAdaptiveLoopStopped(jobDir, state, "job_failed");
+    }
     const message = safeOneLine(error instanceof Error ? error.message : String(error));
     const status = message.includes("exceeded max runtime") ? "timeout" : "failed";
     const eventName = status === "timeout" ? "job_timeout" : "job_failed";
@@ -1222,6 +1265,7 @@ export async function checkWeaveflowCodexJob(options) {
   const state = await readJobState(jobDir);
   const allEvents = await readRecentEvents(jobDir);
   const recentEvents = allEvents.slice(-5);
+  const adaptiveState = state.session_mode === "adaptive_loop" ? await readAdaptiveState(jobDir) : null;
   return {
     ok: true,
     jobId: state.job_id,
@@ -1258,6 +1302,15 @@ export async function checkWeaveflowCodexJob(options) {
     recentSessionResult: state.recent_session_result,
     sessionPlanPath: state.session_plan_path,
     sessionSummaryPath: state.session_summary_path,
+    adaptiveMode: state.adaptive_mode === true,
+    adaptiveState,
+    adaptiveStatePath: state.adaptive_state_path,
+    adaptiveLoopPath: state.adaptive_loop_path,
+    currentAdaptiveStep: state.current_adaptive_step || adaptiveState?.current_step || 0,
+    nextAction: state.next_action || adaptiveState?.next_action || null,
+    stopReason: state.stop_reason || adaptiveState?.stop_reason || null,
+    goalProgressSummary: state.goal_progress_summary || adaptiveState?.goal_progress_summary || "",
+    recentReflection: adaptiveState?.reflections?.length ? adaptiveState.reflections[adaptiveState.reflections.length - 1] : null,
     jobDir,
     worktree: state.worktree
   };
@@ -1296,6 +1349,9 @@ export async function cancelWeaveflowCodexJob(options) {
         state = await updateSessionStateFromSteps(jobDir, state, steps);
       }
     }
+    if (state.session_mode === "adaptive_loop") {
+      state = await markAdaptiveLoopStopped(jobDir, state, "cancelled");
+    }
     state = await recordJobEvent(jobDir, state, "job_cancelled", "Codex job cancelled by request.", {
       previousStatus,
       signalError
@@ -1305,6 +1361,7 @@ export async function cancelWeaveflowCodexJob(options) {
       error: signalError || null
     });
   }
+  const adaptiveState = state.session_mode === "adaptive_loop" ? await readAdaptiveState(jobDir) : null;
 
   return {
     ok: true,
@@ -1321,6 +1378,14 @@ export async function cancelWeaveflowCodexJob(options) {
     skippedSteps: state.skipped_steps,
     currentSessionStep: state.current_session_step,
     recentSessionResult: state.recent_session_result,
+    adaptiveMode: state.adaptive_mode === true,
+    adaptiveStatePath: state.adaptive_state_path,
+    adaptiveLoopPath: state.adaptive_loop_path,
+    currentAdaptiveStep: state.current_adaptive_step || adaptiveState?.current_step || 0,
+    nextAction: state.next_action || adaptiveState?.next_action || null,
+    stopReason: state.stop_reason || adaptiveState?.stop_reason || null,
+    goalProgressSummary: state.goal_progress_summary || adaptiveState?.goal_progress_summary || "",
+    recentReflection: adaptiveState?.reflections?.length ? adaptiveState.reflections[adaptiveState.reflections.length - 1] : null,
     error: signalError || null
   };
 }
@@ -1334,6 +1399,7 @@ export function formatCodexJobStartSummary(summary) {
     `저장소: ${summary.repoRoot || summary.repoResolution?.repoRoot || "없음"}`,
     summary.jobPolicy?.korean_summary ? `정책:\n${summary.jobPolicy.korean_summary}` : "",
     summary.sessionMode === "multi_step" ? summarizeSessionProgressKorean(sessionProgressFromSummary(summary)) : "",
+    summary.sessionMode === "adaptive_loop" ? formatAdaptiveLoopSummaryKorean(adaptiveStateFromSummary(summary)) : "",
     `상태 확인: weaveflow_check_codex_job jobId=${summary.jobId}`,
     `취소: weaveflow_cancel_codex_job jobId=${summary.jobId}`,
     `작업 디렉터리: ${summary.jobDir}`
@@ -1355,6 +1421,7 @@ export function formatCodexJobStatusSummary(summary) {
     summary.jobPolicy?.korean_summary ? `정책:\n${summary.jobPolicy.korean_summary}` : "",
     summary.verificationPlan?.korean_summary ? `검증 계획:\n${summary.verificationPlan.korean_summary}` : "",
     summary.sessionMode === "multi_step" ? summarizeSessionProgressKorean(sessionProgressFromSummary(summary)) : "",
+    summary.sessionMode === "adaptive_loop" ? formatAdaptiveLoopSummaryKorean(adaptiveStateFromSummary(summary)) : "",
     "최근 로그:",
     logs
   ];
@@ -1373,6 +1440,8 @@ export function formatCodexJobCancelSummary(summary) {
     `현재 상태: ${summary.status}`,
     `보존된 worktree: ${summary.preservedWorktree || "없음"}`,
     summary.sessionMode === "multi_step" ? summarizeSessionProgressKorean(sessionProgressFromSummary(summary)) : "",
+    summary.sessionMode === "adaptive_loop" ? formatAdaptiveLoopSummaryKorean(adaptiveStateFromSummary(summary)) : "",
+    summary.sessionMode === "adaptive_loop" ? `Adaptive artifacts: ${summary.adaptiveStatePath || "없음"}, ${summary.adaptiveLoopPath || "없음"}` : "",
     `로그 경로: ${summary.logPath}`,
     summary.error ? `오류: ${summary.error}` : ""
   ].filter(Boolean).join("\n");
@@ -1387,6 +1456,24 @@ function sessionProgressFromSummary(summary = {}) {
     skippedSteps: summary.skippedSteps || 0,
     currentStep: summary.currentSessionStep || null,
     recentResult: summary.recentSessionResult || null
+  };
+}
+
+function adaptiveStateFromSummary(summary = {}) {
+  return summary.adaptiveState || {
+    mode: "adaptive_loop",
+    goal: summary.goal || summary.normalizedGoal || "",
+    time_budget_minutes: summary.timeBudgetMinutes,
+    max_steps: summary.totalSteps || summary.maxSteps || 0,
+    current_step: summary.currentAdaptiveStep || summary.currentStepIndex || 0,
+    completed_steps: summary.completedSteps || 0,
+    failed_steps: summary.failedSteps || 0,
+    skipped_steps: summary.skippedSteps || 0,
+    remaining_budget_minutes_estimate: summary.adaptiveState?.remaining_budget_minutes_estimate || null,
+    goal_progress_summary: summary.goalProgressSummary || "",
+    next_action: summary.nextAction || null,
+    stop_reason: summary.stopReason || "",
+    reflections: summary.recentReflection ? [summary.recentReflection] : []
   };
 }
 
@@ -1964,6 +2051,11 @@ async function writeRequiredJobPlaceholders(jobDir, userRequest, intake = null) 
     "session_plan.md": "# Multi-step Work Session Plan\n\nsingle session mode 또는 계획 대기 중입니다.\n",
     "session_steps.json": "[]\n",
     "session_summary.md": "# Multi-step Work Session Summary\n\nsingle session mode 또는 결과 대기 중입니다.\n",
+    "adaptive_loop.md": "# Adaptive Next-Action Loop\n\nadaptive loop mode 또는 계획 대기 중입니다.\n",
+    "adaptive_state.json": "{}\n",
+    "next_action.md": "# Next Action\n\n없음\n",
+    "updated_backlog.md": "# Updated Backlog\n\n없음\n",
+    "stop_reason.md": "none\n",
     "codex_prompt.md": "# Codex Prompt\n\n대기 중입니다.\n",
     "events.jsonl": "",
     "stdout.log": "",
@@ -2179,6 +2271,13 @@ function buildJobStartDetails(state) {
     recentSessionResult: state.recent_session_result,
     sessionPlanPath: state.session_plan_path,
     sessionSummaryPath: state.session_summary_path,
+    adaptiveMode: state.adaptive_mode === true,
+    adaptiveStatePath: state.adaptive_state_path,
+    adaptiveLoopPath: state.adaptive_loop_path,
+    currentAdaptiveStep: state.current_adaptive_step || 0,
+    nextAction: state.next_action || null,
+    stopReason: state.stop_reason || null,
+    goalProgressSummary: state.goal_progress_summary || "",
     recentEvents: [
       {
         timestamp: state.stage_timestamps?.job_created || state.started_at,
@@ -2204,6 +2303,11 @@ function normalizeOptionalPositiveInteger(value) {
 function normalizeAutonomyMode(value) {
   const mode = cleanOptionalString(value);
   return ["auto", "specific", "timeboxed"].includes(mode) ? mode : "auto";
+}
+
+function normalizeStepReviewMode(value) {
+  const mode = cleanOptionalString(value);
+  return mode === "codex_reflection" ? "codex_reflection" : "heuristic";
 }
 
 export function resolveAutonomyMode(autonomyMode, userRequest) {
@@ -2400,6 +2504,54 @@ async function prepareInitialWorkSession({ jobDir, state, maxSteps, timeoutMs })
   return next;
 }
 
+async function prepareInitialAdaptiveLoop({ jobDir, state, maxSteps, timeoutMs }) {
+  const scan = await scanRepositoryForJob({
+    repoRoot: state.repo_root,
+    timeoutMs
+  });
+  const verificationPlan = buildVerificationPlan(scan, state.job_policy || {}, { cwd: "." });
+  const planning = buildJobPlanningArtifacts({
+    userRequest: state.normalized_goal || state.user_request,
+    originalUserRequest: state.user_request,
+    autonomyMode: state.autonomy_mode,
+    timeBudgetMinutes: state.time_budget_minutes,
+    scan,
+    intake: state.job_intake,
+    policy: state.job_policy,
+    verificationPlan
+  });
+  const adaptiveState = buildInitialAdaptiveState({
+    goal: state.normalized_goal || state.user_request,
+    timeBudgetMinutes: state.time_budget_minutes,
+    maxSteps: maxSteps || state.max_steps || 3,
+    stepReviewMode: state.step_review_mode,
+    backlog: adaptiveBacklogFromPlanning(planning),
+    generatedAt: state.started_at
+  });
+  await writeJobFile(jobDir, "repo_scan.md", renderRepoScanMarkdown(scan));
+  await writeJobFile(jobDir, "verification_plan.md", renderVerificationPlanMarkdown(verificationPlan));
+  await writeAdaptiveArtifacts(jobDir, adaptiveState);
+  let next = await updateJobState(jobDir, state, {
+    verification_plan: verificationPlan,
+    adaptive_state_path: join(jobDir, "adaptive_state.json"),
+    adaptive_loop_path: join(jobDir, "adaptive_loop.md"),
+    current_adaptive_step: adaptiveState.current_step,
+    next_action: adaptiveState.next_action,
+    stop_reason: adaptiveState.stop_reason || null,
+    goal_progress_summary: adaptiveState.goal_progress_summary,
+    total_steps: adaptiveState.max_steps,
+    current_step_index: adaptiveState.next_action?.step_number || 0,
+    completed_steps: adaptiveState.completed_steps,
+    failed_steps: adaptiveState.failed_steps,
+    skipped_steps: adaptiveState.skipped_steps
+  });
+  await appendJobEvent(jobDir, "adaptive_loop_planned", "Adaptive next-action loop initialized.", {
+    maxSteps: adaptiveState.max_steps,
+    nextAction: adaptiveState.next_action?.title || null
+  }, next);
+  return next;
+}
+
 function createWorkSessionPlanForState({ state, scan, verificationPlan, maxSteps = null }) {
   return buildWorkSessionPlan({
     userRequest: state.user_request,
@@ -2410,6 +2562,22 @@ function createWorkSessionPlanForState({ state, scan, verificationPlan, maxSteps
     timeBudgetMinutes: state.time_budget_minutes,
     maxSteps: maxSteps || state.max_steps || 3
   });
+}
+
+function adaptiveBacklogFromPlanning(planning = {}) {
+  const candidates = Array.isArray(planning.candidates) && planning.candidates.length
+    ? planning.candidates
+    : planning.scopeSelection?.selectedItems || [];
+  return candidates.map((candidate) => ({
+    id: candidate.id,
+    title: candidate.title,
+    description: candidate.description || candidate.reason || candidate.rationale,
+    value: candidate.value,
+    risk: candidate.risk,
+    estimatedMinutes: candidate.estimatedMinutes ?? candidate.estimated_minutes,
+    likelyFiles: candidate.likelyFiles || candidate.filesLikelyAffected || candidate.likely_files,
+    reason: candidate.reason || candidate.rationale
+  }));
 }
 
 async function writeWorkSessionArtifacts(jobDir, sessionPlan) {
@@ -2440,6 +2608,48 @@ async function readSessionSteps(jobDir) {
   return Array.isArray(steps) ? steps : [];
 }
 
+async function readAdaptiveState(jobDir) {
+  const state = await readJsonSafe(join(jobDir, "adaptive_state.json"));
+  return state && typeof state === "object" && !Array.isArray(state) ? state : null;
+}
+
+async function updateAdaptiveJobState(jobDir, state, adaptiveState, updates = {}) {
+  const nextAction = adaptiveState.next_action || null;
+  return updateJobState(jobDir, state, {
+    ...updates,
+    adaptive_mode: true,
+    adaptive_state_path: join(jobDir, "adaptive_state.json"),
+    adaptive_loop_path: join(jobDir, "adaptive_loop.md"),
+    current_adaptive_step: adaptiveState.current_step || 0,
+    next_action: nextAction,
+    stop_reason: adaptiveState.stop_reason || null,
+    goal_progress_summary: adaptiveState.goal_progress_summary || null,
+    total_steps: adaptiveState.max_steps || state.max_steps || 0,
+    current_step_index: nextAction?.step_number || adaptiveState.current_step || 0,
+    completed_steps: adaptiveState.completed_steps || 0,
+    failed_steps: adaptiveState.failed_steps || 0,
+    skipped_steps: adaptiveState.skipped_steps || 0,
+    recent_session_result: adaptiveState.reflections?.length
+      ? adaptiveState.reflections[adaptiveState.reflections.length - 1]
+      : state.recent_session_result
+  });
+}
+
+async function markAdaptiveLoopStopped(jobDir, state, stopReason) {
+  const adaptiveState = buildInitialAdaptiveState({
+    ...(await readAdaptiveState(jobDir)),
+    stopReason,
+    nextAction: null
+  });
+  const stopped = {
+    ...adaptiveState,
+    stop_reason: adaptiveState.stop_reason || stopReason,
+    next_action: null
+  };
+  await writeAdaptiveArtifacts(jobDir, stopped);
+  return updateAdaptiveJobState(jobDir, state, stopped);
+}
+
 async function writeSessionSteps(jobDir, steps, plan = null) {
   await writeJsonAtomic(join(jobDir, "session_steps.json"), steps);
   await Promise.all(steps.map((step, index) => writeSessionStepArtifacts(jobDir, step, index, steps.length)));
@@ -2464,6 +2674,27 @@ async function updateSessionStateFromSteps(jobDir, state, steps) {
 
 function sessionStepDir(jobDir, step) {
   return join(jobDir, "steps", step.step_id || "step-unknown");
+}
+
+function adaptiveStepFromAction(action) {
+  if (!action) return null;
+  return {
+    step_id: action.step_id || `adaptive-step-${action.step_number || 1}`,
+    title: action.title || action.goal || "Adaptive next action",
+    goal: action.goal || action.title || "Adaptive next action",
+    reason: action.reason || "adaptive loop selected this next action.",
+    estimated_minutes: action.estimated_minutes || 10,
+    risk: action.risk || "medium",
+    value: action.value || "medium",
+    status: "pending",
+    selected_files_hint: action.selected_files_hint || [],
+    verification_commands: [],
+    started_at: null,
+    finished_at: null,
+    commit_hash: null,
+    result_summary: "",
+    step_number: action.step_number || 1
+  };
 }
 
 function contextProjectTypes(types = []) {
@@ -3136,6 +3367,437 @@ async function runMultiStepCodexSession({ jobDir, state, scan, planning, verific
   return state;
 }
 
+async function runAdaptiveCodexLoop({ jobDir, state, scan, planning, verificationPlan, deadlineMs }) {
+  let adaptiveState = buildInitialAdaptiveState({
+    ...(await readAdaptiveState(jobDir)),
+    goal: state.normalized_goal || state.user_request,
+    timeBudgetMinutes: state.time_budget_minutes,
+    maxSteps: state.max_steps || 3,
+    stepReviewMode: state.step_review_mode,
+    backlog: adaptiveBacklogFromPlanning(planning)
+  });
+  await writeAdaptiveArtifacts(jobDir, adaptiveState);
+  state = await updateAdaptiveJobState(jobDir, state, adaptiveState, {
+    verification_plan: verificationPlan
+  });
+  state = await recordJobEvent(jobDir, state, "adaptive_loop_started", "Adaptive Codex next-action loop started.", {
+    maxSteps: adaptiveState.max_steps,
+    nextAction: adaptiveState.next_action?.title || null
+  }, {
+    status: "running",
+    current_step: "adaptive_loop"
+  });
+
+  assertJobNotTimedOut(deadlineMs);
+  const tempRoot = await mkdtemp(join(tmpdir(), `weaveflow-codex-adaptive-${state.job_id}-`));
+  const worktreeRoot = join(tempRoot, "repo");
+  state = await updateJobState(jobDir, state, {
+    worktree: worktreeRoot,
+    current_step: "git_worktree"
+  });
+  await appendJobEvent(jobDir, "worktree", "Creating isolated git worktree for adaptive loop.", {
+    worktree: worktreeRoot,
+    branch: state.branch
+  });
+  const worktreeResult = await runLoggedCommand({
+    jobDir,
+    command: "git",
+    args: ["worktree", "add", "-b", state.branch, worktreeRoot, "HEAD"],
+    cwd: state.repo_root,
+    env: process.env,
+    timeoutMs: DEFAULT_TIMEOUT_MS
+  });
+  if (worktreeResult.code !== 0) {
+    throw new Error(`git worktree add failed: ${safeOneLine(worktreeResult.stderr || worktreeResult.stdout)}`);
+  }
+
+  const taskFiles = await readTaskFiles({
+    taskSpecPath: state.task_spec_path,
+    planPath: state.plan_path,
+    briefPath: state.brief_path
+  });
+
+  while (true) {
+    adaptiveState = buildInitialAdaptiveState(adaptiveState);
+    const continuation = shouldContinueAdaptiveLoop(adaptiveState);
+    if (!continuation.shouldContinue) {
+      adaptiveState = {
+        ...adaptiveState,
+        stop_reason: adaptiveState.stop_reason || continuation.stopReason,
+        next_action: null
+      };
+      await writeAdaptiveArtifacts(jobDir, adaptiveState);
+      state = await updateAdaptiveJobState(jobDir, state, adaptiveState);
+      await appendJobEvent(jobDir, "adaptive_loop_stopped", "Adaptive loop stopped before next action.", {
+        stopReason: adaptiveState.stop_reason
+      }, state);
+      break;
+    }
+
+    const action = adaptiveState.next_action || selectNextAction(adaptiveState);
+    if (!action) {
+      adaptiveState = {
+        ...adaptiveState,
+        stop_reason: "no_next_action",
+        next_action: null
+      };
+      await writeAdaptiveArtifacts(jobDir, adaptiveState);
+      state = await updateAdaptiveJobState(jobDir, state, adaptiveState);
+      break;
+    }
+
+    if (shouldStopForTimeBudget({
+      startedAt: state.started_at,
+      timeBudgetMinutes: state.time_budget_minutes,
+      nextStep: { estimated_minutes: action.estimated_minutes }
+    })) {
+      adaptiveState = {
+        ...adaptiveState,
+        stop_reason: "time_budget_exhausted",
+        next_action: null
+      };
+      await writeAdaptiveArtifacts(jobDir, adaptiveState);
+      state = await updateAdaptiveJobState(jobDir, state, adaptiveState);
+      await appendJobEvent(jobDir, "adaptive_budget_exhausted", "Adaptive loop stopped before the next action because the time budget was exhausted.", {
+        nextAction: action.title || action.step_id
+      }, state);
+      break;
+    }
+
+    const step = adaptiveStepFromAction(action);
+    const stepDir = sessionStepDir(jobDir, step);
+    await mkdir(stepDir, { recursive: true });
+    state = await updateAdaptiveJobState(jobDir, state, {
+      ...adaptiveState,
+      current_step: action.step_number,
+      next_action: action
+    }, {
+      status: "running",
+      current_step: `adaptive_${action.step_number}`,
+      current_adaptive_step: action.step_number,
+      current_session_step: step,
+      current_step_index: action.step_number
+    });
+    await appendJobEvent(jobDir, "adaptive_step_started", "Adaptive step started.", {
+      stepId: step.step_id,
+      title: step.title,
+      stepNumber: action.step_number
+    }, state);
+
+    const prompt = buildCodexAdaptiveStepPrompt({
+      state,
+      adaptiveState,
+      planning,
+      scan,
+      taskFiles,
+      step,
+      repoStatus: await currentRepoStatus(worktreeRoot, DEFAULT_TIMEOUT_MS)
+    });
+    await writeFile(join(stepDir, "prompt.md"), prompt, "utf8");
+    const codexResult = await runCodexJobAttempt({
+      jobDir,
+      state,
+      worktreeRoot,
+      prompt,
+      attemptLabel: `adaptive-step-${action.step_number}`,
+      sandboxMode: state.codex_sandbox_mode || "workspace-write",
+      deadlineMs
+    });
+    state = await updateJobState(jobDir, state, {
+      codex_exit_code: codexResult.code,
+      codex_termination: codexResult.termination
+    });
+    if (codexResult.code !== 0 || codexResult.termination !== "exit") {
+      const outcome = summarizeStepOutcome(step, state, {
+        changedFiles: await currentChangedFiles(worktreeRoot, state.repo_root),
+        tests: { run: false, passed: false, checks: [] },
+        lastMessage: codexResult.lastMessage
+      });
+      adaptiveState = applyStepOutcomeToAdaptiveState(adaptiveState, {
+        ...outcome,
+        status: "failed"
+      });
+      await writeAdaptiveArtifacts(jobDir, adaptiveState);
+      state = await updateAdaptiveJobState(jobDir, state, adaptiveState);
+      throw new Error(`Adaptive step ${step.step_id} failed: exit=${codexResult.code} termination=${codexResult.termination}`);
+    }
+
+    let changedFiles = await currentChangedFiles(worktreeRoot, state.repo_root);
+    const stepVerificationPlan = buildVerificationPlan(scan, {
+      ...(state.job_policy || {}),
+      runTests: state.run_tests,
+      changedFiles
+    }, {
+      cwd: worktreeRoot,
+      changedFiles
+    });
+    let tests = {
+      run: false,
+      passed: null,
+      checks: [],
+      plan: stepVerificationPlan
+    };
+    if (state.run_tests && stepVerificationPlan.commands.length) {
+      for (let attempt = 0; attempt <= state.max_fix_attempts; attempt += 1) {
+        tests = await runTargetedChecks({
+          worktreeRoot,
+          changedFiles,
+          pythonCommand: state.python_command || "python3",
+          timeoutMs: 120000,
+          verificationPlan: stepVerificationPlan
+        });
+        await writeFile(join(stepDir, "test_output.log"), renderJobTestOutput(tests), "utf8");
+        if (tests.passed) {
+          break;
+        }
+        if (attempt >= state.max_fix_attempts) {
+          break;
+        }
+        const fixPrompt = buildCodexSessionStepFixPrompt({
+          state,
+          step,
+          tests,
+          attempt: attempt + 1
+        });
+        await writeFile(join(stepDir, `fix_prompt_${attempt + 1}.md`), fixPrompt, "utf8");
+        const fixResult = await runCodexJobAttempt({
+          jobDir,
+          state,
+          worktreeRoot,
+          prompt: fixPrompt,
+          attemptLabel: `adaptive-step-${action.step_number}-fix-${attempt + 1}`,
+          sandboxMode: state.codex_sandbox_mode || "workspace-write",
+          deadlineMs
+        });
+        if (fixResult.code !== 0 || fixResult.termination !== "exit") {
+          throw new Error(`Adaptive step ${step.step_id} fix attempt ${attempt + 1} failed.`);
+        }
+        changedFiles = await currentChangedFiles(worktreeRoot, state.repo_root);
+      }
+    } else {
+      await writeFile(join(stepDir, "test_output.log"), renderJobTestOutput(tests), "utf8");
+    }
+
+    if (tests.run && tests.passed === false) {
+      const outcome = summarizeStepOutcome(step, state, {
+        changedFiles,
+        tests,
+        lastMessage: codexResult.lastMessage
+      });
+      adaptiveState = applyStepOutcomeToAdaptiveState(adaptiveState, {
+        ...outcome,
+        status: "failed"
+      });
+      await writeAdaptiveArtifacts(jobDir, adaptiveState);
+      state = await updateAdaptiveJobState(jobDir, state, adaptiveState, {
+        changed_files: changedFiles,
+        tests
+      });
+      throw new Error(`Adaptive step ${step.step_id} checks failed.`);
+    }
+
+    const outcome = summarizeStepOutcome(step, state, {
+      changedFiles,
+      tests,
+      lastMessage: codexResult.lastMessage,
+      remainingBudgetMinutes: adaptiveState.remaining_budget_minutes_estimate
+    });
+    adaptiveState = applyStepOutcomeToAdaptiveState(adaptiveState, outcome);
+    await writeFile(join(stepDir, "result.md"), [
+      "# Adaptive Step Result",
+      "",
+      outcome.step_title,
+      "",
+      "## Changed Files",
+      changedFiles.length ? changedFiles.map((file) => `- ${file}`).join("\n") : "- 없음",
+      "",
+      "## Tests",
+      renderJobTestOutput(tests),
+      "",
+      "## Codex Last Message",
+      fenced(codexResult.lastMessage || "(empty)", "text"),
+      ""
+    ].join("\n"), "utf8");
+    await writeAdaptiveArtifacts(jobDir, adaptiveState);
+    state = await updateAdaptiveJobState(jobDir, state, adaptiveState, {
+      changed_files: changedFiles,
+      tests,
+      current_session_step: adaptiveStepFromAction(adaptiveState.next_action),
+      recent_session_result: {
+        step_id: outcome.step_id,
+        title: outcome.step_title,
+        status: outcome.status,
+        result_summary: `${outcome.step_title} 완료. 변경 파일 ${changedFiles.length}개.`
+      }
+    });
+    await appendJobEvent(jobDir, "adaptive_step_completed", "Adaptive step completed and next action selected.", {
+      stepId: outcome.step_id,
+      changedFileCount: changedFiles.length,
+      nextAction: adaptiveState.next_action?.title || null,
+      stopReason: adaptiveState.stop_reason || null
+    }, state);
+  }
+
+  const completedSteps = Number(adaptiveState.completed_steps || 0);
+  const changedFiles = await currentChangedFiles(worktreeRoot, state.repo_root);
+  if (!completedSteps) {
+    throw new Error("No adaptive loop steps completed successfully.");
+  }
+  if (!changedFiles.length) {
+    throw new Error("Adaptive loop completed steps but left no repository changes to commit.");
+  }
+  if (state.tests?.run && state.tests?.passed === false) {
+    throw new Error("Checks failed after adaptive loop fix attempts.");
+  }
+
+  const diffResult = await runLoggedCommand({
+    jobDir,
+    command: "git",
+    args: ["-C", worktreeRoot, "diff", "--binary"],
+    cwd: state.repo_root,
+    env: process.env,
+    timeoutMs: DEFAULT_TIMEOUT_MS
+  });
+  await writeJobFile(jobDir, "diff.patch", diffResult.stdout);
+
+  state = await recordJobEvent(jobDir, state, "commit_started", "Git commit stage started.", {
+    changedFileCount: changedFiles.length
+  }, {
+    status: "committing",
+    current_step: "git_commit",
+    changed_files: changedFiles
+  });
+  const addResult = await runLoggedCommand({
+    jobDir,
+    command: "git",
+    args: ["-C", worktreeRoot, "add", "-A"],
+    cwd: state.repo_root,
+    env: process.env,
+    timeoutMs: DEFAULT_TIMEOUT_MS
+  });
+  if (addResult.code !== 0) {
+    throw new Error(`git add failed: ${safeOneLine(addResult.stderr || addResult.stdout)}`);
+  }
+  const commitResult = await runLoggedCommand({
+    jobDir,
+    command: "git",
+    args: ["-C", worktreeRoot, "commit", "-m", buildJobCommitMessage(planning, state.user_request)],
+    cwd: state.repo_root,
+    env: process.env,
+    timeoutMs: 120000
+  });
+  if (commitResult.code !== 0) {
+    throw new Error(`git commit failed: ${safeOneLine(commitResult.stderr || commitResult.stdout)}`);
+  }
+  const commitHashResult = await runLoggedCommand({
+    jobDir,
+    command: "git",
+    args: ["-C", worktreeRoot, "rev-parse", "--short", "HEAD"],
+    cwd: state.repo_root,
+    env: process.env,
+    timeoutMs: DEFAULT_TIMEOUT_MS
+  });
+  if (commitHashResult.code !== 0) {
+    throw new Error(`git rev-parse failed: ${safeOneLine(commitHashResult.stderr || commitHashResult.stdout)}`);
+  }
+  state = await updateJobState(jobDir, state, {
+    commit_hash: commitHashResult.stdout.trim()
+  });
+  state = await recordJobEvent(jobDir, state, "commit_finished", "Git commit stage finished.", {
+    commitHash: state.commit_hash
+  });
+
+  if (state.push) {
+    state = await recordJobEvent(jobDir, state, "push_started", "Git push stage started.", {}, {
+      status: "pushing",
+      current_step: "git_push"
+    });
+    const remote = await firstGitRemote(state.repo_root, DEFAULT_TIMEOUT_MS);
+    if (remote) {
+      const pushResult = await runLoggedCommand({
+        jobDir,
+        command: "git",
+        args: ["-C", worktreeRoot, "push", "-u", remote, state.branch],
+        cwd: state.repo_root,
+        env: process.env,
+        timeoutMs: 120000
+      });
+      if (pushResult.code !== 0) {
+        throw new Error(`git push failed: ${safeOneLine(pushResult.stderr || pushResult.stdout)}`);
+      }
+      state = await updateJobState(jobDir, state, { pushed: true });
+      state = await recordJobEvent(jobDir, state, "push_finished", "Git push stage finished.", {
+        branch: state.branch,
+        pushed: true
+      });
+    } else {
+      state = await recordJobEvent(jobDir, state, "push_finished", "Git push skipped because no remote is configured.", {
+        branch: state.branch,
+        pushed: false
+      });
+    }
+  }
+
+  state = await recordJobEvent(jobDir, state, "job_completed", "Adaptive Codex next-action loop completed.", {
+    commitHash: state.commit_hash,
+    pushed: state.pushed,
+    completedSteps: state.completed_steps,
+    stopReason: state.stop_reason
+  }, {
+    status: "completed",
+    current_step: "completed",
+    result_artifact_path: join(jobDir, "result.md"),
+    error: null
+  });
+  await writeJobFile(jobDir, "result.md", renderCodexJobResultMarkdown(state, planning));
+  return state;
+}
+
+function buildCodexAdaptiveStepPrompt({ state, adaptiveState, planning, scan, taskFiles, step, repoStatus }) {
+  return [
+    "You are running as Codex inside an isolated temporary git worktree for a Weaveflow/OpenClaw adaptive next-action loop POC.",
+    "Execute only the current adaptive step. Do not commit, push, merge, or modify files outside this worktree.",
+    "After this step, the job runner will inspect the diff and checks, update the backlog, and decide the next action.",
+    "Keep the change bounded, low-risk, and realistic for the step estimate.",
+    "Do not expose secrets, tokens, environment variables, or credentials.",
+    "When finished, respond with a concise Korean summary of changed files and checks you ran or recommend.",
+    "",
+    `Job ID: ${state.job_id}`,
+    `Task ID: ${state.task_id}`,
+    `Adaptive step: ${step.step_number || adaptiveState.current_step + 1} of ${adaptiveState.max_steps}`,
+    `Step ID: ${step.step_id}`,
+    `Target branch: ${state.branch}`,
+    `Remaining budget estimate: ${adaptiveState.remaining_budget_minutes_estimate || "unknown"} minutes`,
+    "",
+    "## Overall User Request",
+    state.user_request,
+    "",
+    "## Goal Progress So Far",
+    adaptiveState.goal_progress_summary || "No adaptive step has completed yet.",
+    "",
+    "## Current Adaptive Step",
+    renderSessionStepMarkdown(step, (step.step_number || 1) - 1, adaptiveState.max_steps),
+    "",
+    "## Current Repo Status",
+    repoStatus,
+    "",
+    "## Repository Scan",
+    renderRepoScanMarkdown(scan),
+    "",
+    "## Adaptive Backlog",
+    planning.backlogMarkdown,
+    "",
+    "## Weaveflow task_spec.yaml",
+    taskFiles.taskSpec,
+    "",
+    "## Weaveflow plan.yaml",
+    taskFiles.plan,
+    "",
+    "## Weaveflow Worker Brief",
+    taskFiles.brief
+  ].filter(Boolean).join("\n");
+}
+
 function buildCodexSessionStepPrompt({ state, planning, scan, taskFiles, step, stepIndex, totalSteps, repoStatus }) {
   return [
     "You are running as Codex inside an isolated temporary git worktree for a Weaveflow/OpenClaw multi-step work session POC.",
@@ -3221,6 +3883,10 @@ function attemptNumberForLabel(label) {
   if (stepMatch) return 100 + Number(stepMatch[1]);
   const stepFixMatch = String(label || "").match(/^step-(\d+)-fix-(\d+)$/);
   if (stepFixMatch) return 100 + Number(stepFixMatch[1]) * 10 + Number(stepFixMatch[2]);
+  const adaptiveMatch = String(label || "").match(/^adaptive-step-(\d+)$/);
+  if (adaptiveMatch) return 200 + Number(adaptiveMatch[1]);
+  const adaptiveFixMatch = String(label || "").match(/^adaptive-step-(\d+)-fix-(\d+)$/);
+  if (adaptiveFixMatch) return 200 + Number(adaptiveFixMatch[1]) * 10 + Number(adaptiveFixMatch[2]);
   const match = String(label || "").match(/^fix-(\d+)$/);
   if (match) return 10 + Number(match[1]);
   return 99;
@@ -3391,6 +4057,14 @@ export function renderCodexJobResultMarkdown(state, planning) {
       fix_attempts_used: state.fix_attempts_used,
       job_policy: state.job_policy,
       verification_plan: state.verification_plan,
+      session_mode: state.session_mode,
+      adaptive_mode: state.adaptive_mode,
+      adaptive_state_path: state.adaptive_state_path,
+      adaptive_loop_path: state.adaptive_loop_path,
+      current_adaptive_step: state.current_adaptive_step,
+      next_action: state.next_action,
+      stop_reason: state.stop_reason,
+      goal_progress_summary: state.goal_progress_summary,
       commit_hash: state.commit_hash,
       pushed: state.pushed,
       changed_files: state.changed_files,
@@ -3412,6 +4086,23 @@ export function renderCodexJobResultMarkdown(state, planning) {
       recentSessionResult: state.recent_session_result
     })) : "",
     state.session_mode === "multi_step" ? "" : "",
+    state.session_mode === "adaptive_loop" ? "## Adaptive Loop Summary" : "",
+    state.session_mode === "adaptive_loop" ? formatAdaptiveLoopSummaryKorean(adaptiveStateFromSummary({
+      adaptiveState: {
+        mode: "adaptive_loop",
+        goal: state.normalized_goal || state.user_request,
+        time_budget_minutes: state.time_budget_minutes,
+        max_steps: state.total_steps || state.max_steps,
+        current_step: state.current_adaptive_step,
+        completed_steps: state.completed_steps,
+        failed_steps: state.failed_steps,
+        skipped_steps: state.skipped_steps,
+        goal_progress_summary: state.goal_progress_summary,
+        next_action: state.next_action,
+        stop_reason: state.stop_reason
+      }
+    })) : "",
+    state.session_mode === "adaptive_loop" ? "" : "",
     "## Timeline",
     renderTimelineTable(timeline),
     "",
@@ -3433,6 +4124,8 @@ export function renderCodexJobResultMarkdown(state, planning) {
     `- Result artifact: ${state.result_artifact_path || join(state.job_dir, "result.md")}`,
     `- Diff patch: ${state.job_dir ? join(state.job_dir, "diff.patch") : "없음"}`,
     `- Test output: ${state.job_dir ? join(state.job_dir, "test_output.log") : "없음"}`,
+    state.session_mode === "adaptive_loop" ? `- Adaptive state: ${state.adaptive_state_path || "없음"}` : "",
+    state.session_mode === "adaptive_loop" ? `- Adaptive loop: ${state.adaptive_loop_path || "없음"}` : "",
     "",
     "## Limitations or Warnings",
     warnings.length ? warnings.map((warning) => `- ${warning}`).join("\n") : "- 없음",

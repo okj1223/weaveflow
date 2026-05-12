@@ -310,6 +310,75 @@ test("Codex job multi-step session creates session artifacts and Korean progress
   assert.match(await readFile(join(start.jobDir, "session_summary.md"), "utf8"), /사용자 요청으로 세션이 취소되었습니다/);
 });
 
+test("Codex job adaptive loop creates adaptive artifacts and Korean progress", async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "weaveflow-adaptive-start-test-"));
+  const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
+  const start = await startWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    userRequest: "문서와 사용성 설명을 25분 예산으로 알아서 개선해. 먼저 가장 유용한 작은 개선을 하고, 결과를 보고 다음에 할 일을 스스로 골라서 이어서 처리해.",
+    sessionMode: "adaptive_loop",
+    timeBudgetMinutes: 25,
+    maxSteps: 3,
+    push: false,
+    runTests: true,
+    maxFixAttempts: 1,
+    startWorker: false
+  });
+
+  assert.equal(start.sessionMode, "adaptive_loop");
+  assert.equal(start.adaptiveMode, true);
+  assert.equal(start.totalSteps, 3);
+  assert.equal(start.currentAdaptiveStep, 0);
+  assert.equal(Boolean(start.nextAction), true);
+  assert.match(formatCodexJobStartSummary(start), /adaptive next-action loop/);
+
+  const jobState = JSON.parse(await readFile(join(start.jobDir, "job.yaml"), "utf8"));
+  assert.equal(jobState.session_mode, "adaptive_loop");
+  assert.equal(jobState.adaptive_mode, true);
+  assert.equal(jobState.step_review_mode, "heuristic");
+  assert.equal(jobState.adaptive_state_path, join(start.jobDir, "adaptive_state.json"));
+  assert.equal(jobState.adaptive_loop_path, join(start.jobDir, "adaptive_loop.md"));
+  assert.equal(Boolean(jobState.next_action), true);
+  assert.equal(jobState.stop_reason, null);
+  assert.match(jobState.goal_progress_summary, /아직 완료된 adaptive step/);
+
+  const adaptiveState = JSON.parse(await readFile(join(start.jobDir, "adaptive_state.json"), "utf8"));
+  assert.equal(adaptiveState.mode, "adaptive_loop");
+  assert.equal(adaptiveState.max_steps, 3);
+  assert.equal(Boolean(adaptiveState.next_action), true);
+  assert.match(await readFile(join(start.jobDir, "adaptive_loop.md"), "utf8"), /Adaptive Next-Action Loop/);
+  assert.match(await readFile(join(start.jobDir, "next_action.md"), "utf8"), /Next Action/);
+  assert.match(await readFile(join(start.jobDir, "updated_backlog.md"), "utf8"), /Updated Backlog/);
+
+  const status = await checkWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    jobId: start.jobId
+  });
+  assert.equal(status.sessionMode, "adaptive_loop");
+  assert.equal(status.adaptiveMode, true);
+  assert.equal(status.currentAdaptiveStep, 0);
+  assert.equal(Boolean(status.nextAction), true);
+  assert.match(formatCodexJobStatusSummary(status), /adaptive next-action loop/);
+  assert.match(formatCodexJobStatusSummary(status), /다음 예정 작업:/);
+
+  const cancel = await cancelWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    jobId: start.jobId
+  });
+  assert.equal(cancel.cancelled, true);
+  assert.equal(cancel.sessionMode, "adaptive_loop");
+  assert.equal(cancel.stopReason, "cancelled");
+  assert.match(formatCodexJobCancelSummary(cancel), /adaptive next-action loop/);
+  assert.match(formatCodexJobCancelSummary(cancel), /Adaptive artifacts:/);
+
+  const cancelledAdaptiveState = JSON.parse(await readFile(join(start.jobDir, "adaptive_state.json"), "utf8"));
+  assert.equal(cancelledAdaptiveState.stop_reason, "cancelled");
+  assert.equal(cancelledAdaptiveState.next_action, null);
+});
+
 test("Codex job timeline and result report include durations and observability fields", () => {
   const state = {
     job_id: "JOB-0001",

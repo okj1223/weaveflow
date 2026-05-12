@@ -180,12 +180,21 @@ export default definePluginEntry({
             },
             sessionMode: {
               type: "string",
-              enum: ["single", "multi_step"],
-              description: "Run as one Codex job or a multi-step autonomous work session. Defaults to single."
+              enum: ["single", "multi_step", "adaptive_loop"],
+              description: "Run as one Codex job, a fixed multi-step session, or an adaptive next-action loop. Defaults to single."
+            },
+            adaptiveMode: {
+              type: "boolean",
+              description: "Enable adaptive next-action loop behavior. Equivalent to sessionMode=adaptive_loop."
             },
             maxSteps: {
               type: "number",
-              description: "Maximum session steps when sessionMode is multi_step."
+              description: "Maximum session steps when sessionMode is multi_step or adaptive_loop."
+            },
+            stepReviewMode: {
+              type: "string",
+              enum: ["heuristic", "codex_reflection"],
+              description: "How completed adaptive steps are reviewed. Defaults to heuristic."
             },
             push: {
               type: "boolean",
@@ -222,7 +231,9 @@ export default definePluginEntry({
               timeBudgetMinutes: readOptionalNumber(params, "timeBudgetMinutes"),
               autonomyMode: readOptionalString(params, "autonomyMode") || "auto",
               sessionMode: readOptionalString(params, "sessionMode") || "single",
+              adaptiveMode: readOptionalBoolean(params, "adaptiveMode", false),
               maxSteps: readOptionalNumber(params, "maxSteps"),
+              stepReviewMode: readOptionalString(params, "stepReviewMode") || "heuristic",
               push: readOptionalBoolean(params, "push", true),
               runTests: readOptionalBoolean(params, "runTests", true),
               maxFixAttempts: readOptionalNumber(params, "maxFixAttempts"),

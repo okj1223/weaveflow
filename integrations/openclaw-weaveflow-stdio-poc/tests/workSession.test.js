@@ -30,6 +30,7 @@ const verificationPlan = {
 
 test("normalizes session mode conservatively", () => {
   assert.equal(normalizeSessionMode("multi_step"), "multi_step");
+  assert.equal(normalizeSessionMode("adaptive_loop"), "adaptive_loop");
   assert.equal(normalizeSessionMode("single"), "single");
   assert.equal(normalizeSessionMode("unknown"), "single");
   assert.equal(normalizeSessionMode(""), "single");
