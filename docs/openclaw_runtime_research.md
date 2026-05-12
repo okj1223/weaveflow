@@ -33,6 +33,20 @@ Date checked: 2026-05-09.
 | Slack channel docs | official docs in GitHub repo | <https://github.com/openclaw/openclaw/blob/main/docs/channels/slack.md> | Slack integration supports Socket Mode and HTTP Request URLs. DMs default to pairing mode. Channel integrations have channel-specific transport details. | Medium |
 | Telegram channel docs | official docs in GitHub repo | <https://github.com/openclaw/openclaw/blob/main/docs/channels/telegram.md> | Telegram uses grammY, defaults to long polling with optional webhook mode, and defaults DMs to pairing. Telegram group and sender authorization are distinct. | Medium |
 
+## Discord Runtime Validation
+
+Date checked: 2026-05-12.
+
+A live Discord-facing OpenClaw runtime was checked for the Weaveflow/OpenClaw
+Codex job runner POC. Observed results:
+
+- The `check` tool was exposed in Discord.
+- Looking up a non-existent `JOB` returned the expected not-found response.
+- No real Codex work was started during this validation.
+
+This confirms the Discord tool surface and read-only not-found path, but it
+does not yet validate starting, running, cancelling, or completing a Codex job.
+
 ## High-Level OpenClaw Architecture
 
 ### Confirmed Facts
