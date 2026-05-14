@@ -1,5 +1,12 @@
 # OpenClaw Runtime Research
 
+## Historical Note
+
+This research was captured before the current branch added the OpenClaw plugin
+POC and Codex job runner personal automation layer. Treat "future" wording here
+as historical research context. Current direction is documented in
+[personal_automation_direction.md](personal_automation_direction.md).
+
 ## Purpose
 
 This document records factual research about the real OpenClaw runtime before

@@ -8,6 +8,11 @@ Weaveflow OpenClaw plugin and autonomous Codex job runner.
 It is documentation only. It does not change the job runner, OpenClaw
 configuration, Discord behavior, or repository branch policy.
 
+This validation belongs to the current personal automation direction: using
+OpenClaw + Codex to save the user's time during long-running local work while
+preserving audit artifacts, checks, and Korean summaries. See
+[personal_automation_direction.md](personal_automation_direction.md).
+
 ## Validated Capabilities
 
 The home runtime validated that Discord and OpenClaw can trigger the Weaveflow
@@ -75,11 +80,11 @@ Completed work:
 
 ## Validation Decision
 
-Phase 18 proves that the current plugin and job runner can perform a real
+Phase 18 proves that the current personal automation plugin and job runner can perform a real
 Discord/OpenClaw-triggered autonomous session, including broad request
 normalization, scope selection, multi-step execution, checks, commit, push, and
 Korean status reporting.
 
-The next validation step can focus on policy, exposure, and operational safety.
-It should not require another proof that broad timeboxed multi-step execution
-works.
+The next validation step can focus on practical reliability, observability,
+cost/time efficiency, recovery, and safe commit/push policy. It should not
+require another proof that broad timeboxed multi-step execution works.

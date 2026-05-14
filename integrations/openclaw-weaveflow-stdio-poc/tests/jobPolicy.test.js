@@ -17,14 +17,21 @@ test("resolves docs-only work as low risk", () => {
 
   assert.equal(policy.riskLevel, "low");
   assert.equal(policy.requiresHumanReview, false);
-  assert.equal(policy.push, true);
+  assert.equal(policy.push, false);
+  assert.equal(policy.allowPush, false);
   assert.equal(policy.runTests, true);
-  assert.equal(policy.maxFixAttempts, 3);
-  assert.equal(policy.timeBudgetMinutes, 30);
-  assert.equal(policy.maxRuntimeMinutes, 45);
+  assert.equal(policy.maxFixAttempts, 2);
+  assert.equal(policy.timeBudgetMinutes, 90);
+  assert.equal(policy.maxSessionMinutes, 60);
+  assert.equal(policy.totalJobBudgetMinutes, 90);
+  assert.equal(policy.checkpointEveryMinutes, 20);
+  assert.equal(policy.maxRuntimeMinutes, 105);
+  assert.equal(policy.runProfile, "focused");
+  assert.equal(policy.usageBudgetLevel, "medium");
+  assert.equal(policy.quotaStrategy, "balanced");
   assert.equal(policy.autonomyMode, "specific");
   assert.equal(isAutoActionAllowed("commit", policy), true);
-  assert.equal(isAutoActionAllowed("push", policy), true);
+  assert.equal(isAutoActionAllowed("push", policy), false);
 });
 
 test("classifies website improvement as medium risk", () => {
@@ -35,6 +42,8 @@ test("classifies website improvement as medium risk", () => {
   assert.equal(policy.riskLevel, "medium");
   assert.equal(policy.requiresHumanReview, false);
   assert.equal(policy.timeBudgetMinutes, 45);
+  assert.equal(policy.maxSessionMinutes, 60);
+  assert.equal(policy.totalJobBudgetMinutes, 45);
   assert.equal(policy.autonomyMode, "timeboxed");
   assert.equal(isAutoActionAllowed("run_tests", policy), true);
 });
@@ -87,21 +96,27 @@ test("infers English and Korean time budgets", () => {
 
 test("uses default policy values when input is sparse", () => {
   const defaults = resolveExecutionDefaults({});
-  assert.deepEqual(defaults, {
-    push: true,
-    runTests: true,
-    maxFixAttempts: 3,
-    timeBudgetMinutes: 30,
-    maxRuntimeMinutes: 45,
-    autonomyMode: "specific"
-  });
+  assert.equal(defaults.push, false);
+  assert.equal(defaults.allowPush, false);
+  assert.equal(defaults.runTests, true);
+  assert.equal(defaults.maxFixAttempts, 2);
+  assert.equal(defaults.maxRepeatedFailures, 2);
+  assert.equal(defaults.timeBudgetMinutes, 90);
+  assert.equal(defaults.maxSessionMinutes, 60);
+  assert.equal(defaults.totalJobBudgetMinutes, 90);
+  assert.equal(defaults.checkpointEveryMinutes, 20);
+  assert.equal(defaults.maxRuntimeMinutes, 105);
+  assert.equal(defaults.autonomyMode, "specific");
+  assert.equal(defaults.runProfile, "focused");
 
   const policy = resolveJobPolicy({});
   assert.equal(policy.riskLevel, "medium");
   assert.equal(policy.allowedActions.includes("create_worktree"), true);
+  assert.equal(policy.allowedActions.includes("push_branch"), false);
   assert.equal(policy.blockedActions.includes("auto_merge"), true);
   assert.equal(policy.blockedActions.includes("production_deploy"), true);
   assert.equal(policy.blockedActions.includes("destructive_delete"), true);
+  assert.equal(policy.blockedActions.includes("push_branch"), true);
 });
 
 test("builds Korean user-facing policy summary", () => {
@@ -113,8 +128,10 @@ test("builds Korean user-facing policy summary", () => {
   assert.match(policy.korean_summary, /Codex 작업 정책/);
   assert.match(policy.korean_summary, /위험도: 낮음/);
   assert.match(policy.korean_summary, /자율 모드: 시간 제한 자율 작업/);
+  assert.match(policy.korean_summary, /프로필: focused/);
   assert.match(policy.korean_summary, /시간 예산: 30분/);
   assert.match(policy.korean_summary, /최대 수정 시도: 2회/);
+  assert.match(policy.korean_summary, /푸시 허용: 아니오/);
   assert.equal(summarizeJobPolicyKorean(policy), policy.korean_summary);
 });
 

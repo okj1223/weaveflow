@@ -1,5 +1,13 @@
 # Integration Readiness Freeze
 
+## Historical Note
+
+This document is a historical freeze from the core MVP and stdio bridge
+readiness phase. It should not be read as the current north star for the whole
+repository. The current branch now includes a personal OpenClaw + Codex job
+runner automation layer; see
+[personal_automation_direction.md](personal_automation_direction.md).
+
 ## Purpose
 
 This document freezes the current local Weaveflow and OpenClaw-preparation
@@ -10,8 +18,9 @@ local-only, what is blocked before a real OpenClaw proof of concept, what
 should not be built yet, and where the current architecture-building loop
 should stop.
 
-This is no real OpenClaw integration. It does not import OpenClaw, call
-OpenClaw APIs, create a bot, add a server, or add a network surface.
+At the time of this freeze, this was not real OpenClaw integration. It did not
+import OpenClaw, call OpenClaw APIs, create a bot, add a server, or add a
+network surface.
 
 ## Current Completed Layers
 
@@ -112,9 +121,9 @@ These decisions require evidence from a working OpenClaw checkout or current
 official OpenClaw runtime documentation, not another speculative local wrapper
 layer.
 
-## What Should Not Be Built Yet
+## What Should Not Be Built Yet At This Freeze Point
 
-Do not build these yet:
+At this historical freeze point, the recommendation was not to build:
 
 - persistent sessions
 - auth/RBAC
@@ -127,12 +136,14 @@ Do not build these yet:
 - external API actions
 - web UI
 
-These should wait until the actual OpenClaw integration surface is verified.
-Building them now would harden guesses before the runtime boundary is known.
+This was a core/bridge readiness recommendation. It does not mean the current
+project globally forbids Codex job runner automation. The current branch has
+since added a personal automation experiment on top of the core kernel.
 
-## Recommended Smallest Future POC
+## Historical Recommended Smallest POC
 
-The smallest future POC should be a real external wrapper that does only this:
+The smallest POC recommended at the freeze point was a real external wrapper
+that did only this:
 
 ```text
 spawn Weaveflow stdio bridge
@@ -146,7 +157,7 @@ send task list
 shutdown bridge
 ```
 
-This POC should not:
+This historical POC was intentionally scoped not to:
 
 - auto-run Codex
 - verify tasks
@@ -155,8 +166,8 @@ This POC should not:
 - repair workspace
 - persist sessions
 
-The goal is to validate the real OpenClaw process/tool boundary and reply path,
-not to expand Weaveflow runtime behavior.
+The goal at that point was to validate the OpenClaw process/tool boundary and
+reply path, not to expand Weaveflow runtime behavior.
 
 ## Stop Criteria
 

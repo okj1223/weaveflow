@@ -19,6 +19,14 @@ import {
   reviewChangedFiles
 } from "./changeReview.js";
 import {
+  buildCheckpointRecord,
+  buildResumeCapsule,
+  formatCheckpointMarkdown,
+  formatResumeCapsuleMarkdown,
+  normalizeCheckpointReason,
+  shouldCreateCheckpoint
+} from "./checkpointScheduler.js";
+import {
   formatOpportunityBacklogMarkdown,
   formatSelectedScopeMarkdown,
   generateOpportunityBacklog,
@@ -71,6 +79,14 @@ import {
 import { scanRepoContext } from "./repoContext.js";
 import { buildDefaultRepoRegistry, resolveRepoRoot } from "./repoRegistry.js";
 import {
+  buildNextSuggestedPrompt,
+  buildUsageLimitCheckpointMarkdown,
+  buildUsageLimitGuard,
+  buildUsageLimitSummaryKorean,
+  evaluateUsageLimitGuard,
+  updateRepeatedFailureTracker
+} from "./runProfile.js";
+import {
   normalizeCommandPlan,
   planVerificationCommands,
   summarizeVerificationPlanKorean
@@ -109,7 +125,7 @@ const STEP_ORDER = [
   ["shutdown", "poc-006-shutdown"]
 ];
 
-const JOB_TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled", "timeout"]);
+const JOB_TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled", "timeout", "limit_reached", "needs_user_review"]);
 const RECOVERY_EXPOSE_HEALTH = new Set([
   "stale_running",
   "invalid_state",
@@ -395,7 +411,7 @@ export async function runWeaveflowCodexAutoRun(options) {
   const projectRoot = resolve(cleanOptionalString(options?.repoRoot) || options?.projectRoot || defaultProjectRoot());
   const timeoutMs = options?.timeoutMs || DEFAULT_TIMEOUT_MS;
   const codexTimeoutMs = options?.codexTimeoutMs || DEFAULT_CODEX_TIMEOUT_MS;
-  const pushRequested = options?.push !== false;
+  const pushRequested = options?.push === true;
   const runTests = options?.runTests !== false;
   const requestedWorkspaceRoot = cleanOptionalString(options?.workspaceRoot);
   const workspaceRoot = requestedWorkspaceRoot
@@ -733,7 +749,31 @@ export function buildCodexAutomationPrompt({ userRequest, taskSpec, plan, brief,
 
 export async function startWeaveflowCodexJob(options) {
   const userRequest = requireString(options?.userRequest, "userRequest");
-  const intake = normalizeJobRequest(userRequest);
+  const requestedMaxSessionMinutes = normalizeOptionalPositiveInteger(options?.maxSessionMinutes);
+  const requestedTotalJobBudgetMinutes = normalizeOptionalPositiveInteger(options?.totalJobBudgetMinutes);
+  const requestedCheckpointEveryMinutes = normalizeOptionalPositiveInteger(options?.checkpointEveryMinutes);
+  const requestedMaxFixAttempts = normalizeOptionalPositiveInteger(options?.maxFixAttempts);
+  const requestedMaxRepeatedFailures = normalizeOptionalPositiveInteger(options?.maxRepeatedFailures);
+  const requestedMaxChangedFiles = normalizeOptionalPositiveInteger(options?.maxChangedFiles);
+  const intake = normalizeJobRequest({
+    userRequest,
+    runProfile: options?.runProfile,
+    profile: options?.profile,
+    usageBudgetLevel: options?.usageBudgetLevel,
+    quotaStrategy: options?.quotaStrategy,
+    limitRecoveryMode: options?.limitRecoveryMode,
+    maxSessionMinutes: requestedMaxSessionMinutes,
+    totalJobBudgetMinutes: requestedTotalJobBudgetMinutes ?? options?.timeBudgetMinutes,
+    checkpointEveryMinutes: requestedCheckpointEveryMinutes,
+    checkpointOnPhaseChange: options?.checkpointOnPhaseChange,
+    checkpointOnFailure: options?.checkpointOnFailure,
+    checkpointOnLimitSignal: options?.checkpointOnLimitSignal,
+    maxFixAttempts: requestedMaxFixAttempts,
+    maxRepeatedFailures: requestedMaxRepeatedFailures,
+    maxChangedFiles: requestedMaxChangedFiles,
+    allowLargeRefactor: options?.allowLargeRefactor,
+    allowPush: options?.allowPush
+  });
   const repoResolution = resolveJobRepoRoot(options);
   const repoRoot = repoResolution.repoRoot;
   const workspaceRoot = resolve(cleanOptionalString(options?.workspaceRoot) || repoRoot);
@@ -747,9 +787,24 @@ export async function startWeaveflowCodexJob(options) {
   const maxSteps = normalizeOptionalPositiveInteger(options?.maxSteps) || null;
   const policy = resolveJobPolicy({
     userRequest,
-    timeBudgetMinutes: requestedTimeBudgetMinutes ?? intake.time_budget_minutes,
+    runProfile: options?.runProfile,
+    profile: options?.profile,
+    usageBudgetLevel: options?.usageBudgetLevel,
+    quotaStrategy: options?.quotaStrategy,
+    limitRecoveryMode: options?.limitRecoveryMode,
+    timeBudgetMinutes: requestedTimeBudgetMinutes ?? requestedTotalJobBudgetMinutes ?? intake.time_budget_minutes,
+    totalJobBudgetMinutes: requestedTotalJobBudgetMinutes,
+    maxSessionMinutes: requestedMaxSessionMinutes,
+    checkpointEveryMinutes: requestedCheckpointEveryMinutes,
+    checkpointOnPhaseChange: options?.checkpointOnPhaseChange,
+    checkpointOnFailure: options?.checkpointOnFailure,
+    checkpointOnLimitSignal: options?.checkpointOnLimitSignal,
     maxRuntimeMinutes: normalizeOptionalPositiveInteger(options?.maxRuntimeMinutes),
-    maxFixAttempts: normalizeOptionalPositiveInteger(options?.maxFixAttempts),
+    maxFixAttempts: requestedMaxFixAttempts,
+    maxRepeatedFailures: requestedMaxRepeatedFailures,
+    maxChangedFiles: requestedMaxChangedFiles,
+    allowLargeRefactor: options?.allowLargeRefactor,
+    allowPush: options?.allowPush,
     autonomyMode: requestedAutonomyMode === "auto" ? undefined : requestedAutonomyMode,
     push: options?.push,
     runTests: options?.runTests
@@ -758,10 +813,11 @@ export async function startWeaveflowCodexJob(options) {
     throw new Error(`작업 정책이 자동 커밋을 차단했습니다. ${policy.korean_summary}`);
   }
   const timeBudgetMinutes = policy.timeBudgetMinutes;
+  const usageLimitGuard = buildUsageLimitGuard(policy.usageLimitGuard || policy);
   const maxRuntimeMinutes = policy.maxRuntimeMinutes || DEFAULT_JOB_MAX_RUNTIME_MINUTES;
-  const maxFixAttempts = policy.maxFixAttempts ?? DEFAULT_JOB_FIX_ATTEMPTS;
+  const maxFixAttempts = usageLimitGuard.maxFixAttempts ?? policy.maxFixAttempts ?? DEFAULT_JOB_FIX_ATTEMPTS;
   const autonomyMode = policy.autonomyMode || (requestedAutonomyMode === "auto" ? intake.autonomy_mode : requestedAutonomyMode);
-  const pushRequested = policy.push !== false && isAutoActionAllowed("push_branch", policy);
+  const pushRequested = policy.allowPush === true && policy.push === true && isAutoActionAllowed("push_branch", policy);
   const runTests = policy.runTests !== false && isAutoActionAllowed("run_tests", policy);
   const jobsRoot = jobRootForWorkspace(workspaceRoot);
 
@@ -807,6 +863,13 @@ export async function startWeaveflowCodexJob(options) {
     job_intake: intake,
     repo_resolution: repoResolution,
     job_policy: policy,
+    run_profile: usageLimitGuard.runProfile,
+    usage_limit_guard: usageLimitGuard,
+    usage_limit_guard_path: join(jobDir, "usage_limit_guard.json"),
+    usage_limit_checkpoint_path: join(jobDir, "usage_limit_checkpoint.md"),
+    usage_limit_events: [],
+    usage_limit_stop_reason: null,
+    repeated_failure: null,
     verification_plan: null,
     outcome_contract_path: join(jobDir, "outcome_contract.md"),
     outcome_contract_json_path: join(jobDir, "outcome_contract.json"),
@@ -856,8 +919,31 @@ export async function startWeaveflowCodexJob(options) {
     autonomy_mode: autonomyMode,
     resolved_autonomy_mode: null,
     time_budget_minutes: timeBudgetMinutes ?? null,
+    max_session_minutes: usageLimitGuard.maxSessionMinutes,
+    total_job_budget_minutes: usageLimitGuard.totalJobBudgetMinutes,
+    checkpoint_every_minutes: usageLimitGuard.checkpointEveryMinutes,
+    checkpoint_on_phase_change: usageLimitGuard.checkpointOnPhaseChange,
+    checkpoint_on_failure: usageLimitGuard.checkpointOnFailure,
+    checkpoint_on_limit_signal: usageLimitGuard.checkpointOnLimitSignal,
+    checkpoint_count: 0,
+    latest_checkpoint_path: null,
+    latest_checkpoint_json_path: null,
+    latest_checkpoint_reason: null,
+    latest_checkpoint_at: null,
+    resume_capsule_path: join(jobDir, "resume_capsule.md"),
+    resume_capsule_json_path: join(jobDir, "resume_capsule.json"),
+    recommended_next_action: null,
+    next_suggested_prompt_ready: false,
+    next_suggested_prompt_path: join(jobDir, "next_suggested_prompt.md"),
     max_runtime_minutes: maxRuntimeMinutes,
     max_fix_attempts: maxFixAttempts,
+    max_repeated_failures: usageLimitGuard.maxRepeatedFailures,
+    max_changed_files: usageLimitGuard.maxChangedFiles,
+    allow_large_refactor: usageLimitGuard.allowLargeRefactor,
+    allow_push: usageLimitGuard.allowPush,
+    usage_budget_level: usageLimitGuard.usageBudgetLevel,
+    quota_strategy: usageLimitGuard.quotaStrategy,
+    limit_recovery_mode: usageLimitGuard.limitRecoveryMode,
     push: pushRequested,
     run_tests: runTests,
     python_command: pythonCommand,
@@ -893,6 +979,7 @@ export async function startWeaveflowCodexJob(options) {
   };
 
   await writeRequiredJobPlaceholders(jobDir, userRequest, intake);
+  await writeUsageLimitGuardArtifacts(jobDir, state);
   await writeJobState(jobDir, state);
   await appendJobEvent(jobDir, "job_created", "Codex job state created.", {
     jobId,
@@ -901,10 +988,23 @@ export async function startWeaveflowCodexJob(options) {
     normalizedGoal: intake.normalized_goal,
     autonomyMode,
     timeBudgetMinutes: timeBudgetMinutes ?? null,
+    runProfile: usageLimitGuard.runProfile,
+    usageBudgetLevel: usageLimitGuard.usageBudgetLevel,
+    quotaStrategy: usageLimitGuard.quotaStrategy,
+    maxSessionMinutes: usageLimitGuard.maxSessionMinutes,
+    maxFixAttempts: usageLimitGuard.maxFixAttempts,
+    allowPush: usageLimitGuard.allowPush,
     riskLevel: policy.riskLevel,
     repoRoot,
     repoAlias: repoResolution.repoAlias
   }, state, now);
+  state = await createCheckpointArtifacts({
+    jobDir,
+    state,
+    reason: "job_started",
+    now,
+    currentSummary: "Codex job state created."
+  });
   state = await createAndRecordOutcomeContract({
     jobDir,
     state,
@@ -1067,6 +1167,16 @@ export async function runCodexJobWorker(jobDir) {
       sandboxMode: "workspace-write",
       deadlineMs
     });
+    let usageDecision = evaluateUsageLimitGuard({ state, codexResult: firstCodexResult });
+    if (usageDecision.shouldStop) {
+      await checkpointAndPauseForUsageLimit({
+        jobDir,
+        state,
+        decision: usageDecision,
+        currentSummary: firstCodexResult.lastMessage || "Codex usage limit signal detected before completion."
+      });
+      return;
+    }
     state = await updateJobState(jobDir, state, {
       codex_exit_code: firstCodexResult.code,
       codex_termination: firstCodexResult.termination
@@ -1091,6 +1201,17 @@ export async function runCodexJobWorker(jobDir) {
         sandboxMode: "danger-full-access",
         deadlineMs
       });
+      usageDecision = evaluateUsageLimitGuard({ state, codexResult: fallbackResult });
+      if (usageDecision.shouldStop) {
+        await checkpointAndPauseForUsageLimit({
+          jobDir,
+          state,
+          decision: usageDecision,
+          changedFiles,
+          currentSummary: fallbackResult.lastMessage || "Codex usage limit signal detected during sandbox fallback."
+        });
+        return;
+      }
       state = await updateJobState(jobDir, state, {
         codex_exit_code: fallbackResult.code,
         codex_termination: fallbackResult.termination,
@@ -1151,6 +1272,26 @@ export async function runCodexJobWorker(jobDir) {
         state = await updateJobState(jobDir, state, { tests });
 
         if (tests.passed) break;
+        const repeatedFailure = updateRepeatedFailureTracker(state.repeated_failure, tests);
+        if (repeatedFailure) {
+          state = await updateJobState(jobDir, state, { repeated_failure: repeatedFailure });
+        }
+        usageDecision = evaluateUsageLimitGuard({
+          state,
+          event: "before_fix_attempt",
+          repeatedFailure,
+          changedFiles
+        });
+        if (usageDecision.shouldStop) {
+          await checkpointAndPauseForUsageLimit({
+            jobDir,
+            state,
+            decision: usageDecision,
+            changedFiles,
+            currentSummary: renderJobTestOutput(tests)
+          });
+          return;
+        }
         if (attempt >= state.max_fix_attempts) break;
 
         state = await recordJobEvent(jobDir, state, "fix_attempt_started", "Checks failed. Running Codex fix attempt.", {
@@ -1174,6 +1315,17 @@ export async function runCodexJobWorker(jobDir) {
           sandboxMode: state.codex_sandbox_mode || "workspace-write",
           deadlineMs
         });
+        usageDecision = evaluateUsageLimitGuard({ state, codexResult: fixResult });
+        if (usageDecision.shouldStop) {
+          await checkpointAndPauseForUsageLimit({
+            jobDir,
+            state,
+            decision: usageDecision,
+            changedFiles,
+            currentSummary: fixResult.lastMessage || "Codex usage limit signal detected during fix attempt."
+          });
+          return;
+        }
         if (fixResult.code !== 0 || fixResult.termination !== "exit") {
           state = await recordJobEvent(jobDir, state, "fix_attempt_finished", "Codex fix attempt finished with an error.", {
             attempt: attempt + 1,
@@ -1208,6 +1360,17 @@ export async function runCodexJobWorker(jobDir) {
     });
 
     changedFiles = await currentChangedFiles(worktreeRoot, state.repo_root);
+    usageDecision = evaluateUsageLimitGuard({ state, changedFiles });
+    if (usageDecision.shouldStop) {
+      await checkpointAndPauseForUsageLimit({
+        jobDir,
+        state,
+        decision: usageDecision,
+        changedFiles,
+        currentSummary: "Usage Limit Guard paused before commit."
+      });
+      return;
+    }
     if (!changedFiles.length) {
       throw new Error("Codex did not leave any repository changes to commit.");
     }
@@ -1289,6 +1452,10 @@ export async function runCodexJobWorker(jobDir) {
     });
 
     if (state.push) {
+      const pushDecision = evaluateUsageLimitGuard({ state, event: "push_attempt" });
+      if (pushDecision.shouldSkip) {
+        state = await recordUsageLimitSkipEvent(jobDir, state, pushDecision);
+      } else {
       state = await recordJobEvent(jobDir, state, "push_started", "Git push stage started.", {}, {
         status: "pushing",
         current_step: "git_push"
@@ -1317,6 +1484,7 @@ export async function runCodexJobWorker(jobDir) {
           pushed: false
         });
       }
+      }
     }
 
     state = await recordJobEvent(jobDir, state, "job_completed", "Codex job completed.", {
@@ -1342,6 +1510,17 @@ export async function runCodexJobWorker(jobDir) {
       state = await markAdaptiveLoopStopped(jobDir, state, "job_failed");
     }
     const message = safeOneLine(error instanceof Error ? error.message : String(error));
+    const usageFailureDecision = evaluateUsageLimitGuard({ state, error: message });
+    if (usageFailureDecision.shouldStop && !JOB_TERMINAL_STATUSES.has(state.status)) {
+      await checkpointAndPauseForUsageLimit({
+        jobDir,
+        state,
+        decision: usageFailureDecision,
+        changedFiles: state.changed_files || [],
+        currentSummary: message
+      });
+      return;
+    }
     const status = message.includes("exceeded max runtime") ? "timeout" : "failed";
     const eventName = status === "timeout" ? "job_timeout" : "job_failed";
     state = await recordJobEvent(jobDir, state, eventName, "Codex job stopped.", {
@@ -1398,6 +1577,22 @@ export async function checkWeaveflowCodexJob(options) {
       timeline: [],
       goal: "",
       timeBudgetMinutes: null,
+      maxSessionMinutes: null,
+      totalJobBudgetMinutes: null,
+      checkpointEveryMinutes: null,
+      checkpointCount: 0,
+      latestCheckpointPath: null,
+      latestCheckpointReason: null,
+      resumeCapsulePath: null,
+      resumeCapsuleJsonPath: null,
+      recommendedNextAction: null,
+      nextSuggestedPromptReady: false,
+      runProfile: null,
+      usageBudgetLevel: null,
+      quotaStrategy: null,
+      usageLimitGuard: null,
+      usageLimitEvents: [],
+      usageLimitSummary: "",
       selectedScope: "",
       branch: "",
       changedFiles: [],
@@ -1443,6 +1638,34 @@ export async function checkWeaveflowCodexJob(options) {
     timeline: buildJobTimeline(state, allEvents),
     goal: await readOptionalFile(join(jobDir, "goal.md")),
     timeBudgetMinutes: state.time_budget_minutes,
+    maxSessionMinutes: state.max_session_minutes,
+    totalJobBudgetMinutes: state.total_job_budget_minutes || state.usage_limit_guard?.totalJobBudgetMinutes || state.job_policy?.totalJobBudgetMinutes || state.time_budget_minutes,
+    checkpointEveryMinutes: state.checkpoint_every_minutes || state.usage_limit_guard?.checkpointEveryMinutes || state.job_policy?.checkpointEveryMinutes || null,
+    checkpointCount: state.checkpoint_count || 0,
+    latestCheckpointPath: state.latest_checkpoint_path || null,
+    latestCheckpointJsonPath: state.latest_checkpoint_json_path || null,
+    latestCheckpointReason: state.latest_checkpoint_reason || null,
+    latestCheckpointAt: state.latest_checkpoint_at || null,
+    resumeCapsulePath: state.resume_capsule_path || null,
+    resumeCapsuleJsonPath: state.resume_capsule_json_path || null,
+    recommendedNextAction: state.recommended_next_action || null,
+    nextSuggestedPromptReady: state.next_suggested_prompt_ready === true,
+    nextSuggestedPromptPath: state.next_suggested_prompt_path || null,
+    runProfile: state.run_profile || state.job_policy?.runProfile || state.usage_limit_guard?.runProfile || null,
+    usageBudgetLevel: state.usage_budget_level || state.job_policy?.usageBudgetLevel || state.usage_limit_guard?.usageBudgetLevel || null,
+    quotaStrategy: state.quota_strategy || state.job_policy?.quotaStrategy || state.usage_limit_guard?.quotaStrategy || null,
+    limitRecoveryMode: state.limit_recovery_mode || state.job_policy?.limitRecoveryMode || state.usage_limit_guard?.limitRecoveryMode || null,
+    usageLimitGuard: state.usage_limit_guard || state.job_policy?.usageLimitGuard || null,
+    usageLimitEvents: state.usage_limit_events || [],
+    usageLimitStopReason: state.usage_limit_stop_reason || null,
+    usageLimitSummary: buildUsageLimitSummaryKorean(state),
+    repeatedFailure: state.repeated_failure || null,
+    fixAttemptsUsed: state.fix_attempts_used || 0,
+    maxFixAttempts: state.max_fix_attempts,
+    maxRepeatedFailures: state.max_repeated_failures,
+    maxChangedFiles: state.max_changed_files,
+    allowLargeRefactor: state.allow_large_refactor === true,
+    allowPush: state.allow_push === true,
     selectedScope: await readOptionalFile(join(jobDir, "selected_scope.md")),
     branch: state.branch,
     changedFiles: state.changed_files || [],
@@ -1521,7 +1744,7 @@ export async function recoverWeaveflowCodexJob(options) {
   const allowResume = options?.allowResume !== false;
   const pythonCommand = cleanOptionalString(options?.pythonCommand) || "python3";
   let state = await readOptionalJobState(jobDir);
-  const recovery = await buildCodexJobRecoveryContext({
+  let recovery = await buildCodexJobRecoveryContext({
     jobDir,
     repoRoot,
     state,
@@ -1533,6 +1756,8 @@ export async function recoverWeaveflowCodexJob(options) {
     processChecker: options?.recoveryProcessChecker,
     commandRunner: options?.commandRunner
   });
+  const resumeCapsule = await readResumeCapsule(jobDir, state);
+  recovery = enrichRecoveryWithResumeCapsule(recovery, resumeCapsule);
 
   await writeRecoveryPlanArtifacts(jobDir, recovery.plan);
 
@@ -1547,6 +1772,12 @@ export async function recoverWeaveflowCodexJob(options) {
       recovery,
       recoveryPlanPath: join(jobDir, "recovery_plan.md"),
       recoveryPlanJsonPath: join(jobDir, "recovery_plan.json"),
+      resumeCapsulePath: resumeCapsule?.resume_capsule_path || null,
+      resumeCapsuleJsonPath: resumeCapsule ? join(jobDir, "resume_capsule.json") : null,
+      resumeCapsule,
+      recommendedNextAction: resumeCapsule?.recommended_next_action || null,
+      nextSuggestedPromptReady: Boolean(resumeCapsule?.next_suggested_prompt),
+      nextSuggestedPrompt: resumeCapsule?.next_suggested_prompt || "",
       koreanSummary: formatCodexRecoveryDryRunKorean(recovery),
       mutated: ["recovery_plan.md", "recovery_plan.json"]
     };
@@ -1565,7 +1796,8 @@ export async function recoverWeaveflowCodexJob(options) {
   await writeWorktreeRecoveryArtifacts(jobDir, recovery.worktree);
   state = await recordJobEvent(jobDir, state, "recovery_apply_started", "Recovery apply started.", {
     requestedAction,
-    plannedAction: recovery.plan.recovery_action
+    plannedAction: recovery.plan.recovery_action,
+    resumeCapsulePath: resumeCapsule?.resume_capsule_path || null
   }, recoveryStateUpdates({
     recovery,
     status: "applying",
@@ -1605,6 +1837,12 @@ export async function recoverWeaveflowCodexJob(options) {
       recoveryResult: result,
       recoveryPlanPath: join(jobDir, "recovery_plan.md"),
       recoveryResultPath: join(jobDir, "recovery_result.md"),
+      resumeCapsulePath: resumeCapsule?.resume_capsule_path || null,
+      resumeCapsuleJsonPath: resumeCapsule ? join(jobDir, "resume_capsule.json") : null,
+      resumeCapsule,
+      recommendedNextAction: resumeCapsule?.recommended_next_action || null,
+      nextSuggestedPromptReady: Boolean(resumeCapsule?.next_suggested_prompt),
+      nextSuggestedPrompt: resumeCapsule?.next_suggested_prompt || "",
       koreanSummary: formatCodexRecoveryApplyKorean(result),
       status: nextState.status,
       worktree: nextState.worktree
@@ -1639,6 +1877,8 @@ export async function recoverWeaveflowCodexJob(options) {
       recovery,
       recoveryResult: failedResult,
       recoveryResultPath: join(jobDir, "recovery_result.md"),
+      resumeCapsulePath: resumeCapsule?.resume_capsule_path || null,
+      resumeCapsule,
       koreanSummary: failedResult.korean_summary,
       error: message
     };
@@ -1723,6 +1963,14 @@ export async function cancelWeaveflowCodexJob(options) {
     staleDetected: state.stale_detected === true,
     recoverable: state.recoverable,
     recoveryConfidence: state.recovery_confidence,
+    checkpointCount: state.checkpoint_count || 0,
+    latestCheckpointPath: state.latest_checkpoint_path,
+    latestCheckpointReason: state.latest_checkpoint_reason,
+    resumeCapsulePath: state.resume_capsule_path,
+    resumeCapsuleJsonPath: state.resume_capsule_json_path,
+    recommendedNextAction: state.recommended_next_action,
+    nextSuggestedPromptReady: state.next_suggested_prompt_ready === true,
+    nextSuggestedPromptPath: state.next_suggested_prompt_path,
     currentSessionStep: state.current_session_step,
     recentSessionResult: state.recent_session_result,
     adaptiveMode: state.adaptive_mode === true,
@@ -1745,6 +1993,8 @@ export function formatCodexJobStartSummary(summary) {
     report,
     `저장소: ${summary.repoRoot || summary.repoResolution?.repoRoot || "없음"}`,
     summary.jobPolicy?.korean_summary ? `정책:\n${summary.jobPolicy.korean_summary}` : "",
+    formatUsageLimitSummaryForJob(summary),
+    formatCheckpointSummaryForJob(summary),
     formatQualitySummaryForJob(summary),
     summary.sessionMode === "multi_step" ? summarizeSessionProgressKorean(sessionProgressFromSummary(summary)) : "",
     summary.sessionMode === "adaptive_loop" ? formatAdaptiveLoopSummaryKorean(adaptiveStateFromSummary(summary)) : "",
@@ -1767,6 +2017,8 @@ export function formatCodexJobStatusSummary(summary) {
     "선택된 작업 범위:",
     selected,
     summary.jobPolicy?.korean_summary ? `정책:\n${summary.jobPolicy.korean_summary}` : "",
+    formatUsageLimitSummaryForJob(summary),
+    formatCheckpointSummaryForJob(summary),
     summary.verificationPlan?.korean_summary ? `검증 계획:\n${summary.verificationPlan.korean_summary}` : "",
     formatQualitySummaryForJob(summary),
     formatRecoverySummaryForJob(summary),
@@ -1789,6 +2041,8 @@ export function formatCodexJobCancelSummary(summary) {
     `취소 처리: ${summary.cancelled ? "예" : "아니오"}`,
     `현재 상태: ${summary.status}`,
     `보존된 worktree: ${summary.preservedWorktree || "없음"}`,
+    formatUsageLimitSummaryForJob(summary),
+    formatCheckpointSummaryForJob(summary),
     formatQualitySummaryForJob(summary),
     formatRecoverySummaryForJob(summary),
     summary.sessionMode === "multi_step" ? summarizeSessionProgressKorean(sessionProgressFromSummary(summary)) : "",
@@ -1827,6 +2081,32 @@ function adaptiveStateFromSummary(summary = {}) {
     stop_reason: summary.stopReason || "",
     reflections: summary.recentReflection ? [summary.recentReflection] : []
   };
+}
+
+function formatUsageLimitSummaryForJob(summary = {}) {
+  if (!summary.usageLimitGuard && !summary.jobPolicy?.usageLimitGuard && !summary.jobPolicy?.runProfile && !summary.runProfile) {
+    return "";
+  }
+  return buildUsageLimitSummaryKorean({
+    ...summary,
+    usageLimitGuard: summary.usageLimitGuard || summary.jobPolicy?.usageLimitGuard || summary.jobPolicy
+  });
+}
+
+function formatCheckpointSummaryForJob(summary = {}) {
+  const count = Number(summary.checkpointCount || 0);
+  if (!count && !summary.latestCheckpointPath && !summary.resumeCapsulePath) {
+    return "";
+  }
+  return [
+    "Checkpoint / Resume",
+    `체크포인트: ${count}개`,
+    `최근 체크포인트: ${summary.latestCheckpointReason || "없음"}`,
+    `최근 체크포인트 경로: ${summary.latestCheckpointPath || "없음"}`,
+    `재개 캡슐: ${summary.resumeCapsulePath || "없음"}`,
+    `권장 다음 행동: ${summary.recommendedNextAction || "없음"}`,
+    `다음 Codex 프롬프트: ${summary.nextSuggestedPromptReady ? "준비됨" : "없음"}`
+  ].join("\n");
 }
 
 function formatQualitySummaryForJob(summary = {}) {
@@ -1881,10 +2161,76 @@ function formatRecoverySummaryForJob(summary = {}) {
 }
 
 export function formatCodexJobRecoverySummary(summary = {}) {
+  const capsuleSummary = formatResumeCapsuleRecoverySummary(summary);
   if (summary.dryRun) {
-    return summary.koreanSummary || formatCodexRecoveryDryRunKorean(summary.recovery || {});
+    return [summary.koreanSummary || formatCodexRecoveryDryRunKorean(summary.recovery || {}), capsuleSummary].filter(Boolean).join("\n");
   }
-  return summary.koreanSummary || formatCodexRecoveryApplyKorean(summary.recoveryResult || summary);
+  return [summary.koreanSummary || formatCodexRecoveryApplyKorean(summary.recoveryResult || summary), capsuleSummary].filter(Boolean).join("\n");
+}
+
+async function readResumeCapsule(jobDir, state = null) {
+  const capsulePath = state?.resume_capsule_json_path || join(jobDir, "resume_capsule.json");
+  const capsule = await readJsonSafe(capsulePath);
+  if (!capsule || typeof capsule !== "object" || !capsule.job_id) {
+    return null;
+  }
+  return {
+    ...capsule,
+    resume_capsule_path: capsule.resume_capsule_path || state?.resume_capsule_path || join(jobDir, "resume_capsule.md"),
+    resume_capsule_json_path: capsulePath
+  };
+}
+
+function enrichRecoveryWithResumeCapsule(recovery = {}, resumeCapsule = null) {
+  if (!resumeCapsule) {
+    return recovery;
+  }
+  const plan = {
+    ...(recovery.plan || {}),
+    resume_capsule_path: resumeCapsule.resume_capsule_path,
+    resume_capsule_json_path: resumeCapsule.resume_capsule_json_path,
+    recommended_next_action: resumeCapsule.recommended_next_action,
+    resume_prompt: resumeCapsule.next_suggested_prompt || recovery.plan?.resume_prompt || ""
+  };
+  const capsuleNote = [
+    "",
+    "## Resume Capsule",
+    "",
+    `- Path: ${resumeCapsule.resume_capsule_path}`,
+    `- Recommended next action: ${resumeCapsule.recommended_next_action || "unknown"}`,
+    `- Next suggested prompt: ${resumeCapsule.next_suggested_prompt ? "prepared" : "missing"}`,
+    ""
+  ].join("\n");
+  plan.korean_summary = [
+    plan.korean_summary || formatRecoveryPlanKorean(plan),
+    `재개 캡슐: ${resumeCapsule.resume_capsule_path}`,
+    `권장 다음 행동: ${resumeCapsule.recommended_next_action || "unknown"}`,
+    `다음 Codex 프롬프트: ${resumeCapsule.next_suggested_prompt ? "준비됨" : "없음"}`
+  ].filter(Boolean).join("\n");
+  plan.markdown = `${plan.markdown || formatRecoveryPlanMarkdown(plan)}${capsuleNote}`;
+  return {
+    ...recovery,
+    plan,
+    resumeCapsule,
+    resumeCapsulePath: resumeCapsule.resume_capsule_path,
+    resumeCapsuleJsonPath: resumeCapsule.resume_capsule_json_path
+  };
+}
+
+function formatResumeCapsuleRecoverySummary(summary = {}) {
+  const capsule = summary.resumeCapsule || summary.recovery?.resumeCapsule || null;
+  const path = summary.resumeCapsulePath || summary.recovery?.resumeCapsulePath || capsule?.resume_capsule_path;
+  if (!capsule && !path) {
+    return "";
+  }
+  const promptReady = Boolean(summary.nextSuggestedPromptReady || summary.nextSuggestedPrompt || capsule?.next_suggested_prompt);
+  return [
+    "재개 캡슐",
+    `사용한 캡슐: ${path || "없음"}`,
+    `권장 다음 행동: ${summary.recommendedNextAction || capsule?.recommended_next_action || "unknown"}`,
+    `다음 Codex 프롬프트: ${promptReady ? "준비됨" : "없음"}`,
+    capsule?.next_suggested_prompt ? `프롬프트:\n${capsule.next_suggested_prompt}` : ""
+  ].filter(Boolean).join("\n");
 }
 
 async function runBridgeProcess({ pythonCommand, projectRoot, workspaceRoot, requests, timeoutMs }) {
@@ -2473,6 +2819,12 @@ async function writeRequiredJobPlaceholders(jobDir, userRequest, intake = null) 
     "recovery_plan.json": "{}\n",
     "recovery_result.md": "# Recovery Result\n\n대기 중입니다.\n",
     "recovery_result.json": "{}\n",
+    "usage_limit_guard.md": "# Usage Limit Guard\n\n대기 중입니다.\n",
+    "usage_limit_guard.json": "{}\n",
+    "usage_limit_checkpoint.md": "# Usage Limit Checkpoint\n\n아직 checkpoint가 없습니다.\n",
+    "resume_capsule.md": "# Resume Capsule\n\n아직 resume capsule이 없습니다.\n",
+    "resume_capsule.json": "{}\n",
+    "next_suggested_prompt.md": "",
     "session_plan.md": "# Multi-step Work Session Plan\n\nsingle session mode 또는 계획 대기 중입니다.\n",
     "session_steps.json": "[]\n",
     "session_summary.md": "# Multi-step Work Session Summary\n\nsingle session mode 또는 결과 대기 중입니다.\n",
@@ -2548,11 +2900,205 @@ async function recordJobEvent(jobDir, state, event, message, fields = {}, update
     next,
     timestamp
   );
-  return next;
+  return await maybeCreateCheckpointForRecordedEvent({
+    jobDir,
+    state: next,
+    event,
+    message,
+    fields,
+    timestamp
+  });
 }
 
 async function writeJobFile(jobDir, name, content) {
   await writeFile(join(jobDir, name), String(content || ""), "utf8");
+}
+
+async function writeUsageLimitGuardArtifacts(jobDir, state) {
+  const guard = buildUsageLimitGuard(state.usage_limit_guard || state.job_policy || {});
+  await writeJobFile(jobDir, "usage_limit_guard.json", `${JSON.stringify(guard, null, 2)}\n`);
+  await writeJobFile(jobDir, "usage_limit_guard.md", [
+    "# Usage Limit Guard",
+    "",
+    buildUsageLimitSummaryKorean({
+      ...state,
+      usage_limit_guard: guard
+    }),
+    "",
+    "## Quota Assumption",
+    "",
+    "The runner does not assume direct access to remaining ChatGPT/Codex subscription quota. It estimates conservatively and pauses when Codex output/errors indicate a usage limit.",
+    ""
+  ].join("\n"));
+}
+
+async function maybeCreateCheckpointForRecordedEvent({ jobDir, state, event, message, fields = {}, timestamp }) {
+  const decision = shouldCreateCheckpoint({
+    state,
+    event,
+    now: timestamp,
+    currentSummary: message,
+    changedFiles: fields.changedFiles || fields.changed_files || state.changed_files,
+    tests: state.tests
+  });
+  if (!decision.shouldCreate) {
+    return state;
+  }
+  return await createCheckpointArtifacts({
+    jobDir,
+    state,
+    reason: decision.reason,
+    now: timestamp,
+    currentSummary: message,
+    changedFiles: fields.changedFiles || fields.changed_files || state.changed_files,
+    tests: state.tests
+  });
+}
+
+async function createCheckpointArtifacts({
+  jobDir,
+  state,
+  reason,
+  now = new Date().toISOString(),
+  currentSummary = "",
+  changedFiles = null,
+  tests = null,
+  latestFailureSignature = "",
+  recommendedNextAction = "",
+  nextSuggestedPrompt = ""
+}) {
+  const checkpointDir = join(jobDir, "checkpoints");
+  await mkdir(checkpointDir, { recursive: true });
+  const sequence = Number(state.checkpoint_count || 0) + 1;
+  const checkpointId = `checkpoint-${String(sequence).padStart(4, "0")}`;
+  const checkpointJsonPath = join(checkpointDir, `${checkpointId}.json`);
+  const checkpointMarkdownPath = join(checkpointDir, `${checkpointId}.md`);
+  const resumeCapsulePath = state.resume_capsule_path || join(jobDir, "resume_capsule.md");
+  const resumeCapsuleJsonPath = state.resume_capsule_json_path || join(jobDir, "resume_capsule.json");
+  const nextPromptPath = state.next_suggested_prompt_path || join(jobDir, "next_suggested_prompt.md");
+  const checkpointReason = normalizeCheckpointReason(reason) || "interval_elapsed";
+  const record = buildCheckpointRecord({
+    state,
+    reason: checkpointReason,
+    sequence,
+    checkpointCount: state.checkpoint_count || 0,
+    now,
+    currentSummary,
+    changedFiles,
+    checks: tests || state.tests,
+    latestFailureSignature,
+    recommendedNextAction,
+    nextSuggestedPrompt,
+    checkpointJsonPath,
+    checkpointMarkdownPath,
+    resumeCapsulePath,
+    resumeCapsuleJsonPath
+  });
+  const capsule = buildResumeCapsule({ checkpointRecord: record });
+
+  await writeJsonAtomic(checkpointJsonPath, record);
+  await writeJobFile(jobDir, join("checkpoints", `${checkpointId}.md`), formatCheckpointMarkdown(record));
+  await writeJsonAtomic(resumeCapsuleJsonPath, capsule);
+  await writeJobFile(jobDir, "resume_capsule.md", formatResumeCapsuleMarkdown(capsule));
+  await writeJobFile(jobDir, "next_suggested_prompt.md", `${capsule.next_suggested_prompt || ""}\n`);
+
+  const next = await updateJobState(jobDir, state, {
+    checkpoint_count: sequence,
+    latest_checkpoint_path: checkpointMarkdownPath,
+    latest_checkpoint_json_path: checkpointJsonPath,
+    latest_checkpoint_reason: checkpointReason,
+    latest_checkpoint_at: now,
+    resume_capsule_path: resumeCapsulePath,
+    resume_capsule_json_path: resumeCapsuleJsonPath,
+    recommended_next_action: capsule.recommended_next_action,
+    next_suggested_prompt_ready: Boolean(capsule.next_suggested_prompt),
+    next_suggested_prompt_path: nextPromptPath
+  });
+  await appendJobEvent(jobDir, "checkpoint_created", "Checkpoint and resume capsule written.", {
+    reason: checkpointReason,
+    checkpointPath: checkpointMarkdownPath,
+    resumeCapsulePath,
+    recommendedNextAction: capsule.recommended_next_action
+  }, next, now);
+  return next;
+}
+
+async function checkpointAndPauseForUsageLimit({ jobDir, state, decision, changedFiles = [], currentSummary = "" }) {
+  const reason = decision.reason || "limit_reached";
+  const event = decision.event || {
+    timestamp: new Date().toISOString(),
+    reason,
+    details: {}
+  };
+  const usageEvents = [...(Array.isArray(state.usage_limit_events) ? state.usage_limit_events : []), event];
+  const nextSuggestedPrompt = buildNextSuggestedPrompt({ state, reason });
+  const checkpointState = {
+    ...state,
+    stop_reason: reason,
+    usage_limit_stop_reason: reason,
+    usage_limit_events: usageEvents,
+    changed_files: changedFiles.length ? changedFiles : state.changed_files
+  };
+  await writeJobFile(jobDir, "usage_limit_checkpoint.md", [
+    buildUsageLimitCheckpointMarkdown({
+    state: checkpointState,
+    reason,
+    changedFiles: checkpointState.changed_files || [],
+    currentSummary,
+    nextSuggestedPrompt
+    }),
+    "",
+    "## Resume Capsule",
+    "",
+    `- Path: ${join(jobDir, "resume_capsule.md")}`,
+    "- The resume capsule contains the handoff prompt and machine-readable continuation state.",
+    ""
+  ].join("\n"));
+  await writeJobFile(jobDir, "next_suggested_prompt.md", `${nextSuggestedPrompt}\n`);
+  let next = await updateJobState(jobDir, state, {
+    status: decision.status || "needs_user_review",
+    current_step: "checkpoint_and_pause",
+    stop_reason: reason,
+    usage_limit_stop_reason: reason,
+    usage_limit_events: usageEvents,
+    changed_files: checkpointState.changed_files || [],
+    result_artifact_path: join(jobDir, "result.md"),
+    finished_at: new Date().toISOString()
+  });
+  next = await createCheckpointArtifacts({
+    jobDir,
+    state: next,
+    reason,
+    changedFiles: checkpointState.changed_files || [],
+    currentSummary,
+    nextSuggestedPrompt
+  });
+  await writeUsageLimitGuardArtifacts(jobDir, next);
+  await appendJobEvent(jobDir, "usage_limit_checkpoint", "Usage Limit Guard checkpointed and paused the job.", {
+    reason,
+    action: decision.action,
+    status: next.status
+  }, next);
+  await writeJobFile(jobDir, "result.md", renderCodexJobResultMarkdown(next, null));
+  return next;
+}
+
+async function recordUsageLimitSkipEvent(jobDir, state, decision) {
+  const event = decision.event || {
+    timestamp: new Date().toISOString(),
+    reason: decision.reason || "push_denied_by_policy",
+    details: {}
+  };
+  const next = await updateJobState(jobDir, state, {
+    usage_limit_events: [...(Array.isArray(state.usage_limit_events) ? state.usage_limit_events : []), event],
+    usage_limit_stop_reason: state.usage_limit_stop_reason || null
+  });
+  await writeUsageLimitGuardArtifacts(jobDir, next);
+  await appendJobEvent(jobDir, "usage_limit_guard_skip", "Usage Limit Guard skipped an unsafe or disallowed action.", {
+    reason: decision.reason,
+    action: decision.action
+  }, next);
+  return next;
 }
 
 async function appendJobEvent(jobDir, event, message, fields = {}, state = null, timestamp = new Date().toISOString()) {
@@ -2680,6 +3226,34 @@ function buildJobStartDetails(state) {
     currentStep: state.current_step,
     elapsedMs: normalizedElapsedMs(state),
     timeBudgetMinutes: state.time_budget_minutes,
+    maxSessionMinutes: state.max_session_minutes,
+    totalJobBudgetMinutes: state.total_job_budget_minutes || state.time_budget_minutes,
+    checkpointEveryMinutes: state.checkpoint_every_minutes,
+    checkpointCount: state.checkpoint_count || 0,
+    latestCheckpointPath: state.latest_checkpoint_path,
+    latestCheckpointJsonPath: state.latest_checkpoint_json_path,
+    latestCheckpointReason: state.latest_checkpoint_reason,
+    latestCheckpointAt: state.latest_checkpoint_at,
+    resumeCapsulePath: state.resume_capsule_path,
+    resumeCapsuleJsonPath: state.resume_capsule_json_path,
+    recommendedNextAction: state.recommended_next_action,
+    nextSuggestedPromptReady: state.next_suggested_prompt_ready === true,
+    nextSuggestedPromptPath: state.next_suggested_prompt_path,
+    runProfile: state.run_profile,
+    usageBudgetLevel: state.usage_budget_level,
+    quotaStrategy: state.quota_strategy,
+    limitRecoveryMode: state.limit_recovery_mode,
+    usageLimitGuard: state.usage_limit_guard,
+    usageLimitEvents: state.usage_limit_events || [],
+    usageLimitStopReason: state.usage_limit_stop_reason || null,
+    usageLimitSummary: buildUsageLimitSummaryKorean(state),
+    repeatedFailure: state.repeated_failure || null,
+    fixAttemptsUsed: state.fix_attempts_used || 0,
+    maxFixAttempts: state.max_fix_attempts,
+    maxRepeatedFailures: state.max_repeated_failures,
+    maxChangedFiles: state.max_changed_files,
+    allowLargeRefactor: state.allow_large_refactor === true,
+    allowPush: state.allow_push === true,
     normalizedGoal: state.normalized_goal,
     selectedScope: state.normalized_goal,
     repoRoot: state.repo_root,
@@ -3105,6 +3679,10 @@ async function runQualityGateWithFixes({ jobDir, state, planning = null, scan = 
       sandboxMode: state.codex_sandbox_mode || "workspace-write",
       deadlineMs
     });
+    const usageDecision = evaluateUsageLimitGuard({ state, codexResult: fixResult });
+    if (usageDecision.shouldStop) {
+      throw new Error(`Usage Limit Guard stopped: ${usageDecision.reason}`);
+    }
     state = await updateJobState(jobDir, state, {
       codex_exit_code: fixResult.code,
       codex_termination: fixResult.termination
@@ -4524,6 +5102,16 @@ async function runMultiStepCodexSession({ jobDir, state, scan, planning, verific
       sandboxMode: state.codex_sandbox_mode || "workspace-write",
       deadlineMs
     });
+    let usageDecision = evaluateUsageLimitGuard({ state, codexResult });
+    if (usageDecision.shouldStop) {
+      return await checkpointAndPauseForUsageLimit({
+        jobDir,
+        state,
+        decision: usageDecision,
+        changedFiles: await currentChangedFiles(worktreeRoot, state.repo_root),
+        currentSummary: codexResult.lastMessage || `Session step ${step.step_id} paused by Usage Limit Guard.`
+      });
+    }
     state = await updateJobState(jobDir, state, {
       codex_exit_code: codexResult.code,
       codex_termination: codexResult.termination
@@ -4565,8 +5153,32 @@ async function runMultiStepCodexSession({ jobDir, state, scan, planning, verific
           verificationPlan: stepVerificationPlan
         });
         await writeFile(join(stepDir, "test_output.log"), renderJobTestOutput(tests), "utf8");
+        state = await updateJobState(jobDir, state, {
+          tests,
+          changed_files: changedFiles,
+          fix_attempts_used: attempt
+        });
         if (tests.passed) {
           break;
+        }
+        const repeatedFailure = updateRepeatedFailureTracker(state.repeated_failure, tests);
+        if (repeatedFailure) {
+          state = await updateJobState(jobDir, state, { repeated_failure: repeatedFailure });
+        }
+        usageDecision = evaluateUsageLimitGuard({
+          state,
+          event: "before_fix_attempt",
+          repeatedFailure,
+          changedFiles
+        });
+        if (usageDecision.shouldStop) {
+          return await checkpointAndPauseForUsageLimit({
+            jobDir,
+            state,
+            decision: usageDecision,
+            changedFiles,
+            currentSummary: renderJobTestOutput(tests)
+          });
         }
         if (attempt >= state.max_fix_attempts) {
           break;
@@ -4587,6 +5199,16 @@ async function runMultiStepCodexSession({ jobDir, state, scan, planning, verific
           sandboxMode: state.codex_sandbox_mode || "workspace-write",
           deadlineMs
         });
+        usageDecision = evaluateUsageLimitGuard({ state, codexResult: fixResult });
+        if (usageDecision.shouldStop) {
+          return await checkpointAndPauseForUsageLimit({
+            jobDir,
+            state,
+            decision: usageDecision,
+            changedFiles,
+            currentSummary: fixResult.lastMessage || `Session step ${step.step_id} fix paused by Usage Limit Guard.`
+          });
+        }
         if (fixResult.code !== 0 || fixResult.termination !== "exit") {
           throw new Error(`Session step ${step.step_id} fix attempt ${attempt + 1} failed.`);
         }
@@ -4645,6 +5267,16 @@ async function runMultiStepCodexSession({ jobDir, state, scan, planning, verific
   }
   if (!changedFiles.length) {
     throw new Error("Session completed steps but left no repository changes to commit.");
+  }
+  let usageDecision = evaluateUsageLimitGuard({ state, changedFiles });
+  if (usageDecision.shouldStop) {
+    return await checkpointAndPauseForUsageLimit({
+      jobDir,
+      state,
+      decision: usageDecision,
+      changedFiles,
+      currentSummary: "Usage Limit Guard paused multi-step session before commit."
+    });
   }
 
   const diffResult = await runLoggedCommand({
@@ -4723,6 +5355,10 @@ async function runMultiStepCodexSession({ jobDir, state, scan, planning, verific
   });
 
   if (state.push) {
+    const pushDecision = evaluateUsageLimitGuard({ state, event: "push_attempt" });
+    if (pushDecision.shouldSkip) {
+      state = await recordUsageLimitSkipEvent(jobDir, state, pushDecision);
+    } else {
     state = await recordJobEvent(jobDir, state, "push_started", "Git push stage started.", {}, {
       status: "pushing",
       current_step: "git_push"
@@ -4750,6 +5386,7 @@ async function runMultiStepCodexSession({ jobDir, state, scan, planning, verific
         branch: state.branch,
         pushed: false
       });
+    }
     }
   }
 
@@ -4907,6 +5544,16 @@ async function runAdaptiveCodexLoop({ jobDir, state, scan, planning, verificatio
       sandboxMode: state.codex_sandbox_mode || "workspace-write",
       deadlineMs
     });
+    let usageDecision = evaluateUsageLimitGuard({ state, codexResult });
+    if (usageDecision.shouldStop) {
+      return await checkpointAndPauseForUsageLimit({
+        jobDir,
+        state,
+        decision: usageDecision,
+        changedFiles: await currentChangedFiles(worktreeRoot, state.repo_root),
+        currentSummary: codexResult.lastMessage || `Adaptive step ${step.step_id} paused by Usage Limit Guard.`
+      });
+    }
     state = await updateJobState(jobDir, state, {
       codex_exit_code: codexResult.code,
       codex_termination: codexResult.termination
@@ -4951,8 +5598,32 @@ async function runAdaptiveCodexLoop({ jobDir, state, scan, planning, verificatio
           verificationPlan: stepVerificationPlan
         });
         await writeFile(join(stepDir, "test_output.log"), renderJobTestOutput(tests), "utf8");
+        state = await updateJobState(jobDir, state, {
+          tests,
+          changed_files: changedFiles,
+          fix_attempts_used: attempt
+        });
         if (tests.passed) {
           break;
+        }
+        const repeatedFailure = updateRepeatedFailureTracker(state.repeated_failure, tests);
+        if (repeatedFailure) {
+          state = await updateJobState(jobDir, state, { repeated_failure: repeatedFailure });
+        }
+        usageDecision = evaluateUsageLimitGuard({
+          state,
+          event: "before_fix_attempt",
+          repeatedFailure,
+          changedFiles
+        });
+        if (usageDecision.shouldStop) {
+          return await checkpointAndPauseForUsageLimit({
+            jobDir,
+            state,
+            decision: usageDecision,
+            changedFiles,
+            currentSummary: renderJobTestOutput(tests)
+          });
         }
         if (attempt >= state.max_fix_attempts) {
           break;
@@ -4973,6 +5644,16 @@ async function runAdaptiveCodexLoop({ jobDir, state, scan, planning, verificatio
           sandboxMode: state.codex_sandbox_mode || "workspace-write",
           deadlineMs
         });
+        usageDecision = evaluateUsageLimitGuard({ state, codexResult: fixResult });
+        if (usageDecision.shouldStop) {
+          return await checkpointAndPauseForUsageLimit({
+            jobDir,
+            state,
+            decision: usageDecision,
+            changedFiles,
+            currentSummary: fixResult.lastMessage || `Adaptive step ${step.step_id} fix paused by Usage Limit Guard.`
+          });
+        }
         if (fixResult.code !== 0 || fixResult.termination !== "exit") {
           throw new Error(`Adaptive step ${step.step_id} fix attempt ${attempt + 1} failed.`);
         }
@@ -5053,6 +5734,16 @@ async function runAdaptiveCodexLoop({ jobDir, state, scan, planning, verificatio
   if (state.tests?.run && state.tests?.passed === false) {
     throw new Error("Checks failed after adaptive loop fix attempts.");
   }
+  let usageDecision = evaluateUsageLimitGuard({ state, changedFiles });
+  if (usageDecision.shouldStop) {
+    return await checkpointAndPauseForUsageLimit({
+      jobDir,
+      state,
+      decision: usageDecision,
+      changedFiles,
+      currentSummary: "Usage Limit Guard paused adaptive loop before commit."
+    });
+  }
 
   const diffResult = await runLoggedCommand({
     jobDir,
@@ -5127,6 +5818,10 @@ async function runAdaptiveCodexLoop({ jobDir, state, scan, planning, verificatio
   });
 
   if (state.push) {
+    const pushDecision = evaluateUsageLimitGuard({ state, event: "push_attempt" });
+    if (pushDecision.shouldSkip) {
+      state = await recordUsageLimitSkipEvent(jobDir, state, pushDecision);
+    } else {
     state = await recordJobEvent(jobDir, state, "push_started", "Git push stage started.", {}, {
       status: "pushing",
       current_step: "git_push"
@@ -5154,6 +5849,7 @@ async function runAdaptiveCodexLoop({ jobDir, state, scan, planning, verificatio
         branch: state.branch,
         pushed: false
       });
+    }
     }
   }
 
@@ -5486,6 +6182,17 @@ export function renderCodexJobResultMarkdown(state, planning) {
       next_action: state.next_action,
       stop_reason: state.stop_reason,
       goal_progress_summary: state.goal_progress_summary,
+      run_profile: state.run_profile,
+      usage_limit_guard: state.usage_limit_guard,
+      usage_limit_events: state.usage_limit_events,
+      usage_limit_stop_reason: state.usage_limit_stop_reason,
+      checkpoint_count: state.checkpoint_count,
+      latest_checkpoint_path: state.latest_checkpoint_path,
+      latest_checkpoint_reason: state.latest_checkpoint_reason,
+      resume_capsule_path: state.resume_capsule_path,
+      recommended_next_action: state.recommended_next_action,
+      next_suggested_prompt_ready: state.next_suggested_prompt_ready,
+      repeated_failure: state.repeated_failure,
       recovery_status: state.recovery_status,
       recovery_action: state.recovery_action,
       stale_detected: state.stale_detected,
@@ -5515,6 +6222,19 @@ export function renderCodexJobResultMarkdown(state, planning) {
     `- Fix attempts used: ${state.quality_fix_attempts_used || 0}`,
     `- Commit/push proceeded because accepted: ${state.quality_gate_decision === "accept" ? "yes" : "no"}`,
     `- Path: ${state.quality_gate_path || "없음"}`,
+    "",
+    "## Usage Limit Guard",
+    buildUsageLimitSummaryKorean(state),
+    `- Checkpoint: ${state.usage_limit_checkpoint_path || (state.job_dir ? join(state.job_dir, "usage_limit_checkpoint.md") : "없음")}`,
+    "",
+    "## Checkpoint / Resume",
+    `- Checkpoint count: ${state.checkpoint_count || 0}`,
+    `- Latest checkpoint: ${state.latest_checkpoint_path || "없음"}`,
+    `- Latest checkpoint reason: ${state.latest_checkpoint_reason || "없음"}`,
+    `- Resume capsule: ${state.resume_capsule_path || "없음"}`,
+    `- Resume capsule JSON: ${state.resume_capsule_json_path || "없음"}`,
+    `- Recommended next action: ${state.recommended_next_action || "없음"}`,
+    `- Next suggested prompt: ${state.next_suggested_prompt_ready ? "prepared" : "missing"}`,
     "",
     "## Recovery",
     `- Status: ${state.recovery_status || "none"}`,
@@ -5578,6 +6298,10 @@ export function renderCodexJobResultMarkdown(state, planning) {
     `- Change review: ${state.change_review_path || "없음"}`,
     `- Quality gate: ${state.quality_gate_path || "없음"}`,
     `- Quality decision: ${state.quality_gate_decision_path || "없음"}`,
+    `- Usage limit guard: ${state.usage_limit_guard_path || (state.job_dir ? join(state.job_dir, "usage_limit_guard.json") : "없음")}`,
+    `- Usage limit checkpoint: ${state.usage_limit_checkpoint_path || (state.job_dir ? join(state.job_dir, "usage_limit_checkpoint.md") : "없음")}`,
+    `- Resume capsule: ${state.resume_capsule_path || (state.job_dir ? join(state.job_dir, "resume_capsule.md") : "없음")}`,
+    `- Latest checkpoint: ${state.latest_checkpoint_path || "없음"}`,
     `- Recovery diagnostics: ${state.recovery_diagnostics_path || "없음"}`,
     `- Worktree recovery: ${state.worktree_recovery_path || "없음"}`,
     `- Recovery plan: ${state.recovery_plan_path || "없음"}`,

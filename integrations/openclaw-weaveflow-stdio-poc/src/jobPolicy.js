@@ -1,5 +1,7 @@
-const DEFAULT_TIME_BUDGET_MINUTES = 30;
-const DEFAULT_MAX_FIX_ATTEMPTS = 3;
+import { DEFAULT_RUN_PROFILE, RUN_PROFILE_DEFAULTS, resolveRunProfile } from "./runProfile.js";
+
+const DEFAULT_TIME_BUDGET_MINUTES = RUN_PROFILE_DEFAULTS[DEFAULT_RUN_PROFILE].totalJobBudgetMinutes;
+const DEFAULT_MAX_FIX_ATTEMPTS = RUN_PROFILE_DEFAULTS[DEFAULT_RUN_PROFILE].maxFixAttempts;
 const DEFAULT_RUNTIME_BUFFER_MINUTES = 15;
 
 const RISK_LEVELS = new Set(["low", "medium", "high"]);
@@ -18,7 +20,9 @@ const ALWAYS_BLOCKED_ACTIONS = [
   "auto_merge",
   "production_deploy",
   "change_secrets",
-  "destructive_delete"
+  "destructive_delete",
+  "destructive_db_migration",
+  "uncontrolled_push"
 ];
 
 const HUMAN_REVIEW_BLOCKED_ACTIONS = [
@@ -107,13 +111,28 @@ export function resolveJobPolicy(input = {}) {
   const riskLevel = explicitRisk || classifyRequestRisk(userRequest);
   const requiresHumanReview = riskLevel === "high";
   const allowedActions = resolveAllowedActions({ ...defaults, riskLevel, requiresHumanReview });
-  const blockedActions = resolveBlockedActions({ riskLevel, requiresHumanReview });
+  const blockedActions = resolveBlockedActions({ ...defaults, riskLevel, requiresHumanReview });
   const policy = {
     push: defaults.push,
+    allowPush: defaults.allowPush,
     runTests: defaults.runTests,
     maxFixAttempts: defaults.maxFixAttempts,
+    maxRepeatedFailures: defaults.maxRepeatedFailures,
+    maxChangedFiles: defaults.maxChangedFiles,
+    allowLargeRefactor: defaults.allowLargeRefactor,
     maxRuntimeMinutes: defaults.maxRuntimeMinutes,
     timeBudgetMinutes: defaults.timeBudgetMinutes,
+    maxSessionMinutes: defaults.maxSessionMinutes,
+    totalJobBudgetMinutes: defaults.totalJobBudgetMinutes,
+    checkpointEveryMinutes: defaults.checkpointEveryMinutes,
+    checkpointOnPhaseChange: defaults.checkpointOnPhaseChange,
+    checkpointOnFailure: defaults.checkpointOnFailure,
+    checkpointOnLimitSignal: defaults.checkpointOnLimitSignal,
+    runProfile: defaults.runProfile,
+    usageBudgetLevel: defaults.usageBudgetLevel,
+    quotaStrategy: defaults.quotaStrategy,
+    limitRecoveryMode: defaults.limitRecoveryMode,
+    usageLimitGuard: defaults.usageLimitGuard,
     autonomyMode: defaults.autonomyMode,
     riskLevel,
     allowedActions,
@@ -145,33 +164,77 @@ export function classifyRequestRisk(userRequest) {
   return "medium";
 }
 
-export function resolveTimeBudget(userRequest, explicitTimeBudget) {
+export function resolveTimeBudget(userRequest, explicitTimeBudget, fallback = DEFAULT_TIME_BUDGET_MINUTES) {
   const explicit = toPositiveInteger(explicitTimeBudget);
   if (explicit !== null) {
     return explicit;
   }
 
   const inferred = extractTimeBudget(cleanString(userRequest));
-  return inferred || DEFAULT_TIME_BUDGET_MINUTES;
+  return inferred || fallback;
 }
 
 export function resolveExecutionDefaults(input = {}) {
   const userRequest = cleanString(input.userRequest || input.user_request || "");
+  const runProfileInput = { ...input };
+  delete runProfileInput.timeBudgetMinutes;
+  delete runProfileInput.time_budget_minutes;
+  const runProfile = resolveRunProfile(runProfileInput);
+  const explicitTimeBudgetMinutes = input.timeBudgetMinutes ?? input.time_budget_minutes;
+  const explicitTotalJobBudgetMinutes = input.totalJobBudgetMinutes ?? input.total_job_budget_minutes ?? explicitTimeBudgetMinutes;
+  const explicitMaxSessionMinutes = input.maxSessionMinutes ?? input.max_session_minutes;
   const timeBudgetMinutes = resolveTimeBudget(
     userRequest,
-    input.timeBudgetMinutes ?? input.time_budget_minutes
+    explicitTotalJobBudgetMinutes,
+    runProfile.totalJobBudgetMinutes
   );
+  const maxSessionMinutes = toPositiveInteger(explicitMaxSessionMinutes) || runProfile.maxSessionMinutes;
   const runtimeOverride = toPositiveInteger(input.maxRuntimeMinutes ?? input.max_runtime_minutes);
+  const allowPush = runProfile.allowPush === true;
+  const pushRequested = allowPush && input.push !== false;
   const autonomyMode = resolveAutonomyMode({
     userRequest,
     explicitAutonomyMode: input.autonomyMode || input.autonomy_mode,
-    timeBudgetWasExplicit: toPositiveInteger(input.timeBudgetMinutes ?? input.time_budget_minutes) !== null
+    timeBudgetWasExplicit: toPositiveInteger(explicitTimeBudgetMinutes) !== null
   });
 
   return {
-    push: input.push ?? true,
+    push: pushRequested,
+    allowPush,
     runTests: input.runTests ?? input.run_tests ?? true,
-    maxFixAttempts: toPositiveInteger(input.maxFixAttempts ?? input.max_fix_attempts) || DEFAULT_MAX_FIX_ATTEMPTS,
+    maxFixAttempts: runProfile.maxFixAttempts,
+    maxRepeatedFailures: runProfile.maxRepeatedFailures,
+    maxChangedFiles: runProfile.maxChangedFiles,
+    allowLargeRefactor: runProfile.allowLargeRefactor,
+    runProfile: runProfile.runProfile,
+    usageBudgetLevel: runProfile.usageBudgetLevel,
+    quotaStrategy: runProfile.quotaStrategy,
+    limitRecoveryMode: runProfile.limitRecoveryMode,
+    maxSessionMinutes,
+    totalJobBudgetMinutes: timeBudgetMinutes,
+    checkpointEveryMinutes: runProfile.checkpointEveryMinutes,
+    checkpointOnPhaseChange: runProfile.checkpointOnPhaseChange,
+    checkpointOnFailure: runProfile.checkpointOnFailure,
+    checkpointOnLimitSignal: runProfile.checkpointOnLimitSignal,
+    usageLimitGuard: {
+      runProfile: runProfile.runProfile,
+      usageBudgetLevel: runProfile.usageBudgetLevel,
+      quotaStrategy: runProfile.quotaStrategy,
+      limitRecoveryMode: runProfile.limitRecoveryMode,
+      maxSessionMinutes,
+      totalJobBudgetMinutes: timeBudgetMinutes,
+      checkpointEveryMinutes: runProfile.checkpointEveryMinutes,
+      checkpointOnPhaseChange: runProfile.checkpointOnPhaseChange,
+      checkpointOnFailure: runProfile.checkpointOnFailure,
+      checkpointOnLimitSignal: runProfile.checkpointOnLimitSignal,
+      maxFixAttempts: runProfile.maxFixAttempts,
+      maxRepeatedFailures: runProfile.maxRepeatedFailures,
+      maxChangedFiles: runProfile.maxChangedFiles,
+      allowLargeRefactor: runProfile.allowLargeRefactor,
+      allowPush,
+      quotaReadable: false,
+      quotaSource: "codex_process_output_only"
+    },
     timeBudgetMinutes,
     maxRuntimeMinutes: runtimeOverride || timeBudgetMinutes + DEFAULT_RUNTIME_BUFFER_MINUTES,
     autonomyMode
@@ -199,6 +262,12 @@ export function summarizeJobPolicyKorean(policy) {
   const timeBudgetMinutes = toPositiveInteger(policy?.timeBudgetMinutes) || DEFAULT_TIME_BUDGET_MINUTES;
   const maxRuntimeMinutes = toPositiveInteger(policy?.maxRuntimeMinutes) || timeBudgetMinutes + DEFAULT_RUNTIME_BUFFER_MINUTES;
   const maxFixAttempts = toPositiveInteger(policy?.maxFixAttempts) || DEFAULT_MAX_FIX_ATTEMPTS;
+  const runProfile = cleanString(policy?.runProfile) || DEFAULT_RUN_PROFILE;
+  const usageBudgetLevel = cleanString(policy?.usageBudgetLevel) || RUN_PROFILE_DEFAULTS[DEFAULT_RUN_PROFILE].usageBudgetLevel;
+  const quotaStrategy = cleanString(policy?.quotaStrategy) || RUN_PROFILE_DEFAULTS[DEFAULT_RUN_PROFILE].quotaStrategy;
+  const maxSessionMinutes = toPositiveInteger(policy?.maxSessionMinutes) || timeBudgetMinutes;
+  const totalJobBudgetMinutes = toPositiveInteger(policy?.totalJobBudgetMinutes) || timeBudgetMinutes;
+  const checkpointEveryMinutes = toPositiveInteger(policy?.checkpointEveryMinutes) || RUN_PROFILE_DEFAULTS[DEFAULT_RUN_PROFILE].checkpointEveryMinutes;
   const requiresHumanReview = Boolean(policy?.requiresHumanReview);
   const allowedActions = normalizeActionList(policy?.allowedActions || []);
   const blockedActions = normalizeActionList(policy?.blockedActions || []);
@@ -207,10 +276,16 @@ export function summarizeJobPolicyKorean(policy) {
     "Codex 작업 정책",
     `위험도: ${koreanRiskLabel(riskLevel)}`,
     `자율 모드: ${koreanAutonomyLabel(autonomyMode)}`,
+    `프로필: ${runProfile}`,
     `시간 예산: ${timeBudgetMinutes}분`,
+    `전체 작업 예산: ${totalJobBudgetMinutes}분`,
+    `단일 세션 한도: ${maxSessionMinutes}분`,
+    `체크포인트 주기: ${checkpointEveryMinutes}분`,
+    `usage budget: ${usageBudgetLevel}`,
+    `quota 전략: ${quotaStrategy}`,
     `최대 실행 시간: ${maxRuntimeMinutes}분`,
     `테스트 실행: ${policy?.runTests === false ? "아니오" : "예"}`,
-    `푸시 허용: ${policy?.push === false ? "아니오" : "예"}`,
+    `푸시 허용: ${policy?.allowPush === true && policy?.push !== false ? "예" : "아니오"}`,
     `최대 수정 시도: ${maxFixAttempts}회`,
     `사람 검토 필요: ${requiresHumanReview ? "예" : "아니오"}`,
     `자동 허용 작업: ${allowedActions.length ? allowedActions.join(", ") : "없음"}`,
@@ -234,8 +309,11 @@ function resolveAllowedActions({ push, runTests, riskLevel, requiresHumanReview 
   return [...actions];
 }
 
-function resolveBlockedActions({ riskLevel, requiresHumanReview }) {
+function resolveBlockedActions({ push, riskLevel, requiresHumanReview }) {
   const actions = new Set(ALWAYS_BLOCKED_ACTIONS);
+  if (!push) {
+    actions.add("push_branch");
+  }
   if (riskLevel === "high" || requiresHumanReview) {
     for (const action of HUMAN_REVIEW_BLOCKED_ACTIONS) {
       actions.add(action);

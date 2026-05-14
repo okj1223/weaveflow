@@ -1,5 +1,16 @@
 # OpenClaw Stdio Bridge POC Plan
 
+## Historical Note
+
+This document began as the narrow stdio bridge POC plan. Later commits expanded
+the same integration directory into a personal OpenClaw + Codex job runner
+automation experiment. Treat the early "no Codex auto-execution" language below
+as a historical stdio POC scope constraint, not as a global current-project
+rule.
+
+The current direction is documented in
+[personal_automation_direction.md](personal_automation_direction.md).
+
 ## Current Branch And Freeze Point
 
 - Current branch: `poc/openclaw-stdio-bridge`
@@ -243,7 +254,9 @@ a concrete gap in the stdio bridge contract.
 - A long-lived bridge service is out of scope for the first POC.
 - Workspace root selection is a product decision and should not be guessed.
 
-## Explicit Non-Goals
+## Historical Explicit Non-Goals
+
+For the first stdio bridge POC only, the scope excluded:
 
 - no new Weaveflow adapter abstractions
 - no new confirmation systems
@@ -252,7 +265,7 @@ a concrete gap in the stdio bridge contract.
 - no auth/RBAC
 - no persistent sessions
 - no process supervision
-- no Codex auto-execution
+- no Codex auto-execution in the first stdio smoke POC
 - no file attachment
 - no verification
 - no report generation
@@ -276,8 +289,8 @@ Stop the next POC implementation when:
 - stderr is captured separately.
 - The Weaveflow workspace created for the POC is temporary or explicitly
   configured.
-- No Codex auto-run, auth/RBAC, persistent sessions, or process supervisor has
-  been added.
+- For this first stdio POC, no Codex auto-run, auth/RBAC, persistent sessions,
+  or process supervisor has been added.
 - Any missing OpenClaw API detail is documented instead of guessed.
 
 ## POC Implementation Result
@@ -358,3 +371,20 @@ Remaining unknowns:
 - The POC is one-shot; it starts and stops the bridge for one fixed sequence.
 - No long-lived process, persistent sessions, auth/RBAC, or process supervisor
   has been added.
+
+## Current Personal Automation Tool Surface
+
+The current branch has moved beyond the original one-tool stdio smoke POC. The
+plugin surface now includes:
+
+- `weaveflow_stdio_poc`
+- `weaveflow_codex_auto_run`
+- `weaveflow_start_codex_job`
+- `weaveflow_check_codex_job`
+- `weaveflow_cancel_codex_job`
+- `weaveflow_recover_codex_job`
+
+This expanded layer is for personal time-saving automation: start long-running
+Codex jobs from OpenClaw/Discord, check progress while away, cancel unwanted
+work, recover failed or partial work, and produce Korean summaries with local
+job artifacts under `.weaveflow/jobs/`.

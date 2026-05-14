@@ -1,3 +1,5 @@
+import { resolveRunProfile } from "./runProfile.js";
+
 const TIME_BUDGET_FALLBACK = null;
 
 const KOREAN_BRANCH_TERMS = [
@@ -46,20 +48,38 @@ const SPECIFIC_HINTS = [
 ];
 
 export function normalizeJobRequest(input) {
-  const original = cleanRequest(input);
+  const source = normalizeJobRequestInput(input);
+  const original = cleanRequest(source.userRequest);
+  const runProfile = resolveRunProfile(source);
   const timeBudgetMinutes = extractTimeBudget(original);
   const autonomyMode = classifyAutonomyMode(original, timeBudgetMinutes);
   const inferredIntent = inferIntent(original);
   const riskLevel = inferRiskLevel({ userRequest: original, autonomyMode, inferredIntent });
   const branchSlug = suggestBranchSlug(original);
   const normalizedGoal = normalizeGoal(original, inferredIntent);
-  const summary = buildJobGoalSummary(original);
+  const summary = buildJobGoalSummary(original, runProfile);
 
   return {
     original_request: original,
     normalized_goal: normalizedGoal,
     autonomy_mode: autonomyMode,
     time_budget_minutes: timeBudgetMinutes,
+    run_profile: runProfile.runProfile,
+    usage_budget_level: runProfile.usageBudgetLevel,
+    quota_strategy: runProfile.quotaStrategy,
+    limit_recovery_mode: runProfile.limitRecoveryMode,
+    max_session_minutes: runProfile.maxSessionMinutes,
+    total_job_budget_minutes: runProfile.totalJobBudgetMinutes,
+    checkpoint_every_minutes: runProfile.checkpointEveryMinutes,
+    checkpoint_on_phase_change: runProfile.checkpointOnPhaseChange,
+    checkpoint_on_failure: runProfile.checkpointOnFailure,
+    checkpoint_on_limit_signal: runProfile.checkpointOnLimitSignal,
+    max_fix_attempts: runProfile.maxFixAttempts,
+    max_repeated_failures: runProfile.maxRepeatedFailures,
+    max_changed_files: runProfile.maxChangedFiles,
+    allow_large_refactor: runProfile.allowLargeRefactor,
+    allow_push: runProfile.allowPush,
+    usage_limit_guard: runProfile,
     inferred_intent: inferredIntent,
     risk_level: riskLevel,
     branch_slug: branchSlug,
@@ -95,8 +115,9 @@ export function extractTimeBudget(userRequest) {
   return total > 0 ? Math.round(total) : null;
 }
 
-export function buildJobGoalSummary(userRequest) {
+export function buildJobGoalSummary(userRequest, runProfileInput = null) {
   const request = cleanRequest(userRequest);
+  const runProfile = runProfileInput ? resolveRunProfile(runProfileInput) : null;
   const timeBudgetMinutes = extractTimeBudget(request);
   const autonomyMode = classifyAutonomyMode(request, timeBudgetMinutes);
   const inferredIntent = inferIntent(request);
@@ -108,9 +129,15 @@ export function buildJobGoalSummary(userRequest) {
     `요청: ${request}`,
     `분류: ${modeText}`,
     `추론한 의도: ${koreanIntentLabel(inferredIntent)}`,
+    runProfile ? `프로필: ${runProfile.runProfile}` : "",
+    runProfile ? `단일 세션 한도: ${runProfile.maxSessionMinutes}분` : "",
+    runProfile ? `전체 작업 예산: ${runProfile.totalJobBudgetMinutes}분` : "",
+    runProfile ? `체크포인트 주기: ${runProfile.checkpointEveryMinutes}분` : "",
+    runProfile ? `usage budget: ${runProfile.usageBudgetLevel}` : "",
+    runProfile ? `quota 전략: ${runProfile.quotaStrategy}` : "",
     `시간 예산: ${timeText}`,
     `위험도: ${koreanRiskLabel(riskLevel)}`
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 export function suggestBranchSlug(userRequest) {
@@ -162,6 +189,16 @@ function isSpecificRequest(userRequest) {
 
 function cleanRequest(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function normalizeJobRequestInput(input) {
+  if (input && typeof input === "object" && !Array.isArray(input)) {
+    return {
+      ...input,
+      userRequest: input.userRequest || input.user_request || input.request || input.prompt || ""
+    };
+  }
+  return { userRequest: input };
 }
 
 function includesAny(value, needles) {

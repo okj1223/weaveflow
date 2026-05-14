@@ -97,6 +97,7 @@ function buildJobReport(job, config, options) {
     limit: positiveInteger(options.recentEventLimit) || (mode === "detailed" ? 8 : DEFAULT_EVENT_LIMIT)
   });
   const changedFiles = formatChangedFiles(normalized.changedFiles, mode);
+  const checkpointResume = formatCheckpointResume(normalized);
 
   const lines = [
     config.title,
@@ -114,6 +115,7 @@ function buildJobReport(job, config, options) {
     `커밋 해시: ${formatValue(normalized.commitHash)}`,
     `푸시 여부: ${formatBoolean(normalized.pushed)}`,
     `결과 artifact 경로: ${formatValue(normalized.resultArtifactPath)}`,
+    checkpointResume,
     timeline === "없음" ? "최근 이벤트: 없음" : `최근 이벤트:\n${timeline}`,
     `실패 원인: ${formatValue(normalized.failureReason)}`,
     `다음 행동: ${formatValue(nextAction)}`
@@ -131,6 +133,8 @@ function normalizeJob(job) {
     currentStep: readFirst(source, "currentStep", "current_step"),
     elapsedMs: readFirst(source, "elapsedMs", "elapsed_ms"),
     timeBudgetMinutes: readFirst(source, "timeBudgetMinutes", "time_budget_minutes"),
+    totalJobBudgetMinutes: readFirst(source, "totalJobBudgetMinutes", "total_job_budget_minutes"),
+    maxSessionMinutes: readFirst(source, "maxSessionMinutes", "max_session_minutes"),
     selectedScope: readFirst(source, "selectedScope", "selected_scope", "selectedScopeMarkdown"),
     branch: readFirst(source, "branch"),
     changedFiles: normalizeChangedFiles(readFirst(source, "changedFiles", "changed_files")),
@@ -138,9 +142,33 @@ function normalizeJob(job) {
     commitHash: readFirst(source, "commitHash", "commit_hash"),
     pushed: readFirst(source, "pushed"),
     resultArtifactPath: readFirst(source, "resultArtifactPath", "result_artifact_path"),
+    checkpointCount: readFirst(source, "checkpointCount", "checkpoint_count"),
+    latestCheckpointPath: readFirst(source, "latestCheckpointPath", "latest_checkpoint_path"),
+    latestCheckpointReason: readFirst(source, "latestCheckpointReason", "latest_checkpoint_reason"),
+    resumeCapsulePath: readFirst(source, "resumeCapsulePath", "resume_capsule_path"),
+    recommendedNextAction: readFirst(source, "recommendedNextAction", "recommended_next_action"),
+    nextSuggestedPromptReady: readFirst(source, "nextSuggestedPromptReady", "next_suggested_prompt_ready"),
     recentEvents: readFirst(source, "recentEvents", "recent_events", "events"),
     failureReason: readFirst(source, "failureReason", "failure_reason", "error", "errorMessage", "error_message")
   };
+}
+
+function formatCheckpointResume(job) {
+  const count = Number(job.checkpointCount || 0);
+  if (!count && !job.resumeCapsulePath && !job.latestCheckpointPath) {
+    return "";
+  }
+  return [
+    "체크포인트 / 재개",
+    `체크포인트: ${count}개`,
+    `최근 체크포인트: ${formatValue(job.latestCheckpointReason)}`,
+    `최근 체크포인트 경로: ${formatValue(job.latestCheckpointPath)}`,
+    `재개 캡슐: ${formatValue(job.resumeCapsulePath)}`,
+    `권장 다음 행동: ${formatValue(job.recommendedNextAction)}`,
+    `다음 Codex 프롬프트: ${job.nextSuggestedPromptReady ? "준비됨" : "없음"}`,
+    job.maxSessionMinutes ? `단일 세션 한도: ${job.maxSessionMinutes}분` : "",
+    job.totalJobBudgetMinutes ? `전체 작업 예산: ${job.totalJobBudgetMinutes}분` : ""
+  ].filter(Boolean).join("\n");
 }
 
 function inferStatusNextAction(job) {

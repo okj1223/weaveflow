@@ -85,7 +85,7 @@ export default definePluginEntry({
       {
         name: CODEX_AUTO_TOOL_NAME,
         label: "Weaveflow Codex Auto Run",
-        description: "Create a Weaveflow task, run Codex in an isolated git worktree, test, commit, push, and attach the result.",
+        description: "Create a Weaveflow task, run Codex in an isolated git worktree, test, commit, optionally push, and attach the result.",
         parameters: {
           type: "object",
           additionalProperties: false,
@@ -109,7 +109,7 @@ export default definePluginEntry({
             },
             push: {
               type: "boolean",
-              description: "Push the created branch when a remote exists. Defaults to true."
+              description: "Push the created branch when a remote exists. Defaults to false."
             },
             runTests: {
               type: "boolean",
@@ -133,7 +133,7 @@ export default definePluginEntry({
               repoRoot: readOptionalString(params, "repoRoot"),
               userRequest,
               branchName: readOptionalString(params, "branchName"),
-              push: readOptionalBoolean(params, "push", true),
+              push: readOptionalBoolean(params, "push", false),
               runTests: readOptionalBoolean(params, "runTests", true),
               pythonCommand: readOptionalString(params, "pythonCommand")
             });
@@ -174,7 +174,56 @@ export default definePluginEntry({
             },
             timeBudgetMinutes: {
               type: "number",
-              description: "Planning time budget in minutes."
+              description: "Total job budget in minutes across checkpointed sessions. Legacy alias for totalJobBudgetMinutes."
+            },
+            totalJobBudgetMinutes: {
+              type: "number",
+              description: "Total job budget in minutes across checkpoint/recovery sessions."
+            },
+            runProfile: {
+              type: "string",
+              enum: ["quick", "focused", "company", "overnight"],
+              description: "Run profile for Usage Limit Guard. Defaults to focused."
+            },
+            profile: {
+              type: "string",
+              enum: ["quick", "focused", "company", "overnight"],
+              description: "Alias for runProfile."
+            },
+            usageBudgetLevel: {
+              type: "string",
+              enum: ["low", "medium", "high"],
+              description: "Conservative estimated usage budget level. Does not read actual subscription quota."
+            },
+            quotaStrategy: {
+              type: "string",
+              enum: ["conserve", "balanced", "aggressive"],
+              description: "How aggressively to spend Codex usage within checkpoints."
+            },
+            limitRecoveryMode: {
+              type: "string",
+              enum: ["checkpoint_and_pause", "stop", "retry_later_manual"],
+              description: "How to stop when usage limit signals or guard limits are reached."
+            },
+            maxSessionMinutes: {
+              type: "number",
+              description: "Maximum single Codex session length before checkpoint-and-pause."
+            },
+            checkpointEveryMinutes: {
+              type: "number",
+              description: "Recommended checkpoint interval in minutes."
+            },
+            checkpointOnPhaseChange: {
+              type: "boolean",
+              description: "Create checkpoints when the job phase changes. Defaults to the selected profile."
+            },
+            checkpointOnFailure: {
+              type: "boolean",
+              description: "Create checkpoints when checks or fix attempts fail. Defaults to the selected profile."
+            },
+            checkpointOnLimitSignal: {
+              type: "boolean",
+              description: "Create checkpoints when usage-limit signals are detected. Defaults to the selected profile."
             },
             autonomyMode: {
               type: "string",
@@ -201,7 +250,15 @@ export default definePluginEntry({
             },
             push: {
               type: "boolean",
-              description: "Push the task branch when a remote exists. Defaults to true."
+              description: "Request branch push. Ignored unless allowPush is explicitly true. Defaults to false."
+            },
+            allowPush: {
+              type: "boolean",
+              description: "Permit automatic push for this job. Defaults to false."
+            },
+            allowLargeRefactor: {
+              type: "boolean",
+              description: "Allow changes beyond the maxChangedFiles guard. Defaults to false."
             },
             runTests: {
               type: "boolean",
@@ -209,7 +266,15 @@ export default definePluginEntry({
             },
             maxFixAttempts: {
               type: "number",
-              description: "Maximum Codex test-fix attempts. Defaults to 3."
+              description: "Maximum Codex test-fix attempts. Defaults to the selected run profile."
+            },
+            maxRepeatedFailures: {
+              type: "number",
+              description: "Maximum repeated equivalent failures before checkpoint-and-pause."
+            },
+            maxChangedFiles: {
+              type: "number",
+              description: "Maximum changed files before user review unless allowLargeRefactor is true."
             },
             maxRuntimeMinutes: {
               type: "number",
@@ -232,14 +297,29 @@ export default definePluginEntry({
               repoRoot: readOptionalString(params, "repoRoot"),
               userRequest,
               timeBudgetMinutes: readOptionalNumber(params, "timeBudgetMinutes"),
+              runProfile: readOptionalString(params, "runProfile"),
+              profile: readOptionalString(params, "profile"),
+              usageBudgetLevel: readOptionalString(params, "usageBudgetLevel"),
+              quotaStrategy: readOptionalString(params, "quotaStrategy"),
+              limitRecoveryMode: readOptionalString(params, "limitRecoveryMode"),
+              maxSessionMinutes: readOptionalNumber(params, "maxSessionMinutes"),
+              totalJobBudgetMinutes: readOptionalNumber(params, "totalJobBudgetMinutes"),
+              checkpointEveryMinutes: readOptionalNumber(params, "checkpointEveryMinutes"),
+              checkpointOnPhaseChange: readOptionalBoolean(params, "checkpointOnPhaseChange", undefined),
+              checkpointOnFailure: readOptionalBoolean(params, "checkpointOnFailure", undefined),
+              checkpointOnLimitSignal: readOptionalBoolean(params, "checkpointOnLimitSignal", undefined),
               autonomyMode: readOptionalString(params, "autonomyMode") || "auto",
               sessionMode: readOptionalString(params, "sessionMode") || "single",
               adaptiveMode: readOptionalBoolean(params, "adaptiveMode", false),
               maxSteps: readOptionalNumber(params, "maxSteps"),
               stepReviewMode: readOptionalString(params, "stepReviewMode") || "heuristic",
-              push: readOptionalBoolean(params, "push", true),
+              push: readOptionalBoolean(params, "push", false),
+              allowPush: readOptionalBoolean(params, "allowPush", false),
+              allowLargeRefactor: readOptionalBoolean(params, "allowLargeRefactor", false),
               runTests: readOptionalBoolean(params, "runTests", true),
               maxFixAttempts: readOptionalNumber(params, "maxFixAttempts"),
+              maxRepeatedFailures: readOptionalNumber(params, "maxRepeatedFailures"),
+              maxChangedFiles: readOptionalNumber(params, "maxChangedFiles"),
               maxRuntimeMinutes: readOptionalNumber(params, "maxRuntimeMinutes"),
               pythonCommand: readOptionalString(params, "pythonCommand")
             });

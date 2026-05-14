@@ -6,12 +6,11 @@ This document defines the recommended adapter-facing pipeline for external
 interfaces such as OpenClaw, Slack, Telegram, desktop UI, web UI, or automation
 scripts.
 
-This is not OpenClaw integration. This is not a server API. This is not a
-network protocol. This is a local Python integration contract. External
-integrations should consume this pipeline instead of directly editing
-`.weaveflow` files.
+This local Python pipeline contract is not itself the OpenClaw plugin or Codex
+job runner. It is not a server API or network protocol. External integrations
+should consume this pipeline instead of directly editing `.weaveflow` files.
 
-For the future OpenClaw-specific adapter design, see
+For the OpenClaw-facing core adapter design, see
 [openclaw_adapter_design.md](openclaw_adapter_design.md).
 For factual research on the real OpenClaw runtime, see
 [openclaw_runtime_research.md](openclaw_runtime_research.md).
@@ -324,15 +323,15 @@ print(message)
 | CLI JSON | Integration cannot import the Python package and read-only status/list/doctor output is enough. |
 | `service.py` directly | Building internal tools, needing maximum control, and able to handle `WeaveflowError` correctly. |
 
-## Non-Goals
+## Pipeline Non-Goals
 
-- no OpenClaw integration yet
+- no OpenClaw plugin implementation inside this Python pipeline contract
 - no server API
 - no persistent session store
 - no authentication policy
 - no authorization roles
 - no background worker
-- no auto-running Codex
+- no Codex job runner execution inside this pipeline contract
 - no external API calls
 
 ## Future Work

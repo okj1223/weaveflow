@@ -20,9 +20,33 @@ human-readable, file-based task record:
 
 The first MVP must be a Python CLI named `weaveflow`.
 
-## Non-Goals
+## Current Development Direction
 
-Do not implement these yet:
+The original MVP goal is the core kernel: a local-first, file-based Python CLI
+that records tasks under `.weaveflow/tasks/`.
+
+Current development also includes a personal AI work factory layer built around
+OpenClaw and the Codex job runner. Weaveflow is not the end goal by itself; the
+goal is to save the user's time aggressively while the user is at work, doing
+something else, or sleeping. This layer is meant to help the user start
+long-running Codex work, check progress, cancel unwanted work, recover failed
+or partial work, and read Korean status/report summaries while away from the
+machine.
+
+Do not treat `no Codex auto-execution` as a global current-project rule. Treat
+it as a core MVP constraint unless a document explicitly says otherwise.
+
+Prioritize practical reliability, auditability, cost/time efficiency, and
+recovery. Do not add high-risk automation such as production deploys, secret
+changes, destructive DB migrations, or uncontrolled push as default behavior.
+Prefer changes that improve time saved, token/cost efficiency, trustworthy
+unattended progress, readable audit trails, Korean reports, failure recovery,
+and start/check/cancel/recover UX.
+
+## Core MVP Non-Goals
+
+For the core Python CLI MVP, do not implement these unless the current task
+explicitly targets the personal automation layer:
 
 - OpenClaw integration
 - OpenAI API calls

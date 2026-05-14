@@ -1,12 +1,25 @@
 # OpenClaw Adapter Design
 
+## Historical Note
+
+This document primarily describes the local Python adapter skeleton and the
+core MVP-facing OpenClaw message boundary. It predates the current personal
+OpenClaw + Codex job runner automation layer. Read "future OpenClaw" and "no
+Codex auto-execution" here as skeleton/core-adapter scope statements unless a
+section explicitly discusses the job runner.
+
+The current personal automation direction is documented in
+[personal_automation_direction.md](personal_automation_direction.md).
+
 ## Purpose
 
-This document defines the future OpenClaw adapter design before implementation.
+This document defines the OpenClaw-facing adapter design for the local Python
+core boundary.
 
 This is not OpenClaw integration. This does not import OpenClaw. This does not
-call OpenClaw APIs. This does not create a bot or server. This is a design
-contract for a future integration.
+call OpenClaw APIs. This does not create a bot or server. It is a design
+contract for the core adapter boundary, not a denial that the repository now
+also contains a separate OpenClaw plugin/job-runner experiment.
 
 This design is still based on the local placeholder skeleton until validated
 against real runtime APIs. See
@@ -201,8 +214,8 @@ Sensitive mutating, explicit confirmation required:
 - `verify_task`
 - `create_final_report`
 
-Future high-risk operations should require stronger policy before
-implementation:
+High-risk operations require stronger policy before they are exposed through
+the core adapter boundary:
 
 - auto-running Codex
 - applying memory diffs
@@ -212,9 +225,13 @@ implementation:
 - deployment
 - external API actions
 
-The future OpenClaw adapter must not execute mutating actions without
+The core OpenClaw adapter must not execute mutating task actions without
 confirmation. It must not auto-verify tasks. It must not auto-apply memory
 proposals. It must preserve user control.
+
+The current Codex job runner is a separate personal automation layer. It can
+start long-running Codex work, but it still needs explicit policy around risk,
+scope, checks, commit/push behavior, recovery, and reporting.
 
 The current permission policy module is advisory only. A future OpenClaw
 adapter can use it as an enforcement layer to distinguish read-only actions,
@@ -435,14 +452,14 @@ Future implementation tests should cover:
 - session key prevents cross-user confirmation leakage
 - no direct `.weaveflow` mutation outside service adapter
 
-## Non-Goals
+## Core Adapter Non-Goals
 
 - no OpenClaw integration yet
 - no server
 - no webhook listener
 - no auth implementation
 - no persistent session store
-- no Codex auto-execution
+- no Codex auto-execution in the core MVP adapter boundary
 - no external APIs
 - no deployment
 - no UI components

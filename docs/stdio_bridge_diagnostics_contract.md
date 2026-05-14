@@ -5,15 +5,15 @@
 This document defines the diagnostics contract for future stderr output from
 the Weaveflow stdio bridge and external wrappers.
 
-stdout remains the protocol channel. stderr is diagnostics-only. This is not
-real OpenClaw integration. This is not a server logging system.
+stdout remains the protocol channel. stderr is diagnostics-only. This contract
+is for the bridge diagnostics boundary; it is not the OpenClaw plugin or Codex
+job runner itself, and it is not a server logging system.
 
 In short: stdout is protocol-only, stderr is diagnostics-only.
 
-## Non-Goals
+## Diagnostics Contract Non-Goals
 
-- no OpenClaw integration
-- no real OpenClaw plugin
+- no OpenClaw plugin implementation inside this diagnostics contract
 - no server
 - no network
 - no webhook listener
@@ -23,7 +23,7 @@ In short: stdout is protocol-only, stderr is diagnostics-only.
 - no authentication runtime
 - no authorization runtime
 - no external APIs
-- no auto-running Codex
+- no Codex job runner execution inside this diagnostics contract
 - no production stderr logging implementation in this phase
 
 ## stdout/stderr Boundary

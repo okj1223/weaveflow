@@ -72,6 +72,29 @@ test("running status report includes detailed timeline and next action", () => {
   assert.match(text, /다음 행동: 완료될 때까지 잠시 후 상태를 다시 확인하세요\./);
 });
 
+test("status report includes checkpoint and resume capsule fields", () => {
+  const text = formatJobStatusKorean({
+    ...baseJob,
+    checkpointCount: 3,
+    latestCheckpointReason: "usage_limit_detected",
+    latestCheckpointPath: ".weaveflow/jobs/JOB-0001/checkpoints/checkpoint-0003.md",
+    resumeCapsulePath: ".weaveflow/jobs/JOB-0001/resume_capsule.md",
+    recommendedNextAction: "recover",
+    nextSuggestedPromptReady: true,
+    maxSessionMinutes: 45,
+    totalJobBudgetMinutes: 240
+  });
+
+  assert.match(text, /체크포인트: 3개/);
+  assert.match(text, /최근 체크포인트: usage_limit_detected/);
+  assert.match(text, /재개 캡슐: \.weaveflow\/jobs\/JOB-0001\/resume_capsule\.md/);
+  assert.match(text, /권장 다음 행동: recover/);
+  assert.match(text, /다음 Codex 프롬프트: 준비됨/);
+  assert.match(text, /단일 세션 한도: 45분/);
+  assert.match(text, /전체 작업 예산: 240분/);
+});
+
+
 test("completed report includes commit, push, tests, and artifact", () => {
   const text = formatJobCompletedKorean({
     ...baseJob,

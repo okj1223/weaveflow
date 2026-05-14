@@ -290,7 +290,24 @@ test("Codex job start creates file-based state without starting worker when requ
   assert.equal(jobState.job_policy.runTests, true);
   assert.equal(jobState.job_policy.maxFixAttempts, 2);
   assert.equal(jobState.job_policy.timeBudgetMinutes, 30);
+  assert.equal(jobState.job_policy.maxSessionMinutes, 60);
+  assert.equal(jobState.job_policy.totalJobBudgetMinutes, 30);
+  assert.equal(jobState.job_policy.checkpointEveryMinutes, 20);
+  assert.equal(jobState.job_policy.allowPush, false);
+  assert.equal(jobState.run_profile, "focused");
+  assert.equal(jobState.usage_limit_guard.runProfile, "focused");
+  assert.equal(jobState.usage_limit_guard.maxFixAttempts, 2);
+  assert.equal(jobState.usage_limit_guard.maxRepeatedFailures, 2);
+  assert.equal(jobState.usage_limit_guard.totalJobBudgetMinutes, 30);
+  assert.equal(jobState.usage_limit_guard.checkpointEveryMinutes, 20);
+  assert.equal(jobState.usage_limit_guard.allowPush, false);
   assert.equal(jobState.time_budget_minutes, 30);
+  assert.equal(jobState.max_session_minutes, 60);
+  assert.equal(jobState.total_job_budget_minutes, 30);
+  assert.equal(jobState.checkpoint_count, 1);
+  assert.equal(jobState.latest_checkpoint_reason, "job_started");
+  assert.equal(jobState.resume_capsule_path, join(start.jobDir, "resume_capsule.md"));
+  assert.equal(jobState.next_suggested_prompt_ready, true);
   assert.equal(jobState.max_fix_attempts, 2);
   assert.equal(jobState.elapsed_ms >= 0, true);
   assert.equal(jobState.last_event, "outcome_contract_created");
@@ -298,6 +315,9 @@ test("Codex job start creates file-based state without starting worker when requ
   assert.equal(jobState.outcome_contract_path, join(start.jobDir, "outcome_contract.md"));
   assert.equal(jobState.quality_review_status, "pending");
   assert.match(await readFile(join(start.jobDir, "outcome_contract.md"), "utf8"), /Outcome Contract/);
+  assert.match(await readFile(join(start.jobDir, "usage_limit_guard.md"), "utf8"), /Usage Limit Guard/);
+  assert.match(await readFile(join(start.jobDir, "resume_capsule.md"), "utf8"), /Resume Capsule/);
+  assert.match(await readFile(join(start.jobDir, "checkpoints", "checkpoint-0001.md"), "utf8"), /Next Suggested Prompt/);
   assert.equal(JSON.parse(await readFile(join(start.jobDir, "outcome_contract.json"), "utf8")).contract_id.length > 0, true);
 
   const rawEvents = (await readFile(join(start.jobDir, "events.jsonl"), "utf8"))
@@ -316,12 +336,23 @@ test("Codex job start creates file-based state without starting worker when requ
   });
   assert.equal(status.status, "queued");
   assert.equal(status.jobPolicy.riskLevel, "low");
+  assert.equal(status.runProfile, "focused");
+  assert.equal(status.checkpointCount, 1);
+  assert.equal(status.latestCheckpointReason, "job_started");
+  assert.equal(status.resumeCapsulePath, join(start.jobDir, "resume_capsule.md"));
+  assert.equal(status.nextSuggestedPromptReady, true);
+  assert.match(status.usageLimitSummary, /프로필: focused/);
   assert.equal(status.repoResolution.repoAlias, "weaveflow");
   assert.equal(status.elapsedMs >= 0, true);
   assert.deepEqual(Object.keys(status.stageDurations), ["planning", "codex", "tests", "fixes", "commit", "push"]);
   assert.match(formatCodexJobStartSummary(start), /Weaveflow Codex 작업 시작/);
   assert.match(formatCodexJobStatusSummary(status), /Weaveflow Codex 작업 상태/);
   assert.match(formatCodexJobStatusSummary(status), /Codex 작업 정책/);
+  assert.match(formatCodexJobStatusSummary(status), /Usage Limit Guard/);
+  assert.match(formatCodexJobStatusSummary(status), /Checkpoint \/ Resume/);
+  assert.match(formatCodexJobStatusSummary(status), /체크포인트: 1개/);
+  assert.match(formatCodexJobStatusSummary(status), /재개 캡슐:/);
+  assert.match(formatCodexJobStatusSummary(status), /push: 허용 안 됨/);
   assert.match(formatCodexJobStatusSummary(status), /품질 검토/);
   assert.match(formatCodexJobStatusSummary(status), /총 경과 시간:/);
   assert.match(formatCodexJobStatusSummary(status), /최근 이벤트:/);
@@ -339,6 +370,8 @@ test("Codex job start creates file-based state without starting worker when requ
   const cancelledState = JSON.parse(await readFile(join(start.jobDir, "job.yaml"), "utf8"));
   assert.equal(cancelledState.status, "cancelled");
   assert.equal(cancelledState.last_event, "job_cancelled");
+  assert.equal(cancelledState.latest_checkpoint_reason, "user_cancelled");
+  assert.equal(cancelledState.checkpoint_count >= 2, true);
   assert.equal(cancelledState.elapsed_ms >= 0, true);
   assert.equal(cancelledState.stage_timestamps.job_cancelled.length > 0, true);
 });
@@ -419,6 +452,30 @@ test("Codex job recovery dry-run returns plan without mutating job state", async
     }
   });
   const before = await readFile(join(jobDir, "job.yaml"), "utf8");
+  await writeFile(join(jobDir, "resume_capsule.md"), "# Resume Capsule\n\n준비됨\n", "utf8");
+  await writeFile(join(jobDir, "resume_capsule.json"), JSON.stringify({
+    job_id: "JOB-0092",
+    run_profile: "company",
+    current_phase: "codex_exec",
+    stop_reason: "usage_limit_detected",
+    current_objective: "Recover fake Codex job.",
+    completed_work_summary: "일부 작업이 진행됨",
+    changed_files: ["README.md"],
+    checks_run: true,
+    checks_passed: false,
+    checks_failed: ["npm test"],
+    latest_failure_signature: "npm test:same failure",
+    repeated_failure_count: 1,
+    fix_attempts_used: 1,
+    remaining_budget_summary: { elapsed_minutes: 40, max_session_minutes: 45, total_job_budget_minutes: 240 },
+    risks_unsafe_actions_skipped: [],
+    latest_checkpoint_path: join(jobDir, "checkpoints", "checkpoint-0001.md"),
+    checkpoint_count: 1,
+    latest_checkpoint_reason: "usage_limit_detected",
+    resume_capsule_path: join(jobDir, "resume_capsule.md"),
+    recommended_next_action: "recover",
+    next_suggested_prompt: "Continue Weaveflow Codex job JOB-0092 from the resume capsule."
+  }, null, 2), "utf8");
   const runner = createRecoveryGitRunner();
 
   const result = await recoverWeaveflowCodexJob({
@@ -434,8 +491,14 @@ test("Codex job recovery dry-run returns plan without mutating job state", async
   assert.equal(result.dryRun, true);
   assert.equal(result.applied, false);
   assert.equal(result.action, "mark_failed");
+  assert.equal(result.resumeCapsulePath, join(jobDir, "resume_capsule.md"));
+  assert.equal(result.recommendedNextAction, "recover");
+  assert.equal(result.nextSuggestedPromptReady, true);
   assert.match(formatCodexJobRecoverySummary(result), /dry-run/);
+  assert.match(formatCodexJobRecoverySummary(result), /재개 캡슐/);
+  assert.match(formatCodexJobRecoverySummary(result), /Continue Weaveflow Codex job JOB-0092/);
   assert.match(await readFile(join(jobDir, "recovery_plan.md"), "utf8"), /Recovery Plan/);
+  assert.match(await readFile(join(jobDir, "recovery_plan.md"), "utf8"), /Resume Capsule/);
   assert.equal(await readFile(join(jobDir, "job.yaml"), "utf8"), before);
   assert.equal(runner.calls.some((call) => call.args.includes("worktree")), true);
 });

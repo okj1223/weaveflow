@@ -2,24 +2,62 @@
 
 ## Purpose
 
-This is a minimal native OpenClaw plugin proof of concept. It registers one
-optional tool, `weaveflow_stdio_poc`, and proves that OpenClaw-side JavaScript
-can call the existing Weaveflow Python stdio bridge.
+This integration started as a minimal native OpenClaw plugin proof of concept.
+It proved that OpenClaw-side JavaScript can call the existing Weaveflow Python
+stdio bridge through the optional `weaveflow_stdio_poc` tool.
 
-This POC lives under `integrations/openclaw-weaveflow-stdio-poc/` so it stays
-separate from the frozen Weaveflow adapter architecture.
+The current branch also uses this integration as an OpenClaw + Codex job runner
+personal AI work factory experiment. Its current purpose is to save the user's
+time by making long-running Codex work startable, checkable, cancellable, and
+recoverable from OpenClaw/Discord while preserving local job artifacts and
+Korean summaries.
 
-## Non-Goals
+This integration lives under `integrations/openclaw-weaveflow-stdio-poc/` so it
+stays separate from the core Weaveflow CLI kernel.
 
-- no production OpenClaw integration
+## Current Tool Surface
+
+The current plugin surface includes:
+
+- `weaveflow_stdio_poc`
+- `weaveflow_codex_auto_run`
+- `weaveflow_start_codex_job`
+- `weaveflow_check_codex_job`
+- `weaveflow_cancel_codex_job`
+- `weaveflow_recover_codex_job`
+
+The personal automation goals are:
+
+- start long-running Codex jobs from OpenClaw/Discord
+- check progress while the user is away
+- cancel unsafe or unwanted jobs
+- recover failed/partial work
+- produce Korean summaries/reports
+- improve usage/time efficiency over time
+- support overnight/company mode for unattended progress
+- surface only the human-review parts that matter after a long run
+
+## Scope Boundaries
+
+Historical stdio POC constraints:
+
 - no channel plugin
 - no new Weaveflow adapter layer
 - no auth/RBAC
 - no persistent sessions
 - no process supervision
-- no Codex auto-execution
 - no verification, report, attachment, or memory flow
 - no external APIs
+
+Current personal automation constraints:
+
+- not an external SaaS product
+- not a multi-tenant security boundary
+- not a polished public marketplace package
+- no production deploys by default
+- no secret changes by default
+- no destructive DB migrations by default
+- no uncontrolled push behavior by default
 
 ## How The Tool Works
 
@@ -29,9 +67,10 @@ The plugin follows the native OpenClaw plugin shape:
 - `package.json` exposes `openclaw.extensions`.
 - `src/index.js` uses `definePluginEntry` from
   `openclaw/plugin-sdk/plugin-entry`.
-- The plugin registers exactly one optional tool: `weaveflow_stdio_poc`.
+- The plugin registers optional tools for the stdio smoke POC and the current
+  Codex job runner experiment.
 
-When the tool runs, it spawns:
+When `weaveflow_stdio_poc` runs, it spawns:
 
 ```bash
 python3 -m weaveflow.adapters.stdio_bridge --root <workspaceRoot>
@@ -48,6 +87,117 @@ Then it sends this fixed line-delimited JSON sequence:
 
 The helper parses stdout as Weaveflow bridge JSON and captures stderr
 separately.
+
+The Codex job runner tools create job artifacts under `.weaveflow/jobs/`, use
+isolated git worktrees, plan verification commands, run checks when requested,
+record result artifacts, and render Korean status summaries for OpenClaw or
+Discord.
+
+## Run Profiles And Usage Limit Guard v0
+
+`weaveflow_start_codex_job` now accepts a run profile for personal long-running
+work:
+
+| Profile | quotaStrategy | maxSessionMinutes | totalJobBudgetMinutes | checkpointEveryMinutes | Purpose |
+| --- | --- | ---: | ---: | ---: | --- |
+| `quick` | `conserve` | 20 | 20 | 10 | Fast, low-usage work with minimal retrying. |
+| `focused` | `balanced` | 60 | 90 | 20 | Default profile for normal development work. |
+| `company` | `balanced` | 45 | 240 | 15 | Frequent-checkpoint work while the user is away for a few hours. |
+| `overnight` | `conserve` | 45 | 480 | 20 | Checkpoint-based overnight progress without one long single session. |
+
+`maxSessionMinutes` is the limit for one Codex session. `totalJobBudgetMinutes`
+is the overall job budget across multiple sessions, checkpoints, and recovery
+handoffs. For `company` and `overnight`, the 45 minute value is intentionally a
+single-session ceiling, not the whole job duration.
+
+The Usage Limit Guard does not assume that the runner can read remaining
+ChatGPT/Codex subscription quota from an API. It estimates conservatively from
+the selected profile and watches Codex process output/error text for usage-limit
+signals such as quota, rate-limit, or try-again-later messages.
+
+The guard tracks:
+
+- `usageBudgetLevel`: `low`, `medium`, or `high`
+- `quotaStrategy`: `conserve`, `balanced`, or `aggressive`
+- `limitRecoveryMode`: `checkpoint_and_pause`, `stop`, or `retry_later_manual`
+- `maxSessionMinutes`
+- `totalJobBudgetMinutes`
+- `checkpointEveryMinutes`
+- `checkpointOnPhaseChange`
+- `checkpointOnFailure`
+- `checkpointOnLimitSignal`
+- `maxFixAttempts`
+- `maxRepeatedFailures`
+- `maxChangedFiles`
+- `allowLargeRefactor`
+- `allowPush`
+
+When a limit or guard threshold is reached, the job records `stop_reason` such
+as `limit_reached`, `max_session_minutes_reached`,
+`max_fix_attempts_reached`, `repeated_failure_detected`, or
+`push_denied_by_policy`. For `limit_reached`, the default recovery mode is
+`checkpoint_and_pause`: preserve the current summary, changed files, and a next
+suggested prompt in `.weaveflow/jobs/JOB-*/usage_limit_checkpoint.md`.
+
+## Checkpoint Scheduler And Resume Capsule v0
+
+The job runner also writes checkpoint and handoff artifacts so a later Codex
+worker can continue without starting from zero:
+
+- `.weaveflow/jobs/JOB-*/checkpoints/checkpoint-0001.json`
+- `.weaveflow/jobs/JOB-*/checkpoints/checkpoint-0001.md`
+- `.weaveflow/jobs/JOB-*/resume_capsule.json`
+- `.weaveflow/jobs/JOB-*/resume_capsule.md`
+- `.weaveflow/jobs/JOB-*/next_suggested_prompt.md`
+
+Checkpoint reasons include `job_started`, `phase_changed`,
+`interval_elapsed`, `check_failed`, `fix_attempt_failed`,
+`repeated_failure_detected`, `max_fix_attempts_reached`,
+`usage_limit_detected`, `max_session_minutes_reached`,
+`max_changed_files_reached`, `user_cancelled`, `job_completed`,
+`recovery_started`, and `recovery_completed`.
+
+The Resume Capsule records:
+
+- job id, run profile, current phase, and stop reason
+- current objective and completed work summary
+- changed files
+- checks run and checks passed/failed
+- latest failure signature and repeated failure count
+- fix attempts used
+- remaining single-session and total-job budget
+- unsafe actions skipped
+- recommended next action: `continue`, `recover`, `inspect_manually`, or `stop`
+- exact next suggested prompt for Codex
+
+`usage_limit_checkpoint.md` remains for backward compatibility and points at the
+Resume Capsule. In `limit_reached` / `usage_limit_detected` situations, the next
+suggested prompt is always preserved in the resume capsule and
+`next_suggested_prompt.md`.
+
+`weaveflow_check_codex_job` includes a Korean Usage Limit Guard summary:
+
+- profile
+- elapsed session time / max session time
+- fix attempts / max fix attempts
+- repeated failure count / max repeated failures
+- usage budget level
+- quota strategy
+- push permission
+- current stop reason or judgement
+- checkpoint count
+- latest checkpoint path and reason
+- resume capsule path
+- recommended next action
+- whether the next Codex prompt is ready
+
+`allowPush` defaults to `false`. Production deploys, secret changes,
+destructive DB migrations, large uncontrolled refactors, and uncontrolled push
+are not default behavior.
+
+The direction is to improve job start/check/cancel/recover UX, overnight or
+company-time unattended runs, Usage Limit Guard visibility, repeated failure
+detection, quality gates, commit/push policy, and concise human-review reports.
 
 ## Tool Input
 
@@ -102,8 +252,10 @@ allowing `weaveflow_stdio_poc` in OpenClaw tool configuration.
 - It does not preserve bridge session state across separate OpenClaw tool
   calls.
 - It assumes the workspace root is already initialized when invoked as a tool.
-- It does not prove real chat-channel invocation yet.
-- It does not define production logging, auth, RBAC, or process supervision.
+- The original stdio smoke POC is still one-shot, but the current branch also
+  includes background Codex job tools.
+- It does not define enterprise-grade logging, auth, RBAC, or process
+  supervision.
 
 ## Still Needs Real OpenClaw Verification
 

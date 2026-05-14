@@ -17,9 +17,30 @@ test("normalizes broad Korean website improvement with hour budget", () => {
   assert.equal(result.time_budget_minutes, 180);
   assert.equal(result.inferred_intent, "website_improvement");
   assert.equal(result.risk_level, "medium");
+  assert.equal(result.run_profile, "focused");
+  assert.equal(result.max_session_minutes, 60);
+  assert.equal(result.total_job_budget_minutes, 90);
+  assert.equal(result.checkpoint_every_minutes, 20);
+  assert.equal(result.allow_push, false);
   assert.equal(result.branch_slug, "website-3-improve");
   assert.match(result.normalized_goal, /웹사이트 개선/);
   assert.match(result.korean_summary, /시간 예산: 180분/);
+});
+
+test("normalizes object input with run profile metadata", () => {
+  const result = normalizeJobRequest({
+    userRequest: "자는 동안 docs 정리해",
+    profile: "overnight"
+  });
+
+  assert.equal(result.original_request, "자는 동안 docs 정리해");
+  assert.equal(result.run_profile, "overnight");
+  assert.equal(result.quota_strategy, "conserve");
+  assert.equal(result.max_session_minutes, 45);
+  assert.equal(result.total_job_budget_minutes, 480);
+  assert.equal(result.max_fix_attempts, 4);
+  assert.equal(result.allow_push, false);
+  assert.match(result.korean_summary, /프로필: overnight/);
 });
 
 test("normalizes Korean documentation quality request with minute budget", () => {

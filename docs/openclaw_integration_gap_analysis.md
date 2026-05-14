@@ -8,6 +8,12 @@ from the real OpenClaw runtime research.
 The comparison is meant to guide the next implementation phase without
 implementing real OpenClaw integration.
 
+Historical note: this document was written before the current branch added the
+OpenClaw + Codex job runner personal automation experiment. Its "future" and
+"not yet" language should be read as core MVP / early POC scope, not as a
+global current-project prohibition. The current direction is documented in
+[personal_automation_direction.md](personal_automation_direction.md).
+
 The current local architecture is frozen for readiness review in
 [integration_readiness_freeze.md](integration_readiness_freeze.md). That
 freeze defines the stop criteria and the smallest future real OpenClaw proof of
@@ -87,17 +93,18 @@ create a bot, add a server, or modify Weaveflow core workflow behavior.
 | Process management | Medium | Medium | Add subprocess timeout, exit-code, and stderr policy in a bridge phase before real OpenClaw integration. |
 | Test environment complexity | Medium | Medium | Start with local bridge tests, then add a minimal OpenClaw plugin proof-of-concept test harness. |
 
-## Current Readiness Freeze
+## Historical Readiness Freeze
 
 PHASE 11-A freezes the local architecture-building loop before real OpenClaw
 work. See [integration_readiness_freeze.md](integration_readiness_freeze.md)
 for what exists, what is stable enough, what remains local-only, what is
 blocked, and what should not be built yet.
 
-The smallest future real proof of concept should spawn the stdio bridge, send
+The smallest proof of concept recommended at that time was to spawn the stdio bridge, send
 `ping`, send `status`, create one task with confirmation, list tasks, and shut
 down. It should not add Codex auto-execution, persistent sessions, auth/RBAC,
-or external API actions.
+or external API actions. That was a deliberate POC constraint, not a current
+global rule for the whole branch.
 
 ## Prior Recommended Next Phase
 
@@ -144,7 +151,9 @@ Why this path:
 Alternative: PHASE 10-I could be an OpenClaw skill/plugin API proof-of-concept
 design if the team wants to validate Node-side plugin shape first.
 
-Do not jump straight to production integration.
+For the current personal automation layer, the priority is practical
+reliability, observability, recovery, and cost/time efficiency before broader
+productization.
 
 ## Blockers Before Real Integration
 
@@ -163,10 +172,15 @@ Do not jump straight to production integration.
 
 ## Decision Record
 
-Current decision: Do not integrate real OpenClaw yet.
+Historical decision: do not integrate real OpenClaw yet at the skeleton stage.
 
 First build a narrow bridge or proof of concept aligned with a confirmed
 runtime surface.
 
 Reason: Avoid coupling Weaveflow to guessed payloads or unstable undocumented
 APIs.
+
+Current branch note: the repository now contains a native OpenClaw plugin POC
+and Codex job runner tools for personal automation. Remaining gaps should be
+framed around trust, job UX, recovery, and safe automation policy rather than
+whether any OpenClaw/Codex automation may exist at all.

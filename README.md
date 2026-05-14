@@ -7,6 +7,32 @@ structured task workspace. Each task is represented by human-readable files
 such as a task spec, plan, Codex worker brief, artifacts, verification record,
 final report, and proposed memory update.
 
+## Current Direction
+
+Weaveflow started as a local-first Python CLI workflow kernel. The core MVP is
+still that small, safe, file-based kernel: it creates `.weaveflow/tasks/`
+records, keeps a SQLite task index, and supports a manual Codex brief flow.
+
+The current branch also contains an OpenClaw + Codex job runner experiment.
+That layer is a personal AI work factory for saving the user's time, not
+external productization. Weaveflow is not the goal by itself; the goal is for
+OpenClaw/Codex AI flow to keep long work moving while the user is at work,
+doing something else, or sleeping.
+
+The immediate optimization target is personal automation usefulness: time
+saved, token/cost efficiency, trustworthy unattended progress, readable audit
+trail, Korean progress/report summaries, and failed work recovery. Long-running
+Codex work should be startable, checkable, cancellable, and recoverable from
+OpenClaw/Discord.
+
+Core MVP constraints still apply to the core kernel. They are not a claim that
+the entire current branch has no Codex automation or OpenClaw integration.
+OpenClaw/Codex automation is a current experimental personal automation layer,
+not a contradiction.
+
+See [docs/personal_ai_workflow_direction.md](docs/personal_ai_workflow_direction.md)
+for the current development north star.
+
 ## What This Project Is
 
 - A small, file-based workflow kernel for project operations.
@@ -19,19 +45,22 @@ final report, and proposed memory update.
   can call without going through Typer.
 - A testable Python package built with Typer, Pydantic, PyYAML, SQLite, and
   pytest.
+- On the current branch, a personal OpenClaw + Codex automation experiment for
+  long-running local job execution, overnight/company mode, Korean reporting,
+  budget-aware operation, and recovery.
 
 ## What This Project Is Not
 
 - It is not a chatbot.
 - It is not a thin Codex wrapper.
-- It does not control Codex automatically.
+- The core MVP does not control Codex automatically.
 - It does not call the OpenAI API.
-- It does not integrate OpenClaw yet.
-- It does not expose network, bot, desktop, or web adapters yet.
-- It does not run autonomous agents.
+- The core MVP does not integrate OpenClaw as part of its base contract.
+- The core MVP does not expose network, bot, desktop, or web adapters.
+- The core MVP does not run autonomous agents.
 - It does not implement vector memory.
 - It does not provide a web UI.
-- It does not orchestrate multiple workers.
+- The core MVP does not orchestrate multiple workers.
 
 The MVP intentionally keeps Codex interaction manual: `weaveflow task brief` generates
 a `worker_brief_codex.md` file, and a developer copies that brief into Codex.
@@ -235,7 +264,7 @@ Restart-aware wrapper notification payloads are documented in
 [docs/wrapper_notification_contract.md](docs/wrapper_notification_contract.md).
 The local wrapper explicit confirmation smoke demo is available at
 `python3 examples/local_wrapper_explicit_confirmation_demo.py`.
-The future OpenClaw adapter design is documented in
+The OpenClaw-facing adapter/core-boundary design is documented in
 [docs/openclaw_adapter_design.md](docs/openclaw_adapter_design.md).
 Real OpenClaw runtime research and gap analysis are documented in
 [docs/openclaw_runtime_research.md](docs/openclaw_runtime_research.md) and
@@ -383,8 +412,12 @@ Command effects:
   state, or apply memory updates.
 - Tasks are indexed in SQLite; manually created task directories without SQLite
   rows will not appear in `weaveflow task list`.
-- There is no OpenClaw integration, web UI, vector memory, or multi-agent
+- The core MVP does not include a web UI, vector memory, or multi-agent
   orchestration.
+- The current OpenClaw/Codex job runner is a personal automation experiment
+  layered on top of the core kernel, not a polished external product surface.
+- High-risk actions such as production deploys, secret changes, destructive DB
+  migrations, and uncontrolled push are not allowed as default behavior.
 
 ## Next Roadmap
 
@@ -395,5 +428,9 @@ Command effects:
 - Add structured output to additional commands where adapters need it.
 - Add memory review/apply commands that keep proposals explicit and auditable.
 - Add more focused tests around failure paths and corrupted workspace files.
+- Improve job start/check/cancel/recover UX, overnight/company mode,
+  time/usage limit budget visibility, Korean progress reports, repeated failure
+  detection, quality gates, commit/push policy, and compressed human review
+  reports.
 
 See `AGENTS.md` for repository rules and implementation constraints.
