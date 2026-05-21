@@ -3,9 +3,13 @@ import test from "node:test";
 
 import {
   buildJobGoalSummary,
+  classifyLongWorkRequest,
   classifyAutonomyMode,
+  extractProtectedScope,
+  extractTargetScope,
   extractTimeBudget,
   normalizeJobRequest,
+  selectDefaultRunProfile,
   suggestBranchSlug
 } from "../src/jobIntake.js";
 
@@ -17,14 +21,37 @@ test("normalizes broad Korean website improvement with hour budget", () => {
   assert.equal(result.time_budget_minutes, 180);
   assert.equal(result.inferred_intent, "website_improvement");
   assert.equal(result.risk_level, "medium");
-  assert.equal(result.run_profile, "focused");
-  assert.equal(result.max_session_minutes, 60);
-  assert.equal(result.total_job_budget_minutes, 90);
-  assert.equal(result.checkpoint_every_minutes, 20);
+  assert.equal(result.run_profile, "company");
+  assert.equal(result.max_session_minutes, 45);
+  assert.equal(result.total_job_budget_minutes, 240);
+  assert.equal(result.checkpoint_every_minutes, 15);
   assert.equal(result.allow_push, false);
   assert.equal(result.branch_slug, "website-3-improve");
   assert.match(result.normalized_goal, /웹사이트 개선/);
   assert.match(result.korean_summary, /시간 예산: 180분/);
+});
+
+test("detects protected long-running bulk edit request and defaults to company profile", () => {
+  const request = "다 변경해. 내거는 그대로 두고 여자친구 단어세트들만 바꿔줘";
+  const longWork = classifyLongWorkRequest({
+    userRequest: request,
+    source: "discord"
+  });
+  const result = normalizeJobRequest({
+    userRequest: request,
+    source: "discord"
+  });
+
+  assert.equal(longWork.is_candidate, true);
+  assert.equal(selectDefaultRunProfile({ userRequest: request, longWork }), "company");
+  assert.equal(result.run_profile, "company");
+  assert.equal(result.is_long_running_job_candidate, true);
+  assert.equal(result.protected_scope.some((scope) => /사용자\/KJ 본인/.test(scope)), true);
+  assert.equal(result.target_scope.some((scope) => /여자친구.*단어세트/.test(scope)), true);
+  assert.equal(extractProtectedScope(request).some((scope) => /사용자\/KJ 본인/.test(scope)), true);
+  assert.equal(extractTargetScope(request).some((scope) => /여자친구.*단어세트/.test(scope)), true);
+  assert.match(result.korean_summary, /장기 작업 후보: 예/);
+  assert.match(result.korean_summary, /보호 범위:/);
 });
 
 test("normalizes object input with run profile metadata", () => {

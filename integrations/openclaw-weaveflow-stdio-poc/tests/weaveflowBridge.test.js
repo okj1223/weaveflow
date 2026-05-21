@@ -5,7 +5,9 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 
 import {
+  CODEX_JOB_ACTION_OUTCOMES,
   CONTRACT_VERSION,
+  buildInitialCodexJobPrompt,
   buildJobTimeline,
   buildJobPlanningArtifacts,
   buildCodexJobQualityReview,
@@ -70,6 +72,34 @@ test("Codex automation prompt keeps execution bounded to a temporary worktree", 
   assert.match(prompt, /Task ID: TASK-0001/);
   assert.match(prompt, /Target branch: codex\/TASK-0001-create-doc/);
   assert.match(prompt, /docs\/codex_automation_poc_result\.md/);
+});
+
+test("initial Codex job prompt fixes scope, safety policy, and stop conditions", () => {
+  const originalRequest = "다 변경해. 내거는 그대로 두고 여자친구 단어세트들만 바꿔줘";
+  const prompt = buildInitialCodexJobPrompt({
+    userRequest: originalRequest,
+    targetScope: ["여자친구 단어세트"],
+    protectedScope: ["사용자/KJ 본인 단어세트"],
+    runProfile: "company",
+    allowPush: false,
+    usageLimitGuard: {
+      maxSessionMinutes: 45,
+      totalJobBudgetMinutes: 240,
+      checkpointEveryMinutes: 15
+    }
+  });
+
+  assert.match(prompt, new RegExp(originalRequest.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(prompt, /여자친구 단어세트/);
+  assert.match(prompt, /사용자\/KJ 본인 단어세트/);
+  assert.match(prompt, /if target cannot be identified, stop and report/);
+  assert.match(prompt, /allowPush=false/);
+  assert.match(prompt, /Production deploy is forbidden/);
+  assert.match(prompt, /Secret changes are forbidden/);
+  assert.match(prompt, /Destructive DB migration is forbidden/);
+  assert.match(prompt, /Discovery First/);
+  assert.match(prompt, /Do not make a premature conclusion/);
+  assert.match(prompt, /runProfile=company/);
 });
 
 test("Codex automation formatter returns Korean Discord-facing summary", () => {
@@ -314,10 +344,17 @@ test("Codex job start creates file-based state without starting worker when requ
   assert.equal(jobState.stage_timestamps.job_created.length > 0, true);
   assert.equal(jobState.outcome_contract_path, join(start.jobDir, "outcome_contract.md"));
   assert.equal(jobState.quality_review_status, "pending");
+  assert.equal(jobState.action_outcome, CODEX_JOB_ACTION_OUTCOMES.DRY_RUN_PROMPT_ONLY);
+  assert.equal(jobState.worker_started, false);
+  assert.equal(jobState.initial_prompt_path, join(start.jobDir, "initial_prompt.md"));
+  assert.equal(jobState.start_outcome_path, join(start.jobDir, "start_outcome.json"));
   assert.match(await readFile(join(start.jobDir, "outcome_contract.md"), "utf8"), /Outcome Contract/);
   assert.match(await readFile(join(start.jobDir, "usage_limit_guard.md"), "utf8"), /Usage Limit Guard/);
   assert.match(await readFile(join(start.jobDir, "resume_capsule.md"), "utf8"), /Resume Capsule/);
   assert.match(await readFile(join(start.jobDir, "checkpoints", "checkpoint-0001.md"), "utf8"), /Next Suggested Prompt/);
+  assert.match(await readFile(join(start.jobDir, "initial_prompt.md"), "utf8"), /allowPush=false/);
+  assert.equal(JSON.parse(await readFile(join(start.jobDir, "start_outcome.json"), "utf8")).action_outcome, CODEX_JOB_ACTION_OUTCOMES.DRY_RUN_PROMPT_ONLY);
+  assert.equal(JSON.parse(await readFile(join(start.jobDir, "job_request.json"), "utf8")).allowPush, false);
   assert.equal(JSON.parse(await readFile(join(start.jobDir, "outcome_contract.json"), "utf8")).contract_id.length > 0, true);
 
   const rawEvents = (await readFile(join(start.jobDir, "events.jsonl"), "utf8"))
@@ -345,7 +382,8 @@ test("Codex job start creates file-based state without starting worker when requ
   assert.equal(status.repoResolution.repoAlias, "weaveflow");
   assert.equal(status.elapsedMs >= 0, true);
   assert.deepEqual(Object.keys(status.stageDurations), ["planning", "codex", "tests", "fixes", "commit", "push"]);
-  assert.match(formatCodexJobStartSummary(start), /Weaveflow Codex 작업 시작/);
+  assert.match(formatCodexJobStartSummary(start), /worker 실행 상태가 아닙니다/);
+  assert.match(formatCodexJobStartSummary(start), /dry_run_prompt_only/);
   assert.match(formatCodexJobStatusSummary(status), /Weaveflow Codex 작업 상태/);
   assert.match(formatCodexJobStatusSummary(status), /Codex 작업 정책/);
   assert.match(formatCodexJobStatusSummary(status), /Usage Limit Guard/);
@@ -433,6 +471,62 @@ test("Codex job check remains concise for queued healthy job", async () => {
 
   assert.equal(status.recovery, null);
   assert.doesNotMatch(formatCodexJobStatusSummary(status), /복구 진단/);
+});
+
+test("Codex job start reports started_job only when worker process starts", async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "weaveflow-job-start-outcome-test-"));
+  const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
+  const toeflRequest = "지금 여자친구가 대만인이라 실제 대만인들이 보는 토플단어책 느낌으로 뜻이 잘 쓰여져 있어야하는데(번역체ㄴㄴ) 지금은 그냥 죄다 한국어로 박혀있거든? 다 변경해. 내거는 그대로 두고 여자친구 단어세트들만 바꿔줘.";
+
+  const started = await startWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    userRequest: toeflRequest,
+    runTests: true,
+    push: false,
+    startWorkerProcess: async () => ({ pid: 12345 })
+  });
+
+  assert.equal(started.actionOutcome, CODEX_JOB_ACTION_OUTCOMES.STARTED_JOB);
+  assert.equal(started.status, "running");
+  assert.equal(started.workerStarted, true);
+  assert.equal(started.runProfile, "company");
+  assert.equal(started.allowPush, false);
+  assert.equal(started.protectedScope.some((scope) => /사용자\/KJ 본인/.test(scope)), true);
+  assert.equal(started.targetScope.some((scope) => /여자친구.*단어세트/.test(scope)), true);
+
+  const startedText = formatCodexJobStartSummary(started);
+  assert.match(startedText, /Codex job을 시작했습니다/);
+  assert.match(startedText, new RegExp(started.jobId));
+  assert.match(startedText, /runProfile: company/);
+  assert.match(startedText, /worker started: yes/);
+  assert.match(startedText, /weaveflow_check_codex_job/);
+  assert.match(startedText, /weaveflow_cancel_codex_job/);
+  assert.match(startedText, /weaveflow_recover_codex_job/);
+  assert.match(startedText, /initial prompt:/);
+  assert.equal(JSON.parse(await readFile(join(started.jobDir, "start_outcome.json"), "utf8")).action_outcome, CODEX_JOB_ACTION_OUTCOMES.STARTED_JOB);
+  assert.match(await readFile(join(started.jobDir, "initial_prompt.md"), "utf8"), /if target cannot be identified, stop and report/);
+
+  const failed = await startWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    userRequest: "다 변경해. 내거는 그대로 두고 여자친구 단어세트들만 바꿔줘",
+    push: false,
+    startWorkerProcess: async () => {
+      throw new Error("spawn denied");
+    }
+  });
+
+  assert.equal(failed.actionOutcome, CODEX_JOB_ACTION_OUTCOMES.START_FAILED);
+  assert.equal(failed.status, CODEX_JOB_ACTION_OUTCOMES.START_FAILED);
+  assert.equal(failed.workerStarted, false);
+
+  const failedText = formatCodexJobStartSummary(failed);
+  assert.doesNotMatch(failedText, /Codex에 맡겼|Codex에 맡길게|작업 맡길게|진행시킬게|바로 돌릴게|백그라운드로 진행할게|시작했습니다/);
+  assert.match(failedText, /status: start_failed/);
+  assert.match(failedText, /reason: spawn denied/);
+  assert.match(failedText, /user next action:/);
+  assert.equal(JSON.parse(await readFile(join(failed.jobDir, "start_outcome.json"), "utf8")).action_outcome, CODEX_JOB_ACTION_OUTCOMES.START_FAILED);
 });
 
 test("Codex job recovery dry-run returns plan without mutating job state", async () => {

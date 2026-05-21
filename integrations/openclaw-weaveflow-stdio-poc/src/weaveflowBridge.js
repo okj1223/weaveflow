@@ -115,6 +115,16 @@ export const DEFAULT_TIMEOUT_MS = 10000;
 export const DEFAULT_CODEX_TIMEOUT_MS = 600000;
 export const DEFAULT_JOB_MAX_RUNTIME_MINUTES = 60;
 export const DEFAULT_JOB_FIX_ATTEMPTS = 3;
+export const CODEX_JOB_ACTION_OUTCOMES = Object.freeze({
+  STARTED_JOB: "started_job",
+  BLOCKED_MISSING_REPO: "blocked_missing_repo",
+  BLOCKED_AMBIGUOUS_TARGET: "blocked_ambiguous_target",
+  BLOCKED_POLICY: "blocked_policy",
+  DRY_RUN_PROMPT_ONLY: "dry_run_prompt_only",
+  START_FAILED: "start_failed",
+  JOB_CREATED_BUT_NOT_STARTED: "job_created_but_not_started",
+  WORKER_START_FAILED: "worker_start_failed"
+});
 
 const STEP_ORDER = [
   ["ping", "poc-001-ping"],
@@ -125,7 +135,7 @@ const STEP_ORDER = [
   ["shutdown", "poc-006-shutdown"]
 ];
 
-const JOB_TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled", "timeout", "limit_reached", "needs_user_review"]);
+const JOB_TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled", "timeout", "limit_reached", "needs_user_review", "start_failed"]);
 const RECOVERY_EXPOSE_HEALTH = new Set([
   "stale_running",
   "invalid_state",
@@ -747,6 +757,70 @@ export function buildCodexAutomationPrompt({ userRequest, taskSpec, plan, brief,
   ].filter(Boolean).join("\n");
 }
 
+export function buildInitialCodexJobPrompt(input = {}) {
+  const state = input.state || {};
+  const intake = input.intake || state.job_intake || input.normalizedJobRequest || input.normalized_job_request || {};
+  const policy = input.policy || state.job_policy || {};
+  const userRequest = cleanOptionalString(input.userRequest || input.user_request || state.user_request || intake.original_request);
+  const targetScope = normalizeScopeList(input.targetScope || input.target_scope || intake.target_scope || state.target_scope);
+  const protectedScope = normalizeScopeList(input.protectedScope || input.protected_scope || intake.protected_scope || state.protected_scope);
+  const runProfile = cleanOptionalString(input.runProfile || input.run_profile || state.run_profile || intake.run_profile || policy.runProfile) || "focused";
+  const usageGuard = input.usageLimitGuard || input.usage_limit_guard || state.usage_limit_guard || intake.usage_limit_guard || policy.usageLimitGuard || {};
+  const allowPush = input.allowPush ?? input.allow_push ?? state.allow_push ?? intake.allow_push ?? policy.allowPush ?? false;
+
+  return [
+    "# Initial Codex Job Prompt",
+    "",
+    "You are Codex running as a Weaveflow background job worker.",
+    "This is an execution prompt, not a conversational analysis response.",
+    "",
+    "## Original User Request",
+    userRequest || "(missing)",
+    "",
+    "## Target Scope",
+    formatScopeListForPrompt(targetScope, "Target scope was not specified. Discover the intended target first."),
+    "",
+    "## Protected Scope",
+    formatScopeListForPrompt(protectedScope, "No protected scope was extracted, but still avoid unrelated files."),
+    "",
+    "## Discovery First",
+    "- Inspect the repository structure before editing files.",
+    "- Identify the target data/files and the protected data/files before mutation.",
+    "- Do not make a premature conclusion from filenames alone.",
+    "- if target cannot be identified, stop and report instead of guessing.",
+    "",
+    "## Mutation Rules",
+    "- Change only files needed for the target scope.",
+    "- Do not change protected scope files or records.",
+    "- Do not make unrelated changes.",
+    "- Keep allowPush=false unless a later human-approved policy explicitly changes it.",
+    "- allowPush=false",
+    "- Production deploy is forbidden.",
+    "- Secret changes are forbidden.",
+    "- Destructive DB migration is forbidden.",
+    "- Do not perform destructive operations without explicit approval.",
+    "",
+    "## Validation Plan",
+    "- Run targeted checks that fit the repository and changed files.",
+    "- Prefer existing test scripts or lightweight format checks.",
+    "- If no automated check exists, record the manual validation that remains.",
+    "",
+    "## Report Requirements",
+    "- Report what target files or datasets were found.",
+    "- Report what protected files or datasets were intentionally left untouched.",
+    "- Report changed files, validation commands, and residual risk in Korean.",
+    "",
+    "## Run Profile And Usage Limit Policy",
+    `- runProfile=${runProfile}`,
+    `- maxSessionMinutes=${usageGuard.maxSessionMinutes ?? policy.maxSessionMinutes ?? "unknown"}`,
+    `- totalJobBudgetMinutes=${usageGuard.totalJobBudgetMinutes ?? policy.totalJobBudgetMinutes ?? "unknown"}`,
+    `- checkpointEveryMinutes=${usageGuard.checkpointEveryMinutes ?? policy.checkpointEveryMinutes ?? "unknown"}`,
+    "- Create/checkpoint handoff artifacts when usage limit, repeated failure, max changed files, or max session guard triggers.",
+    `- allowPush=${allowPush === true ? "true" : "false"}`,
+    ""
+  ].join("\n");
+}
+
 export async function startWeaveflowCodexJob(options) {
   const userRequest = requireString(options?.userRequest, "userRequest");
   const requestedMaxSessionMinutes = normalizeOptionalPositiveInteger(options?.maxSessionMinutes);
@@ -755,10 +829,10 @@ export async function startWeaveflowCodexJob(options) {
   const requestedMaxFixAttempts = normalizeOptionalPositiveInteger(options?.maxFixAttempts);
   const requestedMaxRepeatedFailures = normalizeOptionalPositiveInteger(options?.maxRepeatedFailures);
   const requestedMaxChangedFiles = normalizeOptionalPositiveInteger(options?.maxChangedFiles);
+  const requestedRunProfile = cleanOptionalString(options?.runProfile || options?.profile);
   const intake = normalizeJobRequest({
     userRequest,
-    runProfile: options?.runProfile,
-    profile: options?.profile,
+    runProfile: requestedRunProfile,
     usageBudgetLevel: options?.usageBudgetLevel,
     quotaStrategy: options?.quotaStrategy,
     limitRecoveryMode: options?.limitRecoveryMode,
@@ -787,8 +861,7 @@ export async function startWeaveflowCodexJob(options) {
   const maxSteps = normalizeOptionalPositiveInteger(options?.maxSteps) || null;
   const policy = resolveJobPolicy({
     userRequest,
-    runProfile: options?.runProfile,
-    profile: options?.profile,
+    runProfile: requestedRunProfile || intake.run_profile,
     usageBudgetLevel: options?.usageBudgetLevel,
     quotaStrategy: options?.quotaStrategy,
     limitRecoveryMode: options?.limitRecoveryMode,
@@ -863,6 +936,19 @@ export async function startWeaveflowCodexJob(options) {
     job_intake: intake,
     repo_resolution: repoResolution,
     job_policy: policy,
+    action_outcome: CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_BUT_NOT_STARTED,
+    worker_started: false,
+    worker_start_status: "not_started",
+    worker_started_at: null,
+    target_scope: intake.target_scope || [],
+    target_scope_summary: intake.target_scope_summary || "not specified",
+    protected_scope: intake.protected_scope || [],
+    protected_scope_summary: intake.protected_scope_summary || "not specified",
+    job_request_path: join(jobDir, "job_request.json"),
+    initial_prompt_path: join(jobDir, "initial_prompt.md"),
+    start_outcome_path: join(jobDir, "start_outcome.json"),
+    policy_decision_path: join(jobDir, "policy_decision.json"),
+    run_profile_path: join(jobDir, "run_profile.json"),
     run_profile: usageLimitGuard.runProfile,
     usage_limit_guard: usageLimitGuard,
     usage_limit_guard_path: join(jobDir, "usage_limit_guard.json"),
@@ -979,6 +1065,8 @@ export async function startWeaveflowCodexJob(options) {
   };
 
   await writeRequiredJobPlaceholders(jobDir, userRequest, intake);
+  const initialPrompt = buildInitialCodexJobPrompt({ state, intake, policy });
+  await writeJobStartArtifacts(jobDir, state, { intake, policy, initialPrompt });
   await writeUsageLimitGuardArtifacts(jobDir, state);
   await writeJobState(jobDir, state);
   await appendJobEvent(jobDir, "job_created", "Codex job state created.", {
@@ -1031,12 +1119,66 @@ export async function startWeaveflowCodexJob(options) {
   }
 
   if (options?.startWorker === false) {
+    state = await updateJobState(jobDir, state, {
+      action_outcome: CODEX_JOB_ACTION_OUTCOMES.DRY_RUN_PROMPT_ONLY,
+      worker_start_status: CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_BUT_NOT_STARTED,
+      worker_started: false
+    });
+    await writeStartOutcomeArtifact(jobDir, state, {
+      reason: "startWorker=false",
+      user_next_action: "worker를 실제로 실행하려면 startWorker 옵션을 생략하고 weaveflow_start_codex_job을 다시 호출하세요."
+    });
     return buildJobStartDetails(state);
   }
 
-  const child = await startBackgroundJobProcess({ jobDir, repoRoot });
-  state = await updateJobState(jobDir, state, { pid: child.pid });
-  await appendJobEvent(jobDir, "worker_started", "Codex background worker started.", { pid: child.pid }, state);
+  try {
+    const startWorkerProcess = typeof options?.startWorkerProcess === "function"
+      ? options.startWorkerProcess
+      : startBackgroundJobProcess;
+    const child = await startWorkerProcess({ jobDir, repoRoot });
+    const pid = normalizeWorkerPid(child?.pid);
+    const workerStartedAt = new Date().toISOString();
+    state = await updateJobState(jobDir, state, {
+      pid,
+      status: "running",
+      current_step: "worker_started",
+      action_outcome: CODEX_JOB_ACTION_OUTCOMES.STARTED_JOB,
+      worker_start_status: "started",
+      worker_started: true,
+      worker_started_at: workerStartedAt,
+      last_event: "worker_started",
+      stage_timestamps: {
+        ...(state.stage_timestamps || {}),
+        worker_started: workerStartedAt
+      }
+    });
+    await appendJobEvent(jobDir, "worker_started", "Codex background worker started.", { pid }, state, workerStartedAt);
+    await writeStartOutcomeArtifact(jobDir, state);
+  } catch (error) {
+    const failedAt = new Date().toISOString();
+    const message = safeOneLine(error?.message || error || "worker start failed");
+    state = await updateJobState(jobDir, state, {
+      status: CODEX_JOB_ACTION_OUTCOMES.START_FAILED,
+      current_step: CODEX_JOB_ACTION_OUTCOMES.WORKER_START_FAILED,
+      action_outcome: CODEX_JOB_ACTION_OUTCOMES.START_FAILED,
+      worker_start_status: CODEX_JOB_ACTION_OUTCOMES.WORKER_START_FAILED,
+      worker_started: false,
+      error: message,
+      last_event: CODEX_JOB_ACTION_OUTCOMES.WORKER_START_FAILED,
+      stage_timestamps: {
+        ...(state.stage_timestamps || {}),
+        worker_start_failed: failedAt
+      }
+    });
+    await appendJobEvent(jobDir, CODEX_JOB_ACTION_OUTCOMES.WORKER_START_FAILED, "Codex background worker failed to start.", {
+      error: message
+    }, state, failedAt);
+    await writeStartOutcomeArtifact(jobDir, state, {
+      reason: message,
+      missing_requirement: "Codex worker process must be spawnable from this repository.",
+      user_next_action: "stderr.log와 start_outcome.json을 확인한 뒤 repo path, Node 실행 환경, worker script 경로를 고쳐 다시 시작하세요."
+    });
+  }
   return buildJobStartDetails(state);
 }
 
@@ -1986,10 +2128,30 @@ export async function cancelWeaveflowCodexJob(options) {
 }
 
 export function formatCodexJobStartSummary(summary) {
+  const outcome = summary?.actionOutcome || summary?.action_outcome || CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_BUT_NOT_STARTED;
+  if (outcome !== CODEX_JOB_ACTION_OUTCOMES.STARTED_JOB) {
+    return formatCodexJobNotStartedSummary(summary, outcome);
+  }
+
   const report = formatJobStartedKorean(summary, {
     nextAction: `weaveflow_check_codex_job jobId=${summary.jobId}로 상태를 확인하세요.`
   });
   return [
+    "장기 작업으로 인식해서 Codex job을 시작했습니다.",
+    "",
+    `jobId: ${summary.jobId || "없음"}`,
+    `status: ${summary.status || "running"}`,
+    `runProfile: ${summary.runProfile || "없음"}`,
+    `worker started: ${summary.workerStarted === true ? "yes" : "no"}`,
+    `job artifact path: ${summary.jobArtifactPath || summary.jobDir || "없음"}`,
+    `initial prompt: ${summary.initialPromptPath || "없음"}`,
+    `대상 범위: ${formatScopeSummaryForResponse(summary.targetScope, summary.targetScopeSummary)}`,
+    `보호 범위: ${formatScopeSummaryForResponse(summary.protectedScope, summary.protectedScopeSummary)}`,
+    `push: ${summary.allowPush ? "허용" : "허용 안 됨"}`,
+    `확인: weaveflow_check_codex_job jobId=${summary.jobId}`,
+    `중단: weaveflow_cancel_codex_job jobId=${summary.jobId}`,
+    `복구: weaveflow_recover_codex_job jobId=${summary.jobId}`,
+    "",
     report,
     `저장소: ${summary.repoRoot || summary.repoResolution?.repoRoot || "없음"}`,
     summary.jobPolicy?.korean_summary ? `정책:\n${summary.jobPolicy.korean_summary}` : "",
@@ -2000,8 +2162,57 @@ export function formatCodexJobStartSummary(summary) {
     summary.sessionMode === "adaptive_loop" ? formatAdaptiveLoopSummaryKorean(adaptiveStateFromSummary(summary)) : "",
     `상태 확인: weaveflow_check_codex_job jobId=${summary.jobId}`,
     `취소: weaveflow_cancel_codex_job jobId=${summary.jobId}`,
+    `복구: weaveflow_recover_codex_job jobId=${summary.jobId}`,
     `작업 디렉터리: ${summary.jobDir}`
   ].filter(Boolean).join("\n");
+}
+
+function formatCodexJobNotStartedSummary(summary = {}, outcome) {
+  const status = summary.status || (
+    outcome === CODEX_JOB_ACTION_OUTCOMES.START_FAILED ||
+    outcome === CODEX_JOB_ACTION_OUTCOMES.WORKER_START_FAILED
+      ? CODEX_JOB_ACTION_OUTCOMES.START_FAILED
+      : outcome
+  );
+  const reason = summary.reason || summary.error || summary.failureReason || "worker가 실행되지 않았습니다.";
+  const missingRequirement = summary.missingRequirement || summary.missing_requirement || (
+    outcome === CODEX_JOB_ACTION_OUTCOMES.BLOCKED_MISSING_REPO ? "repo root" : ""
+  );
+  const nextAction = summary.userNextAction || summary.user_next_action || (
+    outcome === CODEX_JOB_ACTION_OUTCOMES.BLOCKED_MISSING_REPO
+      ? "repo path 또는 workspace root를 지정해 주세요."
+      : "start_outcome.json과 stderr.log를 확인한 뒤 다시 시도하세요."
+  );
+
+  return [
+    "장기 작업 요청으로 인식했지만 worker 실행 상태가 아닙니다.",
+    "",
+    `- outcome: ${outcome}`,
+    `- status: ${status}`,
+    summary.jobId ? `- jobId: ${summary.jobId}` : "",
+    summary.runProfile ? `- runProfile: ${summary.runProfile}` : "",
+    `- worker started: ${summary.workerStarted === true ? "yes" : "no"}`,
+    summary.jobArtifactPath || summary.jobDir ? `- job artifact path: ${summary.jobArtifactPath || summary.jobDir}` : "",
+    summary.initialPromptPath ? `- initial prompt: ${summary.initialPromptPath}` : "",
+    `- reason: ${reason}`,
+    missingRequirement ? `- missing requirement: ${missingRequirement}` : "",
+    `- user next action: ${nextAction}`,
+    summary.jobId ? `- 확인: weaveflow_check_codex_job jobId=${summary.jobId}` : "",
+    summary.jobId ? `- 중단: weaveflow_cancel_codex_job jobId=${summary.jobId}` : "",
+    summary.jobId ? `- 복구: weaveflow_recover_codex_job jobId=${summary.jobId}` : "",
+    summary.sessionMode === "multi_step" ? summarizeSessionProgressKorean(sessionProgressFromSummary(summary)) : "",
+    summary.sessionMode === "adaptive_loop" ? formatAdaptiveLoopSummaryKorean(adaptiveStateFromSummary(summary)) : "",
+    "",
+    "아직 Codex worker는 실행되지 않았습니다."
+  ].filter(Boolean).join("\n");
+}
+
+function formatScopeSummaryForResponse(scope, fallback) {
+  const values = normalizeScopeList(scope);
+  if (values.length) {
+    return values.join("; ");
+  }
+  return cleanOptionalString(fallback) || "not specified";
 }
 
 export function formatCodexJobStatusSummary(summary) {
@@ -2804,6 +3015,11 @@ async function writeRequiredJobPlaceholders(jobDir, userRequest, intake = null) 
     "selected_scope.md": "# Selected Scope\n\n대기 중입니다.\n",
     "execution_plan.md": "# Execution Plan\n\n대기 중입니다.\n",
     "verification_plan.md": "# Verification Plan\n\n대기 중입니다.\n",
+    "job_request.json": "{}\n",
+    "initial_prompt.md": "# Initial Codex Job Prompt\n\n대기 중입니다.\n",
+    "start_outcome.json": "{}\n",
+    "policy_decision.json": "{}\n",
+    "run_profile.json": "{}\n",
     "outcome_contract.md": "# Outcome Contract\n\n대기 중입니다.\n",
     "outcome_contract.json": "{}\n",
     "change_review.md": "# Change Review\n\n대기 중입니다.\n",
@@ -2844,6 +3060,111 @@ async function writeRequiredJobPlaceholders(jobDir, userRequest, intake = null) 
   await Promise.all(
     Object.entries(placeholders).map(([name, content]) => writeFile(join(jobDir, name), content, "utf8"))
   );
+}
+
+async function writeJobStartArtifacts(jobDir, state, { intake, policy, initialPrompt }) {
+  await writeJsonAtomic(join(jobDir, "job_request.json"), buildJobRequestArtifact(state, intake, policy));
+  await writeJobFile(jobDir, "initial_prompt.md", initialPrompt || buildInitialCodexJobPrompt({ state, intake, policy }));
+  await writeJsonAtomic(join(jobDir, "policy_decision.json"), buildPolicyDecisionArtifact(state, policy));
+  await writeJsonAtomic(join(jobDir, "run_profile.json"), buildRunProfileArtifact(state));
+  await writeStartOutcomeArtifact(jobDir, state);
+}
+
+async function writeStartOutcomeArtifact(jobDir, state, overrides = {}) {
+  await writeJsonAtomic(join(jobDir, "start_outcome.json"), buildStartOutcomeArtifact(state, overrides));
+}
+
+function buildJobRequestArtifact(state, intake, policy) {
+  return {
+    job_id: state.job_id,
+    task_id: state.task_id,
+    original_user_request: state.user_request,
+    normalized_goal: state.normalized_goal,
+    action_intent: intake?.is_long_running_job_candidate ? "start_codex_job" : "start_codex_job_explicit_tool_call",
+    long_work: intake?.long_work || null,
+    target_scope: normalizeScopeList(intake?.target_scope || state.target_scope),
+    target_scope_summary: intake?.target_scope_summary || state.target_scope_summary || "not specified",
+    protected_scope: normalizeScopeList(intake?.protected_scope || state.protected_scope),
+    protected_scope_summary: intake?.protected_scope_summary || state.protected_scope_summary || "not specified",
+    run_profile: state.run_profile || intake?.run_profile || policy?.runProfile || null,
+    allowPush: state.allow_push === true,
+    safety: {
+      allowPush: state.allow_push === true,
+      production_deploy: "forbidden",
+      secret_changes: "forbidden",
+      destructive_db_migration: "forbidden",
+      uncontrolled_push: "forbidden"
+    },
+    artifact_paths: {
+      job_dir: state.job_dir,
+      job_request: state.job_request_path,
+      initial_prompt: state.initial_prompt_path,
+      start_outcome: state.start_outcome_path,
+      policy_decision: state.policy_decision_path,
+      run_profile: state.run_profile_path
+    }
+  };
+}
+
+function buildPolicyDecisionArtifact(state, policy) {
+  return {
+    job_id: state.job_id,
+    status: state.status,
+    risk_level: policy?.riskLevel || null,
+    runProfile: policy?.runProfile || state.run_profile || null,
+    allowedActions: policy?.allowedActions || [],
+    blockedActions: policy?.blockedActions || [],
+    requiresHumanReview: policy?.requiresHumanReview === true,
+    push: policy?.push === true,
+    allowPush: policy?.allowPush === true,
+    korean_summary: policy?.korean_summary || ""
+  };
+}
+
+function buildRunProfileArtifact(state) {
+  return {
+    job_id: state.job_id,
+    runProfile: state.run_profile,
+    usageBudgetLevel: state.usage_budget_level,
+    quotaStrategy: state.quota_strategy,
+    limitRecoveryMode: state.limit_recovery_mode,
+    maxSessionMinutes: state.max_session_minutes,
+    totalJobBudgetMinutes: state.total_job_budget_minutes,
+    checkpointEveryMinutes: state.checkpoint_every_minutes,
+    checkpointOnPhaseChange: state.checkpoint_on_phase_change === true,
+    checkpointOnFailure: state.checkpoint_on_failure === true,
+    checkpointOnLimitSignal: state.checkpoint_on_limit_signal === true,
+    maxFixAttempts: state.max_fix_attempts,
+    maxRepeatedFailures: state.max_repeated_failures,
+    maxChangedFiles: state.max_changed_files,
+    allowLargeRefactor: state.allow_large_refactor === true,
+    allowPush: state.allow_push === true
+  };
+}
+
+function buildStartOutcomeArtifact(state, overrides = {}) {
+  const actionOutcome = overrides.action_outcome || state.action_outcome || CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_BUT_NOT_STARTED;
+  const workerStarted = overrides.worker_started ?? state.worker_started === true;
+  return {
+    ok: actionOutcome === CODEX_JOB_ACTION_OUTCOMES.STARTED_JOB || actionOutcome === CODEX_JOB_ACTION_OUTCOMES.DRY_RUN_PROMPT_ONLY,
+    action_outcome: actionOutcome,
+    status: overrides.status || state.status,
+    job_id: state.job_id,
+    task_id: state.task_id,
+    runProfile: state.run_profile,
+    worker_started: workerStarted,
+    worker_start_status: overrides.worker_start_status || state.worker_start_status || "not_started",
+    pid: workerStarted ? state.pid || null : null,
+    reason: overrides.reason || state.error || "",
+    missing_requirement: overrides.missing_requirement || "",
+    user_next_action: overrides.user_next_action || "",
+    job_artifact_path: state.job_dir,
+    initial_prompt_path: state.initial_prompt_path,
+    check_tool: "weaveflow_check_codex_job",
+    cancel_tool: "weaveflow_cancel_codex_job",
+    recover_tool: "weaveflow_recover_codex_job",
+    updated_at: state.updated_at || new Date().toISOString()
+  };
 }
 
 async function writeJobState(jobDir, state) {
@@ -3218,7 +3539,8 @@ function jobWorkerScriptPath() {
 
 function buildJobStartDetails(state) {
   return {
-    ok: true,
+    ok: state.action_outcome !== CODEX_JOB_ACTION_OUTCOMES.START_FAILED &&
+      state.action_outcome !== CODEX_JOB_ACTION_OUTCOMES.BLOCKED_POLICY,
     jobId: state.job_id,
     taskId: state.task_id,
     branch: state.branch,
@@ -3306,9 +3628,58 @@ function buildJobStartDetails(state) {
     ],
     pid: state.pid,
     jobDir: state.job_dir,
+    jobArtifactPath: state.job_dir,
+    actionOutcome: state.action_outcome || CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_BUT_NOT_STARTED,
+    workerStarted: state.worker_started === true,
+    workerStartStatus: state.worker_start_status || "not_started",
+    workerStartedAt: state.worker_started_at,
+    targetScope: state.target_scope || [],
+    targetScopeSummary: state.target_scope_summary || "not specified",
+    protectedScope: state.protected_scope || [],
+    protectedScopeSummary: state.protected_scope_summary || "not specified",
+    jobRequestPath: state.job_request_path,
+    initialPromptPath: state.initial_prompt_path,
+    startOutcomePath: state.start_outcome_path,
+    policyDecisionPath: state.policy_decision_path,
+    runProfilePath: state.run_profile_path,
     checkTool: "weaveflow_check_codex_job",
-    cancelTool: "weaveflow_cancel_codex_job"
+    cancelTool: "weaveflow_cancel_codex_job",
+    recoverTool: "weaveflow_recover_codex_job",
+    reason: state.error || null,
+    missingRequirement: state.action_outcome === CODEX_JOB_ACTION_OUTCOMES.START_FAILED
+      ? "Codex worker process must be spawnable from this repository."
+      : null,
+    userNextAction: state.action_outcome === CODEX_JOB_ACTION_OUTCOMES.START_FAILED
+      ? "stderr.log와 start_outcome.json을 확인한 뒤 repo path, Node 실행 환경, worker script 경로를 고쳐 다시 시작하세요."
+      : null
   };
+}
+
+function normalizeWorkerPid(value) {
+  const pid = Number(value);
+  if (!Number.isInteger(pid) || pid <= 0) {
+    throw new Error("Codex worker did not return a valid process id.");
+  }
+  return pid;
+}
+
+function normalizeScopeList(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => cleanOptionalString(item)).filter(Boolean);
+  }
+  const text = cleanOptionalString(value);
+  if (!text || text === "not specified") {
+    return [];
+  }
+  return text.split(/\r?\n|;\s*|,\s*/).map((item) => item.trim()).filter(Boolean);
+}
+
+function formatScopeListForPrompt(items, fallback) {
+  const values = normalizeScopeList(items);
+  if (!values.length) {
+    return `- ${fallback}`;
+  }
+  return values.map((item) => `- ${item}`).join("\n");
 }
 
 function normalizeOptionalPositiveInteger(value) {
@@ -4970,6 +5341,9 @@ function buildCodexJobPrompt({ state, planning, scan, taskFiles, repoStatus }) {
     "",
     "## Normalized Goal",
     state.normalized_goal || state.user_request,
+    "",
+    "## Initial Job Prompt / Safety Contract",
+    buildInitialCodexJobPrompt({ state }),
     "",
     "## Current Repo Status",
     repoStatus,

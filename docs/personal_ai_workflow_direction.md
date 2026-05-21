@@ -19,6 +19,13 @@ OpenClaw/Discord는 편한 start/check/cancel/recover surface다. Codex job runn
 남기는 실행 layer다. `.weaveflow/` 파일과 SQLite는 여전히 Weaveflow 상태의 source
 of truth다.
 
+OpenClaw/Discord에서 긴 자연어 작업 요청이 들어오면 응답은 반드시 concrete action
+outcome을 가져야 한다. "Codex에 맡기겠다", "작업 맡길게", "백그라운드로 진행할게" 같은
+표현은 실제 `started_job` outcome으로 job id와 worker start가 확인된 경우에만 허용된다.
+그 외에는 `blocked_missing_repo`, `blocked_ambiguous_target`, `blocked_policy`,
+`dry_run_prompt_only`, `start_failed`처럼 왜 실행되지 않았는지와 사용자의 다음 행동을
+명확히 반환해야 한다.
+
 ## What We Optimize For
 
 - time saved: 사용자가 기다리거나 반복 확인하는 시간을 줄인다.
@@ -88,6 +95,11 @@ changed files, next suggested prompt를 artifact에 남긴다.
 `company`와 `overnight`의 45분은 긴 작업 전체 시간이 아니라 single-session limit이다.
 이 profile들은 긴 단일 session을 태우는 방향이 아니라, checkpoint 기반 segmented work로
 자는 동안이나 회사에 있는 동안 여러 단계를 전진시키는 방향이다.
+
+장기 작업 profile 기본값은 요청 문맥에서 추론한다. "자는 동안", "밤새", `overnight`는
+`overnight`, 회사/외출/몇 시간/장기 작업은 `company`, 시간 언급이 없어도 대량 수정과
+protected scope가 있으면 `company`가 기본이다. "A는 보존하고 B만 변경" 같은 요청은
+worker 실행 전에 target scope와 protected scope를 job prompt와 artifact에 고정해야 한다.
 
 Resume Capsule은 limit, failure, cancel, recover 상황에서 다음 Codex 작업자가 바로
 이어받도록 만드는 handoff artifact다. `.weaveflow/jobs/JOB-*/resume_capsule.md`와

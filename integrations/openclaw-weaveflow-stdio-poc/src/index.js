@@ -1,6 +1,7 @@
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 
 import {
+  CODEX_JOB_ACTION_OUTCOMES,
   DEFAULT_TASK_TEXT,
   formatCodexAutomationSummary,
   formatCodexJobCancelSummary,
@@ -158,7 +159,7 @@ export default definePluginEntry({
       {
         name: CODEX_JOB_START_TOOL_NAME,
         label: "Weaveflow Start Codex Job",
-        description: "Start a background Codex job with optional timeboxed autonomous planning.",
+        description: "Start a concrete background Codex job for long OpenClaw/Discord work requests. Do not say Codex was delegated unless this tool returns actionOutcome=started_job.",
         parameters: {
           type: "object",
           additionalProperties: false,
@@ -183,7 +184,7 @@ export default definePluginEntry({
             runProfile: {
               type: "string",
               enum: ["quick", "focused", "company", "overnight"],
-              description: "Run profile for Usage Limit Guard. Defaults to focused."
+              description: "Run profile for Usage Limit Guard. Defaults are inferred from the request; bulk/long work defaults to company."
             },
             profile: {
               type: "string",
@@ -333,7 +334,7 @@ export default definePluginEntry({
               details: summary
             };
           } catch (error) {
-            return failedCodexJobToolResult(safeErrorMessage(error));
+            return failedCodexJobStartToolResult(safeErrorMessage(error));
           }
         }
       },
@@ -618,6 +619,46 @@ function failedCodexJobToolResult(message) {
     ],
     details
   };
+}
+
+function failedCodexJobStartToolResult(message) {
+  const outcome = classifyStartFailureOutcome(message);
+  const details = {
+    ok: false,
+    jobId: null,
+    taskId: null,
+    actionOutcome: outcome,
+    status: outcome,
+    workerStarted: false,
+    reason: message,
+    missingRequirement: outcome === CODEX_JOB_ACTION_OUTCOMES.BLOCKED_MISSING_REPO
+      ? "repo root"
+      : "Codex worker start prerequisite",
+    userNextAction: outcome === CODEX_JOB_ACTION_OUTCOMES.BLOCKED_MISSING_REPO
+      ? "repo path 또는 workspace root를 지정해 주세요."
+      : "오류 내용을 확인한 뒤 start 조건을 고쳐 다시 호출해 주세요.",
+    errors: [message]
+  };
+  return {
+    content: [
+      {
+        type: "text",
+        text: formatCodexJobStartSummary(details)
+      }
+    ],
+    details
+  };
+}
+
+function classifyStartFailureOutcome(message) {
+  const text = String(message || "").toLowerCase();
+  if (text.includes("저장소를 해석") || text.includes("repo") || text.includes("repository")) {
+    return CODEX_JOB_ACTION_OUTCOMES.BLOCKED_MISSING_REPO;
+  }
+  if (text.includes("정책") || text.includes("policy")) {
+    return CODEX_JOB_ACTION_OUTCOMES.BLOCKED_POLICY;
+  }
+  return CODEX_JOB_ACTION_OUTCOMES.START_FAILED;
 }
 
 function safeErrorMessage(error) {

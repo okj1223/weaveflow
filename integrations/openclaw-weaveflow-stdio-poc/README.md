@@ -37,6 +37,36 @@ The personal automation goals are:
 - support overnight/company mode for unattended progress
 - surface only the human-review parts that matter after a long run
 
+## No Fake Delegation
+
+Long work requests from OpenClaw/Discord must produce a concrete action
+outcome. The integration must not answer only with analysis such as "Codex에
+맡기겠다" or "백그라운드로 진행하겠다". Those phrases are only allowed when
+`weaveflow_start_codex_job` returns `actionOutcome=started_job` and the worker
+process has actually started.
+
+Start responses distinguish:
+
+- `started_job`: a job id exists, the worker process started, and the response
+  includes `jobId`, status, run profile, artifact path, initial prompt path, and
+  check/cancel/recover tool names.
+- `dry_run_prompt_only` / `job_created_but_not_started`: job artifacts were
+  created for inspection, but no worker process is running.
+- `blocked_missing_repo`, `blocked_ambiguous_target`, `blocked_policy`: the
+  request was recognized but a required condition prevents a safe start.
+- `start_failed`: artifacts were created where possible, but the worker process
+  failed to start.
+
+Blocked or failed responses must include the reason, missing requirement where
+known, and the user's next action. They must explicitly say that no worker is
+running.
+
+For protected-scope bulk requests, the runner fixes the extracted target and
+protected scopes into `job_request.json` and `initial_prompt.md` before any
+worker mutation. For example, "내거는 그대로 두고 여자친구 단어세트들만 바꿔줘"
+is treated as a long-running bulk edit with target scope "여자친구 단어세트" and
+protected scope "사용자/KJ 본인 단어세트".
+
 ## Scope Boundaries
 
 Historical stdio POC constraints:
@@ -109,6 +139,12 @@ work:
 is the overall job budget across multiple sessions, checkpoints, and recovery
 handoffs. For `company` and `overnight`, the 45 minute value is intentionally a
 single-session ceiling, not the whole job duration.
+
+Natural-language long work requests infer a profile when one is not supplied:
+overnight language selects `overnight`, being away for hours selects `company`,
+and bulk protected-scope edits default to `company`. These profiles exist to
+make long work checkpoint-based and recoverable, not to run one uncontrolled
+session.
 
 The Usage Limit Guard does not assume that the runner can read remaining
 ChatGPT/Codex subscription quota from an API. It estimates conservatively from
