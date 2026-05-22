@@ -132,30 +132,3 @@ Commit/push behavior must stay explicit, observable, policy-bound, and recoverab
 8. quality gate 강화
 9. commit/push policy 정리
 10. 사람이 검토할 부분만 압축해서 보여주는 report
-
-## Long Work Autostart
-
-OpenClaw should treat broad repair and stabilization requests as Weaveflow
-long-running jobs when the Weaveflow integration is available. The default path
-is not general Codex fallback. It is `weaveflow_start_codex_job`.
-
-Broad or high-risk work becomes a `safe_worktree` job with
-`allow_with_constraints`. The job is allowed to inspect files, create an
-isolated worktree, make scoped edits, run tests/lint/build, write reports,
-checkpoint, and recover. Dangerous actions are denied per action: push,
-production deploy, secret changes, destructive DB migration, uncontrolled
-commit, merge/rebase, force push, and non-fast-forward pull.
-
-`company` is the default run profile for checkpoint-based long work.
-`overnight` is reserved for explicit overnight wording such as `overnight`,
-`all night`, `자는 동안`, or `밤새`.
-
-If startup fails, the response must name the concrete preflight or runtime
-reason, such as missing repo, dirty/conflicted worktree before a requested
-`git pull --ff-only`, worktree creation failure, or worker start failure.
-"범위가 커서" is not a valid block reason.
-
-Startup artifacts under `.weaveflow/jobs/JOB-*/` should include
-`job_request.json`, `policy_decision.json`, `phase_plan.json`,
-`initial_prompt.md`, and `start_outcome.json` so a human can inspect what the
-job was asked to do and why it was allowed or blocked.

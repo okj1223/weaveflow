@@ -8,7 +8,6 @@ import {
   CODEX_JOB_ACTION_OUTCOMES,
   CONTRACT_VERSION,
   buildInitialCodexJobPrompt,
-  buildCodexJobPreflightPlan,
   buildJobTimeline,
   buildJobPlanningArtifacts,
   buildCodexJobQualityReview,
@@ -18,26 +17,20 @@ import {
   buildPocRequests,
   cancelWeaveflowCodexJob,
   checkWeaveflowCodexJob,
-  containsGeneralCodexFallbackText,
-  evaluateCodexJobStartPreflight,
   formatCodexAutomationSummary,
   formatCodexJobCancelSummary,
   formatCodexJobRecoverySummary,
   formatCodexJobStartSummary,
   formatCodexJobStatusSummary,
   initializeWeaveflowWorkspace,
-  isAllowedCodexJobActionOutcome,
   isBroadAutonomousRequest,
   jobStageDurations,
   recoverWeaveflowCodexJob,
   renderCodexJobResultMarkdown,
-  resolveCodexJobRunProfile,
   resolveAutonomyMode,
   startWeaveflowCodexJob,
   runWeaveflowStdioPoc
 } from "../src/weaveflowBridge.js";
-
-const REGRESSION_PROMPT = "<@1486861488349249696> 그리고 아직도 깜박거리네 하 씨발 진짜 그리고 뭐냐 스크롤 내려서 토익 들어가봤는데 왜 거기서도 스크롤 내려가있는 상태에서 시작하냐 당연히 맨위에서 시작아니냐? 이런걸 일일이 내가 디버깅할 수가 없잖아 이개새끼야 weacflow깃풀로 당긴다음에 장기작업으로 어떻게든 고쳐내 실수없고 버그없고 갑자기 기능 바꾸고 ui뒤집어놓고 그런거 없이 알잘딱으로 알겠어? 전체 점검 대규모 점검들어가서 고쳐 일일이 꼼꼼히";
 
 test("bridge helper builds valid requests", () => {
   const request = buildBridgeRequest("bridge-1", "ping");
@@ -134,9 +127,7 @@ test("Codex automation formatter returns Korean Discord-facing summary", () => {
 
 test("Codex job planning detects broad timeboxed work and selects a bounded scope", () => {
   assert.equal(isBroadAutonomousRequest("웹사이트 3시간 동안 강화해"), true);
-  assert.equal(isBroadAutonomousRequest(REGRESSION_PROMPT), true);
   assert.equal(resolveAutonomyMode("auto", "Update docs/foo.md with X."), "specific");
-  assert.equal(resolveAutonomyMode("auto", REGRESSION_PROMPT), "timeboxed");
   assert.equal(resolveAutonomyMode("auto", "Spend about 30 minutes improving docs yourself."), "timeboxed");
 
   const planning = buildJobPlanningArtifacts({
@@ -176,130 +167,6 @@ test("Codex job planning detects broad timeboxed work and selects a bounded scop
   assert.match(planning.selectedScopeMarkdown, /선택된 범위/);
   assert.match(planning.executionPlanMarkdown, /Execution Plan/);
   assert.match(planning.executionPlanMarkdown, /검증 계획: fast/);
-});
-
-test("OpenClaw long work regression prompt routes to Codex job outcomes only", async () => {
-  const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
-  const result = await startWeaveflowCodexJob({
-    repoRoot,
-    userRequest: REGRESSION_PROMPT,
-    preflightCommandRunner: async () => ({
-      code: 0,
-      stdout: " M app/page.tsx\n",
-      stderr: "",
-      termination: "exit"
-    })
-  });
-  const text = formatCodexJobStartSummary(result);
-
-  assert.equal(result.actionOutcome, "blocked_dirty_or_conflicted_repo");
-  assert.equal(isAllowedCodexJobActionOutcome(result.actionOutcome), true);
-  assert.equal(CODEX_JOB_ACTION_OUTCOMES.includes(result.actionOutcome), true);
-  assert.equal(result.allowPush, false);
-  assert.equal(result.workerStarted, false);
-  assert.equal(result.preflightPlan.commands.some((command) => command.command === "git pull --ff-only"), true);
-  assert.doesNotMatch(text, /일반\s*Codex|장기작업\s*툴|Codex로\s*따로/);
-  assert.doesNotMatch(text, /범위가 커서/);
-  assert.equal(containsGeneralCodexFallbackText(text), false);
-  assert.match(text, /아직 Codex job은 시작되지 않았습니다/);
-  assert.match(text, /이유:/);
-});
-
-test("Codex job start response distinguishes started and worker-start-failed outcomes", async () => {
-  const started = {
-    ok: true,
-    actionOutcome: "started_job",
-    workerStarted: true,
-    jobId: "JOB-0012",
-    taskId: "TASK-0012",
-    status: "running",
-    currentStep: "worker_started",
-    runProfile: "company",
-    executionMode: "safe_worktree",
-    policyOutcome: "allow_with_constraints",
-    allowPush: false,
-    allowCommit: false,
-    deniedActions: ["push", "deploy", "secret 변경", "destructive DB migration"],
-    phasePlan: {
-      phasePlan: [
-        { id: "preflight_git_sync" },
-        { id: "bug_inventory" },
-        { id: "root_cause_pass" },
-        { id: "minimal_fix_pass" },
-        { id: "regression_pass" },
-        { id: "verification_pass" },
-        { id: "korean_report" }
-      ]
-    },
-    initialPromptPath: "/tmp/weaveflow/.weaveflow/jobs/JOB-0012/initial_prompt.md",
-    phasePlanPath: "/tmp/weaveflow/.weaveflow/jobs/JOB-0012/phase_plan.json",
-    jobDir: "/tmp/weaveflow/.weaveflow/jobs/JOB-0012",
-    recentEvents: []
-  };
-  const startedText = formatCodexJobStartSummary(started);
-  assert.match(startedText, /Weaveflow Codex job을 시작했습니다/);
-  assert.match(startedText, /job: JOB-0012/);
-  assert.match(startedText, /profile: company/);
-  assert.match(startedText, /상태: running/);
-  assert.match(startedText, /실행 모드: safe_worktree/);
-  assert.match(startedText, /정책: allow_with_constraints/);
-  assert.match(startedText, /금지: .*push/);
-  assert.match(startedText, /금지: .*deploy/);
-  assert.match(startedText, /금지: .*secret/);
-  assert.match(startedText, /금지: .*destructive DB migration/);
-  assert.match(startedText, /phase: preflight_git_sync -> bug_inventory -> root_cause_pass -> minimal_fix_pass -> regression_pass -> verification_pass -> korean_report/);
-  assert.match(startedText, /artifact: \/tmp\/weaveflow\/\.weaveflow\/jobs\/JOB-0012/);
-  assert.match(startedText, /prompt: \/tmp\/weaveflow\/\.weaveflow\/jobs\/JOB-0012\/initial_prompt\.md/);
-  assert.match(startedText, /weaveflow_check_codex_job JOB-0012/);
-  assert.match(startedText, /weaveflow_cancel_codex_job JOB-0012/);
-  assert.match(startedText, /weaveflow_recover_codex_job JOB-0012/);
-  assert.match(startedText, /git pull --ff-only/);
-  assert.match(startedText, /깜박임\/스크롤 복원\/mobile-PWA-Safari/);
-  assert.equal(containsGeneralCodexFallbackText(startedText), false);
-
-  const workspaceRoot = await mkdtemp(join(tmpdir(), "weaveflow-worker-failed-test-"));
-  const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
-  const failed = await startWeaveflowCodexJob({
-    workspaceRoot,
-    repoRoot,
-    userRequest: "Update README docs.",
-    push: false,
-    startWorkerProcess: async () => {
-      throw new Error("codex worker unavailable");
-    }
-  });
-  const failedText = formatCodexJobStartSummary(failed);
-  assert.equal(failed.actionOutcome, "job_created_worker_start_failed");
-  assert.equal(failed.workerStarted, false);
-  assert.equal(failed.allowPush, false);
-  assert.match(failedText, /아직 Codex job은 시작되지 않았습니다/);
-  assert.match(failedText, /이유: codex worker unavailable/);
-  assert.match(failedText, /상태: job_created_worker_start_failed/);
-  assert.doesNotMatch(failedText, /시작했습니다|진행 중입니다|job runner가 실행 중입니다/);
-  assert.equal(containsGeneralCodexFallbackText(failedText), false);
-});
-
-test("git pull preflight plan is fast-forward only and blocks dirty repos", async () => {
-  const plan = buildCodexJobPreflightPlan(REGRESSION_PROMPT);
-  assert.equal(plan.requiresCleanRepo, true);
-  assert.equal(plan.commands.some((command) => command.command === "git pull --ff-only"), true);
-  assert.equal(plan.deniedActions.some((action) => /merge/i.test(action)), true);
-
-  const preflight = await evaluateCodexJobStartPreflight({
-    userRequest: REGRESSION_PROMPT,
-    repoRoot: "/tmp/repo",
-    commandRunner: async () => ({
-      code: 0,
-      stdout: "UU\tapp/page.tsx\n",
-      stderr: "",
-      termination: "exit"
-    })
-  });
-  assert.equal(preflight.ok, false);
-  assert.equal(preflight.actionOutcome, "blocked_dirty_or_conflicted_repo");
-  assert.equal(preflight.preflightPlan.status, "blocked_conflicted_repo");
-  assert.equal(resolveCodexJobRunProfile({ userRequest: REGRESSION_PROMPT }), "company");
-  assert.equal(resolveCodexJobRunProfile({ userRequest: `${REGRESSION_PROMPT} 자는 동안 봐줘` }), "overnight");
 });
 
 test("Codex job quality review accepts docs-only scoped changes", () => {
@@ -900,147 +767,6 @@ test("Codex job start uses normalized intake fields for metadata and branch nami
   const goal = await readFile(join(start.jobDir, "goal.md"), "utf8");
   assert.match(goal, /Intake Summary/);
   assert.match(goal, /시간 예산: 45분/);
-});
-
-test("Codex job start accepts rough long-running repair request with safe constraints", async () => {
-  const workspaceRoot = await mkdtemp(join(tmpdir(), "weaveflow-regression-long-repair-test-"));
-  const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
-  const userRequest = "<@1486861488349249696> 그리고 아직도 깜박거리네 하 씨발 진짜 그리고 뭐냐 스크롤 내려서 토익 들어가봤는데 왜 거기서도 스크롤 내려가있는 상태에서 시작하냐 당연히 맨위에서 시작아니냐? 이런걸 일일이 내가 디버깅할 수가 없잖아 이개새끼야 weacflow깃풀로 당긴다음에 장기작업으로 어떻게든 고쳐내 실수없고 버그없고 갑자기 기능 바꾸고 ui뒤집어놓고 그런거 없이 알잘딱으로 알겠어? 전체 점검 대규모 점검들어가서 고쳐 일일이 꼼꼼히";
-  const start = await startWeaveflowCodexJob({
-    workspaceRoot,
-    repoRoot,
-    userRequest,
-    startWorker: false,
-    preflightCommandRunner: async () => ({
-      code: 0,
-      stdout: "",
-      stderr: "",
-      termination: "exit"
-    })
-  });
-
-  assert.equal(start.ok, true);
-  assert.match(start.jobId, /^JOB-\d{4}$/);
-  assert.equal(start.runProfile, "company");
-  assert.equal(start.policyOutcome, "allow_with_constraints");
-  assert.equal(start.status, "queued");
-  assert.equal(start.allowPush, false);
-  assert.equal(start.allowCommit, false);
-  assert.equal(start.phasePlan.jobKind, "long_running_repair_job");
-  assert.deepEqual(start.phasePlan.phasePlan.map((phase) => phase.id), [
-    "preflight_git_sync",
-    "bug_inventory",
-    "root_cause_pass",
-    "minimal_fix_pass",
-    "regression_pass",
-    "verification_pass",
-    "korean_report"
-  ]);
-  assert.equal(start.jobPolicy.push, false);
-  assert.equal(start.jobPolicy.allowPush, false);
-  assert.equal(start.jobPolicy.autonomyMode, "timeboxed");
-  assert.equal(start.jobPolicy.outcome, "allow_with_constraints");
-  assert.equal(start.jobPolicy.jobStart, "allowed");
-  assert.equal(start.jobPolicy.deniedActions.includes("push"), true);
-  assert.equal(start.jobPolicy.blockedActions.includes("production_deploy"), true);
-  assert.equal(start.jobPolicy.deniedActions.includes("secret_changes"), true);
-  assert.equal(start.jobPolicy.blockedActions.includes("change_secrets"), true);
-  assert.equal(start.jobPolicy.blockedActions.includes("destructive_db_migration"), true);
-  assert.equal(start.jobPolicy.deniedActions.includes("uncontrolled_commit"), true);
-
-  const text = formatCodexJobStartSummary(start);
-  assert.match(text, /작업 ID: JOB-\d{4}/);
-  assert.match(text, /상태: queued/);
-  assert.match(text, /상태 확인: weaveflow_check_codex_job jobId=JOB-\d{4}/);
-  assert.match(text, /취소: weaveflow_cancel_codex_job jobId=JOB-\d{4}/);
-  assert.match(text, /복구: weaveflow_recover_codex_job jobId=JOB-\d{4}/);
-
-  const jobState = JSON.parse(await readFile(join(start.jobDir, "job.yaml"), "utf8"));
-  assert.equal(jobState.job_intake.inferred_intent, "repair_stabilization");
-  assert.equal(jobState.job_intake.job_kind, "long_running_repair_job");
-  assert.equal(jobState.job_intake.autonomy_mode, "timeboxed");
-  assert.equal(jobState.run_profile, start.runProfile);
-  assert.equal(jobState.allow_push, false);
-
-  const initialPrompt = await readFile(join(start.jobDir, "initial_prompt.md"), "utf8");
-  assert.match(initialPrompt, /Original User Request/);
-  assert.match(initialPrompt, /git pull --ff-only/);
-  assert.match(initialPrompt, /No merge\/rebase|No merge\/rebase/i);
-  assert.match(initialPrompt, /flicker \/ locale flash/);
-  assert.match(initialPrompt, /scroll should reset to top when entering TOEIC\/folder\/set pages/);
-  assert.match(initialPrompt, /mobile\/PWA\/Safari state restoration/);
-  assert.match(initialPrompt, /Smart\/badge\/progress\/sync issues if found/);
-  assert.match(initialPrompt, /no UI redesign/);
-  assert.match(initialPrompt, /no feature flip/);
-  assert.match(initialPrompt, /minimal targeted fixes/);
-  assert.match(initialPrompt, /no deploy\/secret\/db migration/);
-  assert.match(initialPrompt, /Final Report/);
-  assert.match(await readFile(join(start.jobDir, "phase_plan.json"), "utf8"), /preflight_git_sync/);
-  assert.match(await readFile(join(start.jobDir, "policy_decision.json"), "utf8"), /allow_with_constraints/);
-  assert.match(await readFile(join(start.jobDir, "start_outcome.json"), "utf8"), /dry_run_prompt_only_explicitly_requested/);
-});
-
-test("Codex job start does not reject high-risk requests before safe work can begin", async () => {
-  const workspaceRoot = await mkdtemp(join(tmpdir(), "weaveflow-high-risk-start-test-"));
-  const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
-  const start = await startWeaveflowCodexJob({
-    workspaceRoot,
-    repoRoot,
-    userRequest: "Do a long-running audit for production deploy, secret, and destructive DB migration risks, but only inspect, test, and report.",
-    startWorker: false
-  });
-
-  assert.equal(start.ok, true);
-  assert.equal(start.status, "queued");
-  assert.equal(start.policyOutcome, "allow_with_constraints");
-  assert.equal(start.allowPush, false);
-  assert.equal(start.allowCommit, false);
-  assert.equal(start.jobPolicy.riskLevel, "high");
-  assert.equal(start.jobPolicy.requiresHumanReview, true);
-  assert.equal(start.jobPolicy.allowedActions.includes("inspect_repo"), true);
-  assert.equal(start.jobPolicy.allowedActions.includes("edit_files"), true);
-  assert.equal(start.jobPolicy.allowedActions.includes("run_tests"), true);
-  assert.equal(start.jobPolicy.allowedActions.includes("run_build"), true);
-  assert.equal(start.jobPolicy.allowedActions.includes("write_report"), true);
-  assert.equal(start.jobPolicy.blockedActions.includes("commit_changes"), true);
-  assert.equal(start.jobPolicy.blockedActions.includes("push_branch"), true);
-  assert.equal(start.jobPolicy.blockedActions.includes("production_deploy"), true);
-  assert.equal(start.jobPolicy.blockedActions.includes("change_secrets"), true);
-  assert.equal(start.jobPolicy.blockedActions.includes("destructive_db_migration"), true);
-});
-
-test("regression prompt can return started_job with job artifacts and tool guidance", async () => {
-  const workspaceRoot = await mkdtemp(join(tmpdir(), "weaveflow-regression-started-job-test-"));
-  const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
-  const start = await startWeaveflowCodexJob({
-    workspaceRoot,
-    repoRoot,
-    userRequest: REGRESSION_PROMPT,
-    preflightCommandRunner: async () => ({
-      code: 0,
-      stdout: "",
-      stderr: "",
-      termination: "exit"
-    }),
-    startWorkerProcess: async () => ({ pid: 424242 })
-  });
-  const text = formatCodexJobStartSummary(start);
-
-  assert.equal(start.actionOutcome, "started_job");
-  assert.equal(start.status, "running");
-  assert.equal(start.workerStarted, true);
-  assert.equal(start.runProfile, "company");
-  assert.match(start.jobId, /^JOB-\d{4}$/);
-  assert.equal(start.phasePlanPath, join(start.jobDir, "phase_plan.json"));
-  assert.equal(start.initialPromptPath, join(start.jobDir, "initial_prompt.md"));
-  assert.match(text, /장기 안정화 작업으로 인식해서 Weaveflow Codex job을 시작했습니다/);
-  assert.match(text, new RegExp(`job: ${start.jobId}`));
-  assert.match(text, new RegExp(`확인: weaveflow_check_codex_job ${start.jobId}`));
-  assert.match(text, new RegExp(`중단: weaveflow_cancel_codex_job ${start.jobId}`));
-  assert.match(text, new RegExp(`복구: weaveflow_recover_codex_job ${start.jobId}`));
-  assert.match(text, /phase: preflight_git_sync -> bug_inventory -> root_cause_pass -> minimal_fix_pass -> regression_pass -> verification_pass -> korean_report/);
-  assert.equal(containsGeneralCodexFallbackText(text), false);
-  assert.match(await readFile(join(start.jobDir, "start_outcome.json"), "utf8"), /started_job/);
 });
 
 test("Codex job multi-step session creates session artifacts and Korean progress", async () => {

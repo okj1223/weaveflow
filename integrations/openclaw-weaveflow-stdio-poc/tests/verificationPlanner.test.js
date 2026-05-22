@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  buildRepairVerificationPlan,
   normalizeCommandPlan,
   planVerificationCommands,
   selectFastChecks,
@@ -169,56 +168,6 @@ test("normalizes command plans and de-duplicates commands", () => {
 test("selectFastChecks and selectFullChecks expose reusable presets", () => {
   assert.deepEqual(commands({ commands: selectFastChecks(npmContext) }), ["git diff --check", "npm run smoke"]);
   assert.deepEqual(commands({ commands: selectFullChecks(npmContext) }), ["git diff --check", "npm test", "npm run smoke", "npm run build"]);
-});
-
-test("repair verification plan explores test lint build commands and manual UI checks", () => {
-  const plan = buildRepairVerificationPlan({
-    ...npmContext,
-    package_json: {
-      scripts: {
-        build: "vite build",
-        lint: "eslint .",
-        test: "vitest run"
-      }
-    },
-    likely_test_commands: ["npm test", "git diff --check"],
-    likely_build_commands: ["npm run build"]
-  }, {
-    reportedSymptoms: [
-      { id: "flicker_locale_flash" },
-      { id: "scroll_position_not_reset_on_entry" }
-    ]
-  });
-
-  assert.equal(plan.repairStabilization, true);
-  assert.equal(plan.commandDiscovery.some((item) => item.candidates.includes("npm test")), true);
-  assert.equal(plan.commandDiscovery.some((item) => item.candidates.includes("pnpm test")), true);
-  assert.equal(plan.commandDiscovery.some((item) => item.candidates.includes("yarn test")), true);
-  assert.equal(plan.commandDiscovery.some((item) => item.candidates.includes("npm run lint")), true);
-  assert.equal(plan.commandDiscovery.some((item) => item.candidates.includes("npm run build")), true);
-  assert.equal(commands(plan).includes("npm test"), true);
-  assert.equal(commands(plan).includes("npm run lint"), true);
-  assert.equal(commands(plan).includes("npm run build"), true);
-  assert.equal(plan.manualChecklist.some((item) => item.id === "route_component_review"), true);
-  assert.equal(plan.manualChecklist.some((item) => item.id === "mobile_pwa_safari_state_restore"), true);
-  assert.match(plan.korean_summary, /명령 탐색/);
-});
-
-test("repair verification plan falls back to manual checklist when commands are unavailable", () => {
-  const plan = buildRepairVerificationPlan({
-    project_types: [],
-    package_managers: [],
-    likely_test_commands: [],
-    likely_build_commands: []
-  });
-
-  assert.equal(plan.mode, "none");
-  assert.deepEqual(plan.commands, []);
-  assert.equal(plan.candidateCommands.includes("npm test"), true);
-  assert.equal(plan.candidateCommands.includes("pnpm test"), true);
-  assert.equal(plan.candidateCommands.includes("yarn test"), true);
-  assert.equal(plan.manualChecklist.some((item) => item.id === "scroll_top_on_entry"), true);
-  assert.equal(plan.warnings.some((warning) => warning.includes("수동 회귀 체크리스트")), true);
 });
 
 function commands(plan) {

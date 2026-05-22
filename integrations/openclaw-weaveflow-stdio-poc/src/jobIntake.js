@@ -7,20 +7,6 @@ const KOREAN_BRANCH_TERMS = [
   ["사이트", "website"],
   ["문서", "docs"],
   ["품질", "quality"],
-  ["점검", "audit"],
-  ["장기작업", "long-running"],
-  ["장기 작업", "long-running"],
-  ["대규모", "large-scale"],
-  ["고쳐", "repair"],
-  ["수정", "fix"],
-  ["버그", "bug"],
-  ["스크롤", "scroll"],
-  ["깜박임", "flash"],
-  ["깜박거리", "flash"],
-  ["깜빡", "flash"],
-  ["모바일", "mobile"],
-  ["사파리", "safari"],
-  ["깃풀", "git-pull"],
   ["개선", "improve"],
   ["강화", "improve"],
   ["정리", "cleanup"],
@@ -40,13 +26,6 @@ const BROAD_KEYWORDS = [
   "stabilize",
   "strengthen",
   "quality",
-  "repair",
-  "stabilize",
-  "stabilization",
-  "audit",
-  "sweep",
-  "long-running",
-  "large-scale",
   "website",
   "repo",
   "repository",
@@ -56,13 +35,6 @@ const BROAD_KEYWORDS = [
   "강화",
   "정리",
   "품질",
-  "점검",
-  "전체 점검",
-  "대규모",
-  "장기작업",
-  "장기 작업",
-  "꼼꼼히",
-  "고쳐",
   "안정화",
   "웹사이트",
   "repo",
@@ -139,68 +111,6 @@ const OVERNIGHT_KEYWORDS = [
   "while i sleep"
 ];
 
-const LONG_WORK_KEYWORDS = [
-  ...AWAY_OR_LONG_TIME_KEYWORDS,
-  ...OVERNIGHT_KEYWORDS,
-  "long work",
-  "long-running",
-  "large scale",
-  "large-scale",
-  "full audit",
-  "overall",
-  "stabilize",
-  "stabilization",
-  "git pull",
-  "bug-free",
-  "no bugs",
-  "no mistakes",
-  "do not change features",
-  "don't change features",
-  "do not redesign ui",
-  "don't redesign ui",
-  "mobile",
-  "pwa",
-  "safari",
-  "scroll",
-  "flicker",
-  "flash",
-  "locale flash",
-  "장기작업",
-  "장기 작업",
-  "대규모 점검",
-  "전체 점검",
-  "일일이 꼼꼼히",
-  "어떻게든 고쳐",
-  "어떻게든 고쳐내",
-  "깃풀",
-  "버그없게",
-  "버그 없게",
-  "실수없게",
-  "실수 없게",
-  "기능 바꾸지 마",
-  "기능 바꾸고",
-  "ui 뒤집지 마",
-  "ui뒤집지 마",
-  "ui 뒤집어",
-  "ui뒤집어",
-  "다 고쳐",
-  "전체적으로 봐",
-  "내가 디버깅할 수가 없잖아",
-  "모바일",
-  "사파리",
-  "스크롤",
-  "깜박임",
-  "깜박거리",
-  "깜빡",
-  "로케일 플래시"
-];
-
-const GIT_PULL_PATTERNS = [
-  /\bgit\s+pull\b/i,
-  /깃\s*풀/,
-  /깃풀/
-];
-
 const SPECIFIC_HINTS = [
   /\b(update|edit|change|add|remove|delete|rename|fix)\b.*\b[\w./-]+\.[a-z0-9]{1,8}\b/i,
   /\b[\w./-]+\.[a-z0-9]{1,8}\b.*\b(with|to|as)\b/i,
@@ -222,7 +132,6 @@ export function normalizeJobRequest(input) {
   const timeBudgetMinutes = extractTimeBudget(original);
   const autonomyMode = classifyAutonomyMode(original, timeBudgetMinutes);
   const inferredIntent = inferIntent(original);
-  const jobKind = inferJobKind(original, inferredIntent);
   const riskLevel = inferRiskLevel({ userRequest: original, autonomyMode, inferredIntent });
   const branchSlug = suggestBranchSlug(original);
   const normalizedGoal = normalizeGoal(original, inferredIntent);
@@ -256,10 +165,6 @@ export function normalizeJobRequest(input) {
     protected_scope: longWork.protected_scope,
     protected_scope_summary: longWork.protected_scope_summary,
     inferred_intent: inferredIntent,
-    job_kind: jobKind,
-    job_classification: jobKind,
-    long_work_request: isLongWorkRequest(original),
-    git_pull_requested: mentionsGitPull(original),
     risk_level: riskLevel,
     branch_slug: branchSlug,
     korean_summary: summary
@@ -276,10 +181,6 @@ export function classifyLongWorkRequest(input) {
 
   if (includesAny(lower, LONG_WORK_EXECUTION_KEYWORDS)) {
     signals.push("execution_request");
-  }
-  if (isLongWorkRequest(request)) {
-    signals.push("execution_request");
-    signals.push("away_or_long_time");
   }
   if (/(다|전부|모두|죄다|대량|bulk|all|every|entire)/i.test(request)) {
     signals.push("bulk_edit");
@@ -363,7 +264,6 @@ export function selectDefaultRunProfile(input = {}) {
 export function classifyAutonomyMode(userRequest, timeBudgetMinutes = TIME_BUDGET_FALLBACK) {
   const request = cleanRequest(userRequest);
   if (Number.isFinite(timeBudgetMinutes) && timeBudgetMinutes > 0) return "timeboxed";
-  if (isLongWorkRequest(request)) return "timeboxed";
   if (isSpecificRequest(request) && !isBroadRequest(request)) return "specific";
   if (isBroadRequest(request)) return "timeboxed";
   return "specific";
@@ -399,7 +299,6 @@ export function buildJobGoalSummary(userRequest, runProfileInput = null, longWor
   const longWork = longWorkInput || classifyLongWorkRequest(request);
   const timeText = timeBudgetMinutes ? `${timeBudgetMinutes}분` : "없음";
   const modeText = autonomyMode === "timeboxed" ? "시간 제한 자율 작업" : "지정 작업";
-  const longWorkText = isLongWorkRequest(request) ? "예" : "아니오";
 
   return [
     `요청: ${request}`,
@@ -411,7 +310,6 @@ export function buildJobGoalSummary(userRequest, runProfileInput = null, longWor
     runProfile ? `체크포인트 주기: ${runProfile.checkpointEveryMinutes}분` : "",
     runProfile ? `usage budget: ${runProfile.usageBudgetLevel}` : "",
     runProfile ? `quota 전략: ${runProfile.quotaStrategy}` : "",
-    `장기 작업 요청: ${longWorkText}`,
     `시간 예산: ${timeText}`,
     `장기 작업 후보: ${longWork.is_candidate ? "예" : "아니오"}`,
     longWork.target_scope?.length ? `대상 범위: ${longWork.target_scope.join("; ")}` : "",
@@ -437,40 +335,16 @@ function inferIntent(userRequest) {
   const request = cleanRequest(userRequest).toLowerCase();
   if (includesAny(request, ["openclaw", "poc"])) return "openclaw_poc_docs";
   if (includesAny(request, ["문서", "docs", "documentation", "readme"])) return "documentation";
-  if (includesAny(request, ["테스트", "test", "tests", "stabilize", "안정화"])) return "test_stability";
-  if (includesAny(request, [
-    "repair",
-    "stabilization",
-    "bugfix",
-    "bug fix",
-    "audit",
-    "sweep",
-    "long-running",
-    "장기작업",
-    "장기 작업",
-    "대규모",
-    "전체 점검",
-    "점검",
-    "고쳐",
-    "버그"
-  ])) return "repair_stabilization";
   if (includesAny(request, ["웹사이트", "website", "site", "frontend", "ui"])) return "website_improvement";
+  if (includesAny(request, ["테스트", "test", "tests", "stabilize", "안정화"])) return "test_stability";
   if (includesAny(request, ["repo", "repository", "레포", "품질", "quality"])) return "repository_quality";
   return "specific_task";
-}
-
-function inferJobKind(userRequest, inferredIntent) {
-  if (inferredIntent === "repair_stabilization" || isLongWorkRequest(userRequest)) {
-    return "long_running_repair_job";
-  }
-  return "standard_codex_job";
 }
 
 function inferRiskLevel({ userRequest, autonomyMode, inferredIntent }) {
   const request = cleanRequest(userRequest).toLowerCase();
   if (inferredIntent === "documentation" || inferredIntent === "openclaw_poc_docs") return "low";
   if (inferredIntent === "test_stability") return "medium";
-  if (inferredIntent === "repair_stabilization") return "medium";
   if (includesAny(request, ["delete", "remove", "삭제", "deploy", "release"])) return "high";
   return autonomyMode === "timeboxed" ? "medium" : "low";
 }
@@ -483,23 +357,12 @@ function normalizeGoal(userRequest, inferredIntent) {
 
 function isBroadRequest(userRequest) {
   const request = cleanRequest(userRequest).toLowerCase();
-  return includesAny(request, BROAD_KEYWORDS) || isLongWorkRequest(request);
+  return includesAny(request, BROAD_KEYWORDS);
 }
 
 function isSpecificRequest(userRequest) {
   const request = cleanRequest(userRequest);
   return SPECIFIC_HINTS.some((pattern) => pattern.test(request));
-}
-
-export function isLongWorkRequest(userRequest) {
-  const request = cleanRequest(userRequest).toLowerCase();
-  if (!request) return false;
-  return includesAny(request, LONG_WORK_KEYWORDS);
-}
-
-export function mentionsGitPull(userRequest) {
-  const request = cleanRequest(userRequest);
-  return GIT_PULL_PATTERNS.some((pattern) => pattern.test(request));
 }
 
 function cleanRequest(value) {
@@ -635,7 +498,6 @@ function koreanIntentLabel(intent) {
     openclaw_poc_docs: "OpenClaw POC 문서 개선",
     website_improvement: "웹사이트 개선",
     test_stability: "테스트 안정화",
-    repair_stabilization: "장기 수리/안정화",
     repository_quality: "저장소 품질 개선",
     specific_task: "지정 작업"
   }[intent] || "지정 작업";

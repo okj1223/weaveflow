@@ -8,14 +8,10 @@ import {
   extractProtectedScope,
   extractTargetScope,
   extractTimeBudget,
-  isLongWorkRequest,
-  mentionsGitPull,
   normalizeJobRequest,
   selectDefaultRunProfile,
   suggestBranchSlug
 } from "../src/jobIntake.js";
-
-const REGRESSION_PROMPT = "<@1486861488349249696> 그리고 아직도 깜박거리네 하 씨발 진짜 그리고 뭐냐 스크롤 내려서 토익 들어가봤는데 왜 거기서도 스크롤 내려가있는 상태에서 시작하냐 당연히 맨위에서 시작아니냐? 이런걸 일일이 내가 디버깅할 수가 없잖아 이개새끼야 weacflow깃풀로 당긴다음에 장기작업으로 어떻게든 고쳐내 실수없고 버그없고 갑자기 기능 바꾸고 ui뒤집어놓고 그런거 없이 알잘딱으로 알겠어? 전체 점검 대규모 점검들어가서 고쳐 일일이 꼼꼼히";
 
 test("normalizes broad Korean website improvement with hour budget", () => {
   const result = normalizeJobRequest("웹사이트 3시간 동안 강화해");
@@ -95,20 +91,6 @@ test("classifies broad repository test stabilization without explicit budget", (
   assert.equal(result.branch_slug, "repo-tests-stabilize");
 });
 
-test("classifies rough Korean Discord repair prompt as long work", () => {
-  const result = normalizeJobRequest(REGRESSION_PROMPT);
-
-  assert.equal(isLongWorkRequest(REGRESSION_PROMPT), true);
-  assert.equal(mentionsGitPull(REGRESSION_PROMPT), true);
-  assert.equal(result.long_work_request, true);
-  assert.equal(result.git_pull_requested, true);
-  assert.equal(result.autonomy_mode, "timeboxed");
-  assert.equal(result.inferred_intent, "repair_stabilization");
-  assert.equal(result.risk_level, "medium");
-  assert.match(result.normalized_goal, /장기 수리\/안정화/);
-  assert.match(result.korean_summary, /장기 작업 요청: 예/);
-});
-
 test("normalizes OpenClaw POC documentation cleanup as broad low-risk work", () => {
   const result = normalizeJobRequest("OpenClaw POC 문서 정리하고 커밋 푸시해");
 
@@ -117,20 +99,6 @@ test("normalizes OpenClaw POC documentation cleanup as broad low-risk work", () 
   assert.equal(result.inferred_intent, "openclaw_poc_docs");
   assert.equal(result.risk_level, "low");
   assert.equal(result.branch_slug, "openclaw-poc-docs-cleanup-commit-push");
-});
-
-test("normalizes rough Korean long-running repair request as timeboxed stabilization work", () => {
-  const request = "<@1486861488349249696> 그리고 아직도 깜박거리네 하 씨발 진짜 그리고 뭐냐 스크롤 내려서 토익 들어가봤는데 왜 거기서도 스크롤 내려가있는 상태에서 시작하냐 당연히 맨위에서 시작아니냐? 이런걸 일일이 내가 디버깅할 수가 없잖아 이개새끼야 weacflow깃풀로 당긴다음에 장기작업으로 어떻게든 고쳐내 실수없고 버그없고 갑자기 기능 바꾸고 ui뒤집어놓고 그런거 없이 알잘딱으로 알겠어? 전체 점검 대규모 점검들어가서 고쳐 일일이 꼼꼼히";
-  const result = normalizeJobRequest(request);
-
-  assert.equal(result.autonomy_mode, "timeboxed");
-  assert.equal(result.time_budget_minutes, null);
-  assert.equal(result.inferred_intent, "repair_stabilization");
-  assert.equal(result.job_kind, "long_running_repair_job");
-  assert.equal(result.job_classification, "long_running_repair_job");
-  assert.equal(result.risk_level, "medium");
-  assert.match(result.normalized_goal, /장기 수리\/안정화/);
-  assert.match(result.korean_summary, /분류: 시간 제한 자율 작업/);
 });
 
 test("classifies specific file update requests as specific", () => {
