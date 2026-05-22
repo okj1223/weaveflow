@@ -1,0 +1,1287 @@
+{
+  "schemaVersion": "weaveflow.integration_harness_report.v0",
+  "createdAt": "2026-05-22T09:18:42.967Z",
+  "summary": {
+    "status": "PARTIAL",
+    "promptAResult": {
+      "jobId": "JOB-0001",
+      "chainId": "CHAIN-0001",
+      "actionOutcome": "started_job",
+      "status": "running",
+      "workerStarted": true,
+      "pid": 53434,
+      "jobDir": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001"
+    },
+    "promptBResult": {
+      "jobId": "JOB-0002",
+      "chainId": "CHAIN-0002",
+      "actionOutcome": "started_job",
+      "status": "running",
+      "workerStarted": true,
+      "pid": 53470,
+      "jobDir": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002"
+    },
+    "realSpawnedWorkerWithFakeCli": true,
+    "workerStartJsonCreated": true,
+    "startOutcomeWorkerStartedTrue": true,
+    "checkTruthfulness": "pass",
+    "cancelBehavior": "pass",
+    "recoverBehavior": "pass",
+    "morningReviewBehavior": "pass",
+    "operatorActionBehavior": "pass",
+    "bannedFallbackTextFound": false,
+    "passedChecks": 52,
+    "failedChecks": 0
+  },
+  "workspace": {
+    "targetWorkspaceRoot": "/tmp/weaveflow-integration-target-8bg6M5",
+    "fakeCodexPath": "/home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/scripts/fake-codex-cli.js",
+    "runtimeRoot": "/home/robros0/Desktop/ws/weaveflow"
+  },
+  "checks": [
+    {
+      "name": "Prompt A start response has no banned fallback text",
+      "status": "pass",
+      "details": {
+        "found": []
+      }
+    },
+    {
+      "name": "Prompt A response is not dry explanation",
+      "status": "pass",
+      "details": {
+        "actionOutcome": "started_job"
+      }
+    },
+    {
+      "name": "Prompt A fake Codex available starts job",
+      "status": "pass",
+      "details": {
+        "actionOutcome": "started_job",
+        "status": "running"
+      }
+    },
+    {
+      "name": "Prompt A has jobId",
+      "status": "pass",
+      "details": {
+        "ok": true,
+        "jobId": "JOB-0001",
+        "chainId": "CHAIN-0001",
+        "rootJobId": "JOB-0001",
+        "parentJobId": null,
+        "segmentIndex": 1,
+        "maxSegments": 3,
+        "continuationMode": "auto_after_clean_segment",
+        "chainStatus": "active",
+        "chainStatusPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/chains/CHAIN-0001/chain_status.json",
+        "chainSegmentsPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/chains/CHAIN-0001/segments.jsonl",
+        "chainReportPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/chains/CHAIN-0001/chain_report.md",
+        "autoContinue": true,
+        "continuationDecision": null,
+        "taskId": "TASK-0001",
+        "branch": "codex/JOB-0001-1486861488349249696-weacflow-ui",
+        "status": "running",
+        "currentStep": "worker_started",
+        "elapsedMs": 35,
+        "timeBudgetMinutes": 120,
+        "maxSessionMinutes": 45,
+        "totalJobBudgetMinutes": 120,
+        "checkpointEveryMinutes": 1,
+        "checkpointCount": 1,
+        "latestCheckpointPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/checkpoints/checkpoint-0001.md",
+        "latestCheckpointJsonPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/checkpoints/checkpoint-0001.json",
+        "latestCheckpointReason": "job_started",
+        "latestCheckpointAt": "2026-05-22T09:18:41.763Z",
+        "resumeCapsulePath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/resume_capsule.md",
+        "resumeCapsuleJsonPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/resume_capsule.json",
+        "recommendedNextAction": "continue",
+        "nextSuggestedPromptReady": true,
+        "nextSuggestedPromptPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/next_suggested_prompt.md",
+        "runProfile": "company",
+        "usageBudgetLevel": "medium",
+        "quotaStrategy": "balanced",
+        "limitRecoveryMode": "checkpoint_and_pause",
+        "usageLimitGuard": {
+          "runProfile": "company",
+          "usageBudgetLevel": "medium",
+          "quotaStrategy": "balanced",
+          "limitRecoveryMode": "checkpoint_and_pause",
+          "maxSessionMinutes": 45,
+          "totalJobBudgetMinutes": 120,
+          "checkpointEveryMinutes": 1,
+          "checkpointOnPhaseChange": true,
+          "checkpointOnFailure": true,
+          "checkpointOnLimitSignal": true,
+          "maxFixAttempts": 3,
+          "maxRepeatedFailures": 1,
+          "maxChangedFiles": 16,
+          "allowLargeRefactor": false,
+          "allowPush": false,
+          "quotaReadable": false,
+          "quotaSource": "codex_process_output_only",
+          "quotaNote": "Actual remaining subscription quota is not read directly; the runner estimates conservatively and watches Codex output/errors."
+        },
+        "usageLimitEvents": [],
+        "usageLimitStopReason": null,
+        "usageLimitSummary": "Usage Limit Guard\n프로필: company\n단일 세션 한도: 0분 / 45분\n전체 작업 예산: 0분 / 120분\n체크포인트 주기: 1분\n수정 시도: 0 / 3\n반복 실패: 0 / 1\nusage budget: medium\nquota 전략: balanced\nlimit recovery: checkpoint_and_pause\npush: 허용 안 됨\n현재 판단: 계속 진행 가능",
+        "repeatedFailure": null,
+        "fixAttemptsUsed": 0,
+        "maxFixAttempts": 3,
+        "maxRepeatedFailures": 1,
+        "maxChangedFiles": 16,
+        "allowLargeRefactor": false,
+        "allowPush": false,
+        "normalizedGoal": "버그 수리: <@1486861488349249696> 그리고 아직도 깜박거리네 하 씨발 진짜 그리고 뭐냐 스크롤 내려서 토익 들어가봤는데 왜 거기서도 스크롤 내려가있는 상태에서 시작하냐 당연히 맨위에서 시작아니냐? 이런걸 일일이 내가 디버깅할 수가 없잖아 이개새끼야 weacflow깃풀로 당긴다음에 장기작업으로 어떻게든 고쳐내 실수없고 버그없고 갑자기 기능 바꾸고 ui뒤집어놓고 그런거 없이 알잘딱으로 알겠어? 전체 점검 대규모 점검들어가서 고쳐 일일이 꼼꼼히",
+        "selectedScope": "버그 수리: <@1486861488349249696> 그리고 아직도 깜박거리네 하 씨발 진짜 그리고 뭐냐 스크롤 내려서 토익 들어가봤는데 왜 거기서도 스크롤 내려가있는 상태에서 시작하냐 당연히 맨위에서 시작아니냐? 이런걸 일일이 내가 디버깅할 수가 없잖아 이개새끼야 weacflow깃풀로 당긴다음에 장기작업으로 어떻게든 고쳐내 실수없고 버그없고 갑자기 기능 바꾸고 ui뒤집어놓고 그런거 없이 알잘딱으로 알겠어? 전체 점검 대규모 점검들어가서 고쳐 일일이 꼼꼼히",
+        "repoRoot": "/tmp/weaveflow-integration-target-8bg6M5",
+        "repoResolution": {
+          "ok": true,
+          "repoRoot": "/tmp/weaveflow-integration-target-8bg6M5",
+          "repoAlias": null,
+          "source": "direct_path",
+          "warnings": [],
+          "korean_summary": "저장소 해석: 성공\n입력 방식: 직접 경로\n별칭: 없음\nrepoRoot: /tmp/weaveflow-integration-target-8bg6M5"
+        },
+        "jobPolicy": {
+          "push": false,
+          "allowPush": false,
+          "runTests": false,
+          "maxFixAttempts": 3,
+          "maxRepeatedFailures": 1,
+          "maxChangedFiles": 16,
+          "allowLargeRefactor": false,
+          "maxRuntimeMinutes": 2,
+          "timeBudgetMinutes": 120,
+          "maxSessionMinutes": 45,
+          "totalJobBudgetMinutes": 120,
+          "checkpointEveryMinutes": 1,
+          "checkpointOnPhaseChange": true,
+          "checkpointOnFailure": true,
+          "checkpointOnLimitSignal": true,
+          "runProfile": "company",
+          "usageBudgetLevel": "medium",
+          "quotaStrategy": "balanced",
+          "limitRecoveryMode": "checkpoint_and_pause",
+          "usageLimitGuard": {
+            "runProfile": "company",
+            "usageBudgetLevel": "medium",
+            "quotaStrategy": "balanced",
+            "limitRecoveryMode": "checkpoint_and_pause",
+            "maxSessionMinutes": 45,
+            "totalJobBudgetMinutes": 120,
+            "checkpointEveryMinutes": 1,
+            "checkpointOnPhaseChange": true,
+            "checkpointOnFailure": true,
+            "checkpointOnLimitSignal": true,
+            "maxFixAttempts": 3,
+            "maxRepeatedFailures": 1,
+            "maxChangedFiles": 16,
+            "allowLargeRefactor": false,
+            "allowPush": false,
+            "quotaReadable": false,
+            "quotaSource": "codex_process_output_only"
+          },
+          "autonomyMode": "timeboxed",
+          "riskLevel": "medium",
+          "policyDecision": "allow_with_constraints",
+          "executionMode": "safe_worktree",
+          "deniedActions": [
+            "push",
+            "production_deploy",
+            "secret_changes",
+            "destructive_db_migration",
+            "uncontrolled_commit"
+          ],
+          "allowedActions": [
+            "inspect_repo",
+            "create_worktree",
+            "edit_files",
+            "commit_changes"
+          ],
+          "blockedActions": [
+            "auto_merge",
+            "production_deploy",
+            "change_secrets",
+            "destructive_delete",
+            "destructive_db_migration",
+            "uncontrolled_push",
+            "uncontrolled_commit",
+            "push_branch"
+          ],
+          "requiresHumanReview": false,
+          "korean_summary": "Codex 작업 정책\n위험도: 중간\n자율 모드: 시간 제한 자율 작업\n프로필: company\n시간 예산: 120분\n전체 작업 예산: 120분\n단일 세션 한도: 45분\n체크포인트 주기: 1분\nusage budget: medium\nquota 전략: balanced\n최대 실행 시간: 2분\n테스트 실행: 아니오\n푸시 허용: 아니오\n최대 수정 시도: 3회\n사람 검토 필요: 아니오\n정책 결정: allow_with_constraints\n실행 모드: safe_worktree\n기본 금지: push, production_deploy, secret_changes, destructive_db_migration, uncontrolled_commit\n자동 허용 작업: inspect_repo, create_worktree, edit_files, commit_changes\n자동 차단 작업: auto_merge, production_deploy, change_secrets, destructive_delete, destructive_db_migration, uncontrolled_push, uncontrolled_commit, push_branch"
+        },
+        "policyDecision": "allow_with_constraints",
+        "executionMode": "safe_worktree",
+        "deniedActions": [
+          "push",
+          "production_deploy",
+          "secret_changes",
+          "destructive_db_migration",
+          "uncontrolled_commit"
+        ],
+        "phasePlan": {
+          "jobType": "long_running_repair_job",
+          "executionMode": "safe_worktree",
+          "phases": [
+            {
+              "id": "preflight_git_sync",
+              "title": "Run git status and git pull --ff-only only if the worktree is clean.",
+              "order": 1
+            },
+            {
+              "id": "bug_inventory",
+              "title": "Inventory the reported problems and affected routes/data before editing.",
+              "order": 2
+            },
+            {
+              "id": "root_cause_pass",
+              "title": "Trace root causes and preserve current product intent.",
+              "order": 3
+            },
+            {
+              "id": "minimal_fix_pass",
+              "title": "Apply minimal targeted fixes without UI redesign or feature flips.",
+              "order": 4
+            },
+            {
+              "id": "regression_pass",
+              "title": "Re-check the original failure cases and adjacent flows.",
+              "order": 5
+            },
+            {
+              "id": "verification_pass",
+              "title": "Run available test/lint/build checks and record limitations.",
+              "order": 6
+            },
+            {
+              "id": "korean_report",
+              "title": "Write a concise Korean result report with changed files, checks, and residual risk.",
+              "order": 7
+            }
+          ]
+        },
+        "phasePlanPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/phase_plan.json",
+        "verificationPlan": null,
+        "outcomeContractPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/outcome_contract.md",
+        "changeReviewPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/change_review.md",
+        "qualityGatePath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/quality_gate.md",
+        "qualityGateDecisionPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/quality_gate_decision.md",
+        "qualityGateDecision": null,
+        "qualityScore": null,
+        "qualityIssues": [],
+        "qualityReviewStatus": "pending",
+        "qualityFixAttemptsUsed": 0,
+        "recoveryStatus": null,
+        "recoveryAction": null,
+        "recoveryPlanPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/recovery_plan.md",
+        "recoveryResultPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/recovery_result.md",
+        "recoveryDiagnosticsPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/recovery_diagnostics.md",
+        "worktreeRecoveryPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/worktree_recovery.md",
+        "lastRecoveryCheckedAt": null,
+        "staleDetected": false,
+        "recoverable": null,
+        "recoveryConfidence": null,
+        "sessionMode": "single",
+        "totalSteps": 0,
+        "currentStepIndex": 0,
+        "completedSteps": 0,
+        "failedSteps": 0,
+        "skippedSteps": 0,
+        "currentSessionStep": null,
+        "recentSessionResult": null,
+        "sessionPlanPath": null,
+        "sessionSummaryPath": null,
+        "adaptiveMode": false,
+        "adaptiveStatePath": null,
+        "adaptiveLoopPath": null,
+        "currentAdaptiveStep": 0,
+        "nextAction": null,
+        "stopReason": null,
+        "goalProgressSummary": "",
+        "recentEvents": [
+          {
+            "timestamp": "2026-05-22T09:18:41.763Z",
+            "event": "worker_started",
+            "status": "running",
+            "current_step": "worker_started"
+          }
+        ],
+        "pid": 53434,
+        "jobDir": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001",
+        "jobArtifactPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001",
+        "actionOutcome": "started_job",
+        "workerStarted": true,
+        "workerStartStatus": "started",
+        "workerStartedAt": "2026-05-22T09:18:41.798Z",
+        "workerPreflightPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/worker_preflight.json",
+        "workerStartPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/worker_start.json",
+        "workerPreflightStatus": "ok",
+        "codexCommand": "/home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/scripts/fake-codex-cli.js",
+        "codexCommandStatus": "ok",
+        "codexCommandAvailable": true,
+        "workerScriptPath": "/home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/scripts/codex-job-worker.js",
+        "workerStartCommandPreview": {
+          "command": "/home/robros0/.nvm/versions/node/v20.20.2/bin/node",
+          "args": [
+            "/home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/scripts/codex-job-worker.js",
+            "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001"
+          ],
+          "cwd": "/tmp/weaveflow-integration-target-8bg6M5",
+          "jobId": "JOB-0001",
+          "targetWorkspaceRoot": "/tmp/weaveflow-integration-target-8bg6M5",
+          "runProfile": "company",
+          "executionMode": "safe_worktree",
+          "policyDecisionPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/policy_decision.json",
+          "initialPromptPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/initial_prompt.md",
+          "jobDir": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001",
+          "workerScriptPath": "/home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/scripts/codex-job-worker.js",
+          "codexCommand": "/home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/scripts/fake-codex-cli.js"
+        },
+        "targetScope": [],
+        "targetScopeSummary": "not specified",
+        "protectedScope": [
+          "unrelated TOEFL data unless request requires comparison"
+        ],
+        "protectedScopeSummary": "unrelated TOEFL data unless request requires comparison",
+        "jobRequestPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/job_request.json",
+        "initialPromptPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/initial_prompt.md",
+        "startOutcomePath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/start_outcome.json",
+        "policyDecisionPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/policy_decision.json",
+        "runProfilePath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/run_profile.json",
+        "runtimeDiagnosticsPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/runtime_diagnostics.json",
+        "runtime": {
+          "importOk": true,
+          "pythonExecutable": "python3",
+          "runtimeRoot": "/home/robros0/Desktop/ws/weaveflow",
+          "targetWorkspaceRoot": "/tmp/weaveflow-integration-target-8bg6M5",
+          "weaveflowModulePath": "/home/robros0/Desktop/ws/weaveflow/src/weaveflow/__init__.py",
+          "diagnosticsPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/runtime_diagnostics.json"
+        },
+        "runtimeRoot": "/home/robros0/Desktop/ws/weaveflow",
+        "pythonExecutable": "python3",
+        "targetWorkspaceRoot": "/tmp/weaveflow-integration-target-8bg6M5",
+        "weaveflowBridgeWorkspaceRoot": "/tmp/weaveflow-integration-target-8bg6M5",
+        "expectedModulePath": "/home/robros0/Desktop/ws/weaveflow/src/weaveflow",
+        "checkTool": "weaveflow_check_codex_job",
+        "cancelTool": "weaveflow_cancel_codex_job",
+        "recoverTool": "weaveflow_recover_codex_job",
+        "reason": null,
+        "missingRequirement": null,
+        "userNextAction": null
+      }
+    },
+    {
+      "name": "Prompt A has job dir",
+      "status": "pass",
+      "details": {
+        "jobDir": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001"
+      }
+    },
+    {
+      "name": "Prompt A start_outcome.json exists",
+      "status": "pass",
+      "details": {
+        "path": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/start_outcome.json"
+      }
+    },
+    {
+      "name": "Prompt A worker_start.json exists",
+      "status": "pass",
+      "details": {
+        "path": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/worker_start.json"
+      }
+    },
+    {
+      "name": "Prompt A start_outcome workerStarted true",
+      "status": "pass",
+      "details": {
+        "ok": true,
+        "action_outcome": "started_job",
+        "status": "started_job",
+        "job_id": "JOB-0001",
+        "task_id": "TASK-0001",
+        "runProfile": "company",
+        "worker_started": true,
+        "worker_start_status": "started",
+        "pid": 53434,
+        "reason": "",
+        "missing_requirement": "",
+        "user_next_action": "",
+        "jobStarted": true,
+        "workerStarted": true,
+        "jobId": "JOB-0001",
+        "chainId": "CHAIN-0001",
+        "rootJobId": "JOB-0001",
+        "parentJobId": null,
+        "segmentIndex": 1,
+        "maxSegments": 3,
+        "continuationMode": "auto_after_clean_segment",
+        "executionMode": "safe_worktree",
+        "policyDecision": "allow_with_constraints",
+        "deniedActions": [
+          "push",
+          "production_deploy",
+          "secret_changes",
+          "destructive_db_migration",
+          "uncontrolled_commit"
+        ],
+        "phasePlanPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/phase_plan.json",
+        "runtime": {
+          "importOk": true,
+          "pythonExecutable": "python3",
+          "runtimeRoot": "/home/robros0/Desktop/ws/weaveflow",
+          "targetWorkspaceRoot": "/tmp/weaveflow-integration-target-8bg6M5",
+          "weaveflowModulePath": "/home/robros0/Desktop/ws/weaveflow/src/weaveflow/__init__.py",
+          "diagnosticsPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/runtime_diagnostics.json"
+        },
+        "runtime_diagnostics_path": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/runtime_diagnostics.json",
+        "runtimeDiagnosticsPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/runtime_diagnostics.json",
+        "worker_preflight_path": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/worker_preflight.json",
+        "workerPreflightPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/worker_preflight.json",
+        "worker_start_path": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/worker_start.json",
+        "workerStartPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/worker_start.json",
+        "codexCommand": "/home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/scripts/fake-codex-cli.js",
+        "workerStartCommandPreview": {
+          "command": "/home/robros0/.nvm/versions/node/v20.20.2/bin/node",
+          "args": [
+            "/home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/scripts/codex-job-worker.js",
+            "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001"
+          ],
+          "cwd": "/tmp/weaveflow-integration-target-8bg6M5",
+          "jobId": "JOB-0001",
+          "targetWorkspaceRoot": "/tmp/weaveflow-integration-target-8bg6M5",
+          "runProfile": "company",
+          "executionMode": "safe_worktree",
+          "policyDecisionPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/policy_decision.json",
+          "initialPromptPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/initial_prompt.md",
+          "jobDir": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001",
+          "workerScriptPath": "/home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/scripts/codex-job-worker.js",
+          "codexCommand": "/home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/scripts/fake-codex-cli.js"
+        },
+        "chainStatusPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/chains/CHAIN-0001/chain_status.json",
+        "chainSegmentsPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/chains/CHAIN-0001/segments.jsonl",
+        "chainReportPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/chains/CHAIN-0001/chain_report.md",
+        "suggestedFix": "",
+        "pythonExecutable": "python3",
+        "runtimeRoot": "/home/robros0/Desktop/ws/weaveflow",
+        "targetWorkspaceRoot": "/tmp/weaveflow-integration-target-8bg6M5",
+        "expectedModulePath": "/home/robros0/Desktop/ws/weaveflow/src/weaveflow",
+        "job_artifact_path": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001",
+        "initial_prompt_path": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/initial_prompt.md",
+        "check_tool": "weaveflow_check_codex_job",
+        "cancel_tool": "weaveflow_cancel_codex_job",
+        "recover_tool": "weaveflow_recover_codex_job",
+        "updated_at": "2026-05-22T09:18:41.798Z"
+      }
+    },
+    {
+      "name": "Prompt A pid recorded",
+      "status": "pass",
+      "details": {
+        "workerStartPid": 53434,
+        "startOutcomePid": 53434,
+        "startPid": 53434
+      }
+    },
+    {
+      "name": "Prompt A policy_decision.json exists",
+      "status": "pass",
+      "details": {
+        "path": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/policy_decision.json"
+      }
+    },
+    {
+      "name": "Prompt A initial_prompt.md exists",
+      "status": "pass",
+      "details": {
+        "path": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/initial_prompt.md"
+      }
+    },
+    {
+      "name": "Prompt A expected job type",
+      "status": "pass",
+      "details": {
+        "expected": "long_running_repair_job",
+        "actual": "long_running_repair_job"
+      }
+    },
+    {
+      "name": "Prompt A profile company",
+      "status": "pass",
+      "details": {
+        "jobRequestRunProfile": "company",
+        "policyRunProfile": "company"
+      }
+    },
+    {
+      "name": "Prompt A allow_with_constraints policy",
+      "status": "pass",
+      "details": {
+        "jobRequestPolicy": "allow_with_constraints",
+        "policyDecision": "allow_with_constraints"
+      }
+    },
+    {
+      "name": "Prompt A safe_worktree execution",
+      "status": "pass",
+      "details": {
+        "jobRequestExecutionMode": "safe_worktree",
+        "policyExecutionMode": "safe_worktree"
+      }
+    },
+    {
+      "name": "Prompt A initial prompt includes original request",
+      "status": "pass",
+      "details": {}
+    },
+    {
+      "name": "cancel response has no banned fallback text",
+      "status": "pass",
+      "details": {
+        "found": []
+      }
+    },
+    {
+      "name": "cancel_request.json created",
+      "status": "pass",
+      "details": {
+        "cancelRequestPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/cancel_request.json"
+      }
+    },
+    {
+      "name": "cancel response does not fake success when process already ended",
+      "status": "pass",
+      "details": {
+        "cancelled": true,
+        "status": "cancelled",
+        "previousStatus": "running"
+      }
+    },
+    {
+      "name": "Prompt B start response has no banned fallback text",
+      "status": "pass",
+      "details": {
+        "found": []
+      }
+    },
+    {
+      "name": "Prompt B response is not dry explanation",
+      "status": "pass",
+      "details": {
+        "actionOutcome": "started_job"
+      }
+    },
+    {
+      "name": "Prompt B fake Codex available starts job",
+      "status": "pass",
+      "details": {
+        "actionOutcome": "started_job",
+        "status": "running"
+      }
+    },
+    {
+      "name": "Prompt B has jobId",
+      "status": "pass",
+      "details": {
+        "ok": true,
+        "jobId": "JOB-0002",
+        "chainId": "CHAIN-0002",
+        "rootJobId": "JOB-0002",
+        "parentJobId": null,
+        "segmentIndex": 1,
+        "maxSegments": 3,
+        "continuationMode": "auto_after_clean_segment",
+        "chainStatus": "active",
+        "chainStatusPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/chains/CHAIN-0002/chain_status.json",
+        "chainSegmentsPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/chains/CHAIN-0002/segments.jsonl",
+        "chainReportPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/chains/CHAIN-0002/chain_report.md",
+        "autoContinue": true,
+        "continuationDecision": null,
+        "taskId": "TASK-0002",
+        "branch": "codex/JOB-0002-1486861488349249696-ets",
+        "status": "running",
+        "currentStep": "worker_started",
+        "elapsedMs": 20,
+        "timeBudgetMinutes": 120,
+        "maxSessionMinutes": 45,
+        "totalJobBudgetMinutes": 120,
+        "checkpointEveryMinutes": 1,
+        "checkpointCount": 1,
+        "latestCheckpointPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/checkpoints/checkpoint-0001.md",
+        "latestCheckpointJsonPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/checkpoints/checkpoint-0001.json",
+        "latestCheckpointReason": "job_started",
+        "latestCheckpointAt": "2026-05-22T09:18:42.262Z",
+        "resumeCapsulePath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/resume_capsule.md",
+        "resumeCapsuleJsonPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/resume_capsule.json",
+        "recommendedNextAction": "continue",
+        "nextSuggestedPromptReady": true,
+        "nextSuggestedPromptPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/next_suggested_prompt.md",
+        "runProfile": "company",
+        "usageBudgetLevel": "medium",
+        "quotaStrategy": "balanced",
+        "limitRecoveryMode": "checkpoint_and_pause",
+        "usageLimitGuard": {
+          "runProfile": "company",
+          "usageBudgetLevel": "medium",
+          "quotaStrategy": "balanced",
+          "limitRecoveryMode": "checkpoint_and_pause",
+          "maxSessionMinutes": 45,
+          "totalJobBudgetMinutes": 120,
+          "checkpointEveryMinutes": 1,
+          "checkpointOnPhaseChange": true,
+          "checkpointOnFailure": true,
+          "checkpointOnLimitSignal": true,
+          "maxFixAttempts": 3,
+          "maxRepeatedFailures": 1,
+          "maxChangedFiles": 16,
+          "allowLargeRefactor": false,
+          "allowPush": false,
+          "quotaReadable": false,
+          "quotaSource": "codex_process_output_only",
+          "quotaNote": "Actual remaining subscription quota is not read directly; the runner estimates conservatively and watches Codex output/errors."
+        },
+        "usageLimitEvents": [],
+        "usageLimitStopReason": null,
+        "usageLimitSummary": "Usage Limit Guard\n프로필: company\n단일 세션 한도: 0분 / 45분\n전체 작업 예산: 0분 / 120분\n체크포인트 주기: 1분\n수정 시도: 0 / 3\n반복 실패: 0 / 1\nusage budget: medium\nquota 전략: balanced\nlimit recovery: checkpoint_and_pause\npush: 허용 안 됨\n현재 판단: 계속 진행 가능",
+        "repeatedFailure": null,
+        "fixAttemptsUsed": 0,
+        "maxFixAttempts": 3,
+        "maxRepeatedFailures": 1,
+        "maxChangedFiles": 16,
+        "allowLargeRefactor": false,
+        "allowPush": false,
+        "normalizedGoal": "데이터 검증: <@1486861488349249696> 토익 단어들도 진짜 토익단어인지 여자친구용 뜻이 어색하진 않은지 단어책 뜻이 아니라 서술식으로 이상하게 되어 있다던지 ets 단어장이라도 보고 참고하라 그래 인터넷뒤져서 그거 장기작업으로 검증해",
+        "selectedScope": "데이터 검증: <@1486861488349249696> 토익 단어들도 진짜 토익단어인지 여자친구용 뜻이 어색하진 않은지 단어책 뜻이 아니라 서술식으로 이상하게 되어 있다던지 ets 단어장이라도 보고 참고하라 그래 인터넷뒤져서 그거 장기작업으로 검증해",
+        "repoRoot": "/tmp/weaveflow-integration-target-8bg6M5",
+        "repoResolution": {
+          "ok": true,
+          "repoRoot": "/tmp/weaveflow-integration-target-8bg6M5",
+          "repoAlias": null,
+          "source": "direct_path",
+          "warnings": [],
+          "korean_summary": "저장소 해석: 성공\n입력 방식: 직접 경로\n별칭: 없음\nrepoRoot: /tmp/weaveflow-integration-target-8bg6M5"
+        },
+        "jobPolicy": {
+          "push": false,
+          "allowPush": false,
+          "runTests": false,
+          "maxFixAttempts": 3,
+          "maxRepeatedFailures": 1,
+          "maxChangedFiles": 16,
+          "allowLargeRefactor": false,
+          "maxRuntimeMinutes": 2,
+          "timeBudgetMinutes": 120,
+          "maxSessionMinutes": 45,
+          "totalJobBudgetMinutes": 120,
+          "checkpointEveryMinutes": 1,
+          "checkpointOnPhaseChange": true,
+          "checkpointOnFailure": true,
+          "checkpointOnLimitSignal": true,
+          "runProfile": "company",
+          "usageBudgetLevel": "medium",
+          "quotaStrategy": "balanced",
+          "limitRecoveryMode": "checkpoint_and_pause",
+          "usageLimitGuard": {
+            "runProfile": "company",
+            "usageBudgetLevel": "medium",
+            "quotaStrategy": "balanced",
+            "limitRecoveryMode": "checkpoint_and_pause",
+            "maxSessionMinutes": 45,
+            "totalJobBudgetMinutes": 120,
+            "checkpointEveryMinutes": 1,
+            "checkpointOnPhaseChange": true,
+            "checkpointOnFailure": true,
+            "checkpointOnLimitSignal": true,
+            "maxFixAttempts": 3,
+            "maxRepeatedFailures": 1,
+            "maxChangedFiles": 16,
+            "allowLargeRefactor": false,
+            "allowPush": false,
+            "quotaReadable": false,
+            "quotaSource": "codex_process_output_only"
+          },
+          "autonomyMode": "timeboxed",
+          "riskLevel": "medium",
+          "policyDecision": "allow_with_constraints",
+          "executionMode": "safe_worktree",
+          "deniedActions": [
+            "push",
+            "production_deploy",
+            "secret_changes",
+            "destructive_db_migration",
+            "uncontrolled_commit"
+          ],
+          "allowedActions": [
+            "inspect_repo",
+            "create_worktree",
+            "edit_files",
+            "commit_changes"
+          ],
+          "blockedActions": [
+            "auto_merge",
+            "production_deploy",
+            "change_secrets",
+            "destructive_delete",
+            "destructive_db_migration",
+            "uncontrolled_push",
+            "uncontrolled_commit",
+            "push_branch"
+          ],
+          "requiresHumanReview": false,
+          "korean_summary": "Codex 작업 정책\n위험도: 중간\n자율 모드: 시간 제한 자율 작업\n프로필: company\n시간 예산: 120분\n전체 작업 예산: 120분\n단일 세션 한도: 45분\n체크포인트 주기: 1분\nusage budget: medium\nquota 전략: balanced\n최대 실행 시간: 2분\n테스트 실행: 아니오\n푸시 허용: 아니오\n최대 수정 시도: 3회\n사람 검토 필요: 아니오\n정책 결정: allow_with_constraints\n실행 모드: safe_worktree\n기본 금지: push, production_deploy, secret_changes, destructive_db_migration, uncontrolled_commit\n자동 허용 작업: inspect_repo, create_worktree, edit_files, commit_changes\n자동 차단 작업: auto_merge, production_deploy, change_secrets, destructive_delete, destructive_db_migration, uncontrolled_push, uncontrolled_commit, push_branch"
+        },
+        "policyDecision": "allow_with_constraints",
+        "executionMode": "safe_worktree",
+        "deniedActions": [
+          "push",
+          "production_deploy",
+          "secret_changes",
+          "destructive_db_migration",
+          "uncontrolled_commit"
+        ],
+        "phasePlan": {
+          "jobType": "long_running_data_review_job",
+          "executionMode": "safe_worktree",
+          "phases": [
+            {
+              "id": "preflight_git_sync",
+              "title": "Run git status and git pull --ff-only only if the worktree is clean.",
+              "order": 1
+            },
+            {
+              "id": "target_inventory",
+              "title": "Identify TOEIC word sets and girlfriend zh-TW meaning data before edits.",
+              "order": 2
+            },
+            {
+              "id": "source_reference_pass",
+              "title": "Use available local/web references if available and report limitations clearly.",
+              "order": 3
+            },
+            {
+              "id": "meaning_quality_pass",
+              "title": "Check TOEIC suitability and natural Taiwanese learner gloss style.",
+              "order": 4
+            },
+            {
+              "id": "minimal_fix_pass",
+              "title": "Apply minimal data fixes without unrelated TOEFL or owner data changes.",
+              "order": 5
+            },
+            {
+              "id": "verification_pass",
+              "title": "Run available data/test/lint checks and record limitations.",
+              "order": 6
+            },
+            {
+              "id": "korean_report",
+              "title": "Write a concise Korean report with reviewed scope, changes, checks, and limitations.",
+              "order": 7
+            }
+          ]
+        },
+        "phasePlanPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/phase_plan.json",
+        "verificationPlan": null,
+        "outcomeContractPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/outcome_contract.md",
+        "changeReviewPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/change_review.md",
+        "qualityGatePath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/quality_gate.md",
+        "qualityGateDecisionPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/quality_gate_decision.md",
+        "qualityGateDecision": null,
+        "qualityScore": null,
+        "qualityIssues": [],
+        "qualityReviewStatus": "pending",
+        "qualityFixAttemptsUsed": 0,
+        "recoveryStatus": null,
+        "recoveryAction": null,
+        "recoveryPlanPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/recovery_plan.md",
+        "recoveryResultPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/recovery_result.md",
+        "recoveryDiagnosticsPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/recovery_diagnostics.md",
+        "worktreeRecoveryPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/worktree_recovery.md",
+        "lastRecoveryCheckedAt": null,
+        "staleDetected": false,
+        "recoverable": null,
+        "recoveryConfidence": null,
+        "sessionMode": "single",
+        "totalSteps": 0,
+        "currentStepIndex": 0,
+        "completedSteps": 0,
+        "failedSteps": 0,
+        "skippedSteps": 0,
+        "currentSessionStep": null,
+        "recentSessionResult": null,
+        "sessionPlanPath": null,
+        "sessionSummaryPath": null,
+        "adaptiveMode": false,
+        "adaptiveStatePath": null,
+        "adaptiveLoopPath": null,
+        "currentAdaptiveStep": 0,
+        "nextAction": null,
+        "stopReason": null,
+        "goalProgressSummary": "",
+        "recentEvents": [
+          {
+            "timestamp": "2026-05-22T09:18:42.262Z",
+            "event": "worker_started",
+            "status": "running",
+            "current_step": "worker_started"
+          }
+        ],
+        "pid": 53470,
+        "jobDir": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002",
+        "jobArtifactPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002",
+        "actionOutcome": "started_job",
+        "workerStarted": true,
+        "workerStartStatus": "started",
+        "workerStartedAt": "2026-05-22T09:18:42.282Z",
+        "workerPreflightPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/worker_preflight.json",
+        "workerStartPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/worker_start.json",
+        "workerPreflightStatus": "ok",
+        "codexCommand": "/home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/scripts/fake-codex-cli.js",
+        "codexCommandStatus": "ok",
+        "codexCommandAvailable": true,
+        "workerScriptPath": "/home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/scripts/codex-job-worker.js",
+        "workerStartCommandPreview": {
+          "command": "/home/robros0/.nvm/versions/node/v20.20.2/bin/node",
+          "args": [
+            "/home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/scripts/codex-job-worker.js",
+            "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002"
+          ],
+          "cwd": "/tmp/weaveflow-integration-target-8bg6M5",
+          "jobId": "JOB-0002",
+          "targetWorkspaceRoot": "/tmp/weaveflow-integration-target-8bg6M5",
+          "runProfile": "company",
+          "executionMode": "safe_worktree",
+          "policyDecisionPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/policy_decision.json",
+          "initialPromptPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/initial_prompt.md",
+          "jobDir": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002",
+          "workerScriptPath": "/home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/scripts/codex-job-worker.js",
+          "codexCommand": "/home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/scripts/fake-codex-cli.js"
+        },
+        "targetScope": [
+          "여자친구 zh-TW 뜻",
+          "TOEIC word sets"
+        ],
+        "targetScopeSummary": "여자친구 zh-TW 뜻; TOEIC word sets",
+        "protectedScope": [
+          "owner/user/KJ data if identifiable",
+          "unrelated TOEFL data unless request requires comparison"
+        ],
+        "protectedScopeSummary": "owner/user/KJ data if identifiable; unrelated TOEFL data unless request requires comparison",
+        "jobRequestPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/job_request.json",
+        "initialPromptPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/initial_prompt.md",
+        "startOutcomePath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/start_outcome.json",
+        "policyDecisionPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/policy_decision.json",
+        "runProfilePath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/run_profile.json",
+        "runtimeDiagnosticsPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/runtime_diagnostics.json",
+        "runtime": {
+          "importOk": true,
+          "pythonExecutable": "python3",
+          "runtimeRoot": "/home/robros0/Desktop/ws/weaveflow",
+          "targetWorkspaceRoot": "/tmp/weaveflow-integration-target-8bg6M5",
+          "weaveflowModulePath": "/home/robros0/Desktop/ws/weaveflow/src/weaveflow/__init__.py",
+          "diagnosticsPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/runtime_diagnostics.json"
+        },
+        "runtimeRoot": "/home/robros0/Desktop/ws/weaveflow",
+        "pythonExecutable": "python3",
+        "targetWorkspaceRoot": "/tmp/weaveflow-integration-target-8bg6M5",
+        "weaveflowBridgeWorkspaceRoot": "/tmp/weaveflow-integration-target-8bg6M5",
+        "expectedModulePath": "/home/robros0/Desktop/ws/weaveflow/src/weaveflow",
+        "checkTool": "weaveflow_check_codex_job",
+        "cancelTool": "weaveflow_cancel_codex_job",
+        "recoverTool": "weaveflow_recover_codex_job",
+        "reason": null,
+        "missingRequirement": null,
+        "userNextAction": null
+      }
+    },
+    {
+      "name": "Prompt B has job dir",
+      "status": "pass",
+      "details": {
+        "jobDir": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002"
+      }
+    },
+    {
+      "name": "Prompt B start_outcome.json exists",
+      "status": "pass",
+      "details": {
+        "path": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/start_outcome.json"
+      }
+    },
+    {
+      "name": "Prompt B worker_start.json exists",
+      "status": "pass",
+      "details": {
+        "path": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/worker_start.json"
+      }
+    },
+    {
+      "name": "Prompt B start_outcome workerStarted true",
+      "status": "pass",
+      "details": {
+        "ok": true,
+        "action_outcome": "started_job",
+        "status": "started_job",
+        "job_id": "JOB-0002",
+        "task_id": "TASK-0002",
+        "runProfile": "company",
+        "worker_started": true,
+        "worker_start_status": "started",
+        "pid": 53470,
+        "reason": "",
+        "missing_requirement": "",
+        "user_next_action": "",
+        "jobStarted": true,
+        "workerStarted": true,
+        "jobId": "JOB-0002",
+        "chainId": "CHAIN-0002",
+        "rootJobId": "JOB-0002",
+        "parentJobId": null,
+        "segmentIndex": 1,
+        "maxSegments": 3,
+        "continuationMode": "auto_after_clean_segment",
+        "executionMode": "safe_worktree",
+        "policyDecision": "allow_with_constraints",
+        "deniedActions": [
+          "push",
+          "production_deploy",
+          "secret_changes",
+          "destructive_db_migration",
+          "uncontrolled_commit"
+        ],
+        "phasePlanPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/phase_plan.json",
+        "runtime": {
+          "importOk": true,
+          "pythonExecutable": "python3",
+          "runtimeRoot": "/home/robros0/Desktop/ws/weaveflow",
+          "targetWorkspaceRoot": "/tmp/weaveflow-integration-target-8bg6M5",
+          "weaveflowModulePath": "/home/robros0/Desktop/ws/weaveflow/src/weaveflow/__init__.py",
+          "diagnosticsPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/runtime_diagnostics.json"
+        },
+        "runtime_diagnostics_path": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/runtime_diagnostics.json",
+        "runtimeDiagnosticsPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/runtime_diagnostics.json",
+        "worker_preflight_path": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/worker_preflight.json",
+        "workerPreflightPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/worker_preflight.json",
+        "worker_start_path": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/worker_start.json",
+        "workerStartPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/worker_start.json",
+        "codexCommand": "/home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/scripts/fake-codex-cli.js",
+        "workerStartCommandPreview": {
+          "command": "/home/robros0/.nvm/versions/node/v20.20.2/bin/node",
+          "args": [
+            "/home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/scripts/codex-job-worker.js",
+            "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002"
+          ],
+          "cwd": "/tmp/weaveflow-integration-target-8bg6M5",
+          "jobId": "JOB-0002",
+          "targetWorkspaceRoot": "/tmp/weaveflow-integration-target-8bg6M5",
+          "runProfile": "company",
+          "executionMode": "safe_worktree",
+          "policyDecisionPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/policy_decision.json",
+          "initialPromptPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/initial_prompt.md",
+          "jobDir": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002",
+          "workerScriptPath": "/home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/scripts/codex-job-worker.js",
+          "codexCommand": "/home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/scripts/fake-codex-cli.js"
+        },
+        "chainStatusPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/chains/CHAIN-0002/chain_status.json",
+        "chainSegmentsPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/chains/CHAIN-0002/segments.jsonl",
+        "chainReportPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/chains/CHAIN-0002/chain_report.md",
+        "suggestedFix": "",
+        "pythonExecutable": "python3",
+        "runtimeRoot": "/home/robros0/Desktop/ws/weaveflow",
+        "targetWorkspaceRoot": "/tmp/weaveflow-integration-target-8bg6M5",
+        "expectedModulePath": "/home/robros0/Desktop/ws/weaveflow/src/weaveflow",
+        "job_artifact_path": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002",
+        "initial_prompt_path": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/initial_prompt.md",
+        "check_tool": "weaveflow_check_codex_job",
+        "cancel_tool": "weaveflow_cancel_codex_job",
+        "recover_tool": "weaveflow_recover_codex_job",
+        "updated_at": "2026-05-22T09:18:42.282Z"
+      }
+    },
+    {
+      "name": "Prompt B pid recorded",
+      "status": "pass",
+      "details": {
+        "workerStartPid": 53470,
+        "startOutcomePid": 53470,
+        "startPid": 53470
+      }
+    },
+    {
+      "name": "Prompt B policy_decision.json exists",
+      "status": "pass",
+      "details": {
+        "path": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/policy_decision.json"
+      }
+    },
+    {
+      "name": "Prompt B initial_prompt.md exists",
+      "status": "pass",
+      "details": {
+        "path": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/initial_prompt.md"
+      }
+    },
+    {
+      "name": "Prompt B expected job type",
+      "status": "pass",
+      "details": {
+        "expected": "long_running_data_review_job",
+        "actual": "long_running_data_review_job"
+      }
+    },
+    {
+      "name": "Prompt B profile company",
+      "status": "pass",
+      "details": {
+        "jobRequestRunProfile": "company",
+        "policyRunProfile": "company"
+      }
+    },
+    {
+      "name": "Prompt B allow_with_constraints policy",
+      "status": "pass",
+      "details": {
+        "jobRequestPolicy": "allow_with_constraints",
+        "policyDecision": "allow_with_constraints"
+      }
+    },
+    {
+      "name": "Prompt B safe_worktree execution",
+      "status": "pass",
+      "details": {
+        "jobRequestExecutionMode": "safe_worktree",
+        "policyExecutionMode": "safe_worktree"
+      }
+    },
+    {
+      "name": "Prompt B initial prompt includes original request",
+      "status": "pass",
+      "details": {}
+    },
+    {
+      "name": "check response has no banned fallback text",
+      "status": "pass",
+      "details": {
+        "found": []
+      }
+    },
+    {
+      "name": "check finds started job",
+      "status": "pass",
+      "details": {
+        "jobId": "JOB-0002",
+        "expected": "JOB-0002"
+      }
+    },
+    {
+      "name": "terminal fake worker is not reported as running",
+      "status": "pass",
+      "details": {
+        "jobStateStatus": "failed",
+        "checkStatus": "failed"
+      }
+    },
+    {
+      "name": "check returns structured lifecycle state",
+      "status": "pass",
+      "details": {
+        "status": "failed"
+      }
+    },
+    {
+      "name": "recover response has no banned fallback text",
+      "status": "pass",
+      "details": {
+        "found": []
+      }
+    },
+    {
+      "name": "recover inspect/prepare returns dryRun plan",
+      "status": "pass",
+      "details": {
+        "dryRun": true,
+        "recoveryPlanPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/recovery_plan.md"
+      }
+    },
+    {
+      "name": "recover exposes resume capsule or fallback recovery context",
+      "status": "pass",
+      "details": {
+        "resumeCapsulePath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/resume_capsule.md",
+        "nextSuggestedPromptReady": true
+      }
+    },
+    {
+      "name": "morning review response has no banned fallback text",
+      "status": "pass",
+      "details": {
+        "found": []
+      }
+    },
+    {
+      "name": "morning review markdown artifact created",
+      "status": "pass",
+      "details": {
+        "reviewMarkdownPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/operator_reviews/morning_review-20260522-181842.md",
+        "reviewJsonPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/operator_reviews/morning_review-20260522-181842.json"
+      }
+    },
+    {
+      "name": "morning review json artifact created",
+      "status": "pass",
+      "details": {
+        "reviewMarkdownPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/operator_reviews/morning_review-20260522-181842.md",
+        "reviewJsonPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/operator_reviews/morning_review-20260522-181842.json"
+      }
+    },
+    {
+      "name": "morning review discovers jobs",
+      "status": "pass",
+      "details": {
+        "totalJobs": 2,
+        "totalChains": 2,
+        "running": 0,
+        "completed": 0,
+        "failed": 1,
+        "stale": 0,
+        "blocked": 0,
+        "paused": 0,
+        "needsAttention": 0,
+        "readyForReview": 0,
+        "canContinue": 1
+      }
+    },
+    {
+      "name": "morning review uses non-running categories for failed/cancelled work",
+      "status": "pass",
+      "details": {
+        "totalJobs": 2,
+        "totalChains": 2,
+        "running": 0,
+        "completed": 0,
+        "failed": 1,
+        "stale": 0,
+        "blocked": 0,
+        "paused": 0,
+        "needsAttention": 0,
+        "readyForReview": 0,
+        "canContinue": 1
+      }
+    },
+    {
+      "name": "operator action response has no banned fallback text",
+      "status": "pass",
+      "details": {
+        "found": []
+      }
+    },
+    {
+      "name": "operator action menu created",
+      "status": "pass",
+      "details": {
+        "status": "menu"
+      }
+    },
+    {
+      "name": "controlled worker start previews without confirm/token",
+      "status": "pass",
+      "details": {
+        "status": "preview",
+        "workerStarted": false
+      }
+    },
+    {
+      "name": "prepare_recover creates plan without worker start",
+      "status": "pass",
+      "details": {
+        "status": "recovery_plan_prepared",
+        "recoveryPlanPath": "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/recovery_plan.md",
+        "workerStarted": false
+      }
+    },
+    {
+      "name": "dangerous push action denied",
+      "status": "pass",
+      "details": {
+        "status": "dangerous_denied",
+        "ok": false
+      }
+    }
+  ],
+  "artifactsObserved": {
+    "jobDirs": [
+      "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001",
+      "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002"
+    ],
+    "chainDirs": [
+      "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/chains/CHAIN-0001",
+      "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/chains/CHAIN-0002"
+    ],
+    "startOutcomes": [
+      "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/start_outcome.json",
+      "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/start_outcome.json"
+    ],
+    "workerStarts": [
+      "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/worker_start.json",
+      "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/worker_start.json"
+    ],
+    "cancelRequests": [
+      "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/cancel_request.json"
+    ],
+    "operatorReviews": [
+      "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/operator_reviews/morning_review-20260522-181842.json",
+      "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/operator_reviews/morning_review-20260522-181842.md"
+    ],
+    "recoveryPlans": [
+      "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/recovery_plan.json",
+      "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/recovery_plan.json"
+    ],
+    "resumeCapsules": [
+      "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/resume_capsule.json",
+      "/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/resume_capsule.json"
+    ]
+  },
+  "contractGapsObservedLive": [
+    "heartbeat writer missing or not exercised: no heartbeat.json observed in live fake-worker run.",
+    "job_status writer missing or not exercised: no job_status.json observed in live fake-worker run.",
+    "session_log writer missing or not exercised: no session_log.jsonl observed in live fake-worker run."
+  ],
+  "responses": [
+    {
+      "label": "promptA.start",
+      "text": "Weaveflow runtime과 Codex worker preflight를 통과해서 장기 작업 job을 시작했습니다.\nCodex job을 시작했습니다.\nchain: CHAIN-0001\nsegment: 1 / 3\njob: JOB-0001\nprofile: company\n상태: running\n실행 모드: safe_worktree\nworker: started\nruntime: ok\npython: python3\nworkspace: /tmp/weaveflow-integration-target-8bg6M5\n정책: allow_with_constraints\n금지: push, deploy, secret 변경, destructive DB migration, uncontrolled commit\nstatus: running\nrunProfile: company\nworker started: yes\njob artifact path: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001\ninitial prompt: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/initial_prompt.md\n대상 범위: not specified\n보호 범위: unrelated TOEFL data unless request requires comparison\npush: 허용 안 됨\n확인: weaveflow_check_codex_job JOB-0001\n중단: weaveflow_cancel_codex_job JOB-0001\n복구: weaveflow_recover_codex_job JOB-0001\n먼저 git pull --ff-only와 repo 상태 확인 후, phase별로 점검/수정/검증/보고하도록 지시했습니다.\nWeaveflow Codex 작업 시작\n작업 ID: JOB-0001\n태스크 ID: TASK-0001\n상태: running\n현재 단계: worker_started\n총 경과 시간: 0초\n시간 예산: 2시간\n시간 예산 대비 사용률: 0%\n선택된 작업 범위: 버그 수리: <@1486861488349249696> 그리고 아직도 깜박거리네 하 씨발 진짜 그리고 뭐냐 스크롤 내려서 토익 들어가봤는데 왜 거기서도 스크롤 내려가있는 상태에서 시작하냐 당연히 맨위에서 시작아니냐? 이런걸 일일이 내가 디버깅할 수가 없잖아 이개새끼야 weacflow깃풀로 당긴다음에 장기작업으로 어떻게든 …\n브랜치: codex/JOB-0001-1486861488349249696-weacflow-ui\n변경 파일: 없음\n테스트 결과: 없음\n커밋 해시: 없음\n푸시 여부: 알 수 없음\n결과 artifact 경로: 없음\n체크포인트 / 재개\n체크포인트: 1개\n최근 체크포인트: job_started\n최근 체크포인트 경로: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/checkpoints/checkpoint-0001.md\n재개 캡슐: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/resume_capsule.md\n권장 다음 행동: continue\n다음 Codex 프롬프트: 준비됨\n단일 세션 한도: 45분\n전체 작업 예산: 120분\n최근 이벤트:\n- 2026-05-22T09:18:41.763Z worker_started (running/worker_started)\n실패 원인: 없음\n다음 행동: weaveflow_check_codex_job jobId=JOB-0001로 상태를 확인하세요.\n저장소: /tmp/weaveflow-integration-target-8bg6M5\n정책:\nCodex 작업 정책\n위험도: 중간\n자율 모드: 시간 제한 자율 작업\n프로필: company\n시간 예산: 120분\n전체 작업 예산: 120분\n단일 세션 한도: 45분\n체크포인트 주기: 1분\nusage budget: medium\nquota 전략: balanced\n최대 실행 시간: 2분\n테스트 실행: 아니오\n푸시 허용: 아니오\n최대 수정 시도: 3회\n사람 검토 필요: 아니오\n정책 결정: allow_with_constraints\n실행 모드: safe_worktree\n기본 금지: push, production_deploy, secret_changes, destructive_db_migration, uncontrolled_commit\n자동 허용 작업: inspect_repo, create_worktree, edit_files, commit_changes\n자동 차단 작업: auto_merge, production_deploy, change_secrets, destructive_delete, destructive_db_migration, uncontrolled_push, uncontrolled_commit, push_branch\nUsage Limit Guard\n프로필: company\n단일 세션 한도: 0분 / 45분\n전체 작업 예산: 0분 / 120분\n체크포인트 주기: 1분\n수정 시도: 0 / 3\n반복 실패: 0 / 1\nusage budget: medium\nquota 전략: balanced\nlimit recovery: checkpoint_and_pause\npush: 허용 안 됨\n현재 판단: 계속 진행 가능\nCheckpoint / Resume\n체크포인트: 1개\n최근 체크포인트: job_started\n최근 체크포인트 경로: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/checkpoints/checkpoint-0001.md\n재개 캡슐: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/resume_capsule.md\n권장 다음 행동: continue\n다음 Codex 프롬프트: 준비됨\n품질 검토\n상태: pending\n결정: pending\n품질 점수: 없음\n주요 이슈: 없음\n커밋/푸시 대기: 예\nartifacts: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/outcome_contract.md, /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/change_review.md, /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/quality_gate.md\n상태 확인: weaveflow_check_codex_job jobId=JOB-0001\n취소: weaveflow_cancel_codex_job jobId=JOB-0001\n복구: weaveflow_recover_codex_job jobId=JOB-0001\n작업 디렉터리: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001"
+    },
+    {
+      "label": "promptA.cancel",
+      "text": "Weaveflow Codex 작업 취소\n작업 ID: JOB-0001\n태스크 ID: 없음\n상태: cancelled\n현재 단계: cancelled\n총 경과 시간: 알 수 없음\n시간 예산: 없음\n시간 예산 대비 사용률: 알 수 없음\n선택된 작업 범위: 없음\n브랜치: 없음\n변경 파일: 없음\n테스트 결과: 없음\n커밋 해시: 없음\n푸시 여부: 알 수 없음\n결과 artifact 경로: 없음\n체크포인트 / 재개\n체크포인트: 2개\n최근 체크포인트: user_cancelled\n최근 체크포인트 경로: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/checkpoints/checkpoint-0002.md\n재개 캡슐: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/resume_capsule.md\n권장 다음 행동: inspect_manually\n다음 Codex 프롬프트: 준비됨\n최근 이벤트: 없음\n실패 원인: 없음\n다음 행동: 필요하면 같은 요청으로 새 작업을 시작하세요.\nchain: CHAIN-0001\nchain 상태: cancelled\n이전 상태: running\n취소 처리: 예\n현재 상태: cancelled\n보존된 worktree: 없음\nCheckpoint / Resume\n체크포인트: 2개\n최근 체크포인트: user_cancelled\n최근 체크포인트 경로: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/checkpoints/checkpoint-0002.md\n재개 캡슐: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/resume_capsule.md\n권장 다음 행동: inspect_manually\n다음 Codex 프롬프트: 준비됨\n품질 검토\n상태: pending\n결정: pending\n품질 점수: 없음\n주요 이슈: 없음\n커밋/푸시 대기: 아니오\nartifacts: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/outcome_contract.md, /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/change_review.md, /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001/quality_gate.md\n로그 경로: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0001"
+    },
+    {
+      "label": "promptB.start",
+      "text": "Weaveflow runtime과 Codex worker preflight를 통과해서 장기 작업 job을 시작했습니다.\nCodex job을 시작했습니다.\nchain: CHAIN-0002\nsegment: 1 / 3\njob: JOB-0002\nprofile: company\n상태: running\n실행 모드: safe_worktree\nworker: started\nruntime: ok\npython: python3\nworkspace: /tmp/weaveflow-integration-target-8bg6M5\n정책: allow_with_constraints\n금지: push, deploy, secret 변경, destructive DB migration, uncontrolled commit\nstatus: running\nrunProfile: company\nworker started: yes\njob artifact path: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002\ninitial prompt: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/initial_prompt.md\n대상 범위: 여자친구 zh-TW 뜻; TOEIC word sets\n보호 범위: owner/user/KJ data if identifiable; unrelated TOEFL data unless request requires comparison\npush: 허용 안 됨\n확인: weaveflow_check_codex_job JOB-0002\n중단: weaveflow_cancel_codex_job JOB-0002\n복구: weaveflow_recover_codex_job JOB-0002\n먼저 git pull --ff-only와 repo 상태 확인 후, phase별로 점검/수정/검증/보고하도록 지시했습니다.\nWeaveflow Codex 작업 시작\n작업 ID: JOB-0002\n태스크 ID: TASK-0002\n상태: running\n현재 단계: worker_started\n총 경과 시간: 0초\n시간 예산: 2시간\n시간 예산 대비 사용률: 0%\n선택된 작업 범위: 데이터 검증: <@1486861488349249696> 토익 단어들도 진짜 토익단어인지 여자친구용 뜻이 어색하진 않은지 단어책 뜻이 아니라 서술식으로 이상하게 되어 있다던지 ets 단어장이라도 보고 참고하라 그래 인터넷뒤져서 그거 장기작업으로 검증해\n브랜치: codex/JOB-0002-1486861488349249696-ets\n변경 파일: 없음\n테스트 결과: 없음\n커밋 해시: 없음\n푸시 여부: 알 수 없음\n결과 artifact 경로: 없음\n체크포인트 / 재개\n체크포인트: 1개\n최근 체크포인트: job_started\n최근 체크포인트 경로: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/checkpoints/checkpoint-0001.md\n재개 캡슐: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/resume_capsule.md\n권장 다음 행동: continue\n다음 Codex 프롬프트: 준비됨\n단일 세션 한도: 45분\n전체 작업 예산: 120분\n최근 이벤트:\n- 2026-05-22T09:18:42.262Z worker_started (running/worker_started)\n실패 원인: 없음\n다음 행동: weaveflow_check_codex_job jobId=JOB-0002로 상태를 확인하세요.\n저장소: /tmp/weaveflow-integration-target-8bg6M5\n정책:\nCodex 작업 정책\n위험도: 중간\n자율 모드: 시간 제한 자율 작업\n프로필: company\n시간 예산: 120분\n전체 작업 예산: 120분\n단일 세션 한도: 45분\n체크포인트 주기: 1분\nusage budget: medium\nquota 전략: balanced\n최대 실행 시간: 2분\n테스트 실행: 아니오\n푸시 허용: 아니오\n최대 수정 시도: 3회\n사람 검토 필요: 아니오\n정책 결정: allow_with_constraints\n실행 모드: safe_worktree\n기본 금지: push, production_deploy, secret_changes, destructive_db_migration, uncontrolled_commit\n자동 허용 작업: inspect_repo, create_worktree, edit_files, commit_changes\n자동 차단 작업: auto_merge, production_deploy, change_secrets, destructive_delete, destructive_db_migration, uncontrolled_push, uncontrolled_commit, push_branch\nUsage Limit Guard\n프로필: company\n단일 세션 한도: 0분 / 45분\n전체 작업 예산: 0분 / 120분\n체크포인트 주기: 1분\n수정 시도: 0 / 3\n반복 실패: 0 / 1\nusage budget: medium\nquota 전략: balanced\nlimit recovery: checkpoint_and_pause\npush: 허용 안 됨\n현재 판단: 계속 진행 가능\nCheckpoint / Resume\n체크포인트: 1개\n최근 체크포인트: job_started\n최근 체크포인트 경로: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/checkpoints/checkpoint-0001.md\n재개 캡슐: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/resume_capsule.md\n권장 다음 행동: continue\n다음 Codex 프롬프트: 준비됨\n품질 검토\n상태: pending\n결정: pending\n품질 점수: 없음\n주요 이슈: 없음\n커밋/푸시 대기: 예\nartifacts: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/outcome_contract.md, /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/change_review.md, /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/quality_gate.md\n상태 확인: weaveflow_check_codex_job jobId=JOB-0002\n취소: weaveflow_cancel_codex_job jobId=JOB-0002\n복구: weaveflow_recover_codex_job jobId=JOB-0002\n작업 디렉터리: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002"
+    },
+    {
+      "label": "promptB.check",
+      "text": "Weaveflow Codex 작업 상태\n작업 ID: JOB-0002\n태스크 ID: TASK-0002\n상태: failed\n현재 단계: failed\n총 경과 시간: 0초\n시간 예산: 2시간\n시간 예산 대비 사용률: 0%\n선택된 작업 범위: Selected Scope 선택된 범위: 4개 항목, 예상 40분 시간 예산: 120분 선택 항목: Improve README usage notes, Document OpenClaw/Codex POC, Add troubleshooting note, Improve result report docs 보류 항목: 0개 선정 기준: 시간 예산 안에서 낮은 위험도와 검증 가능한 작업을 우선 선택했습니다. Selected Items - docs-readme-usage-notes: Improve README usage notes (10 min, risk=low) - docs-openclaw-codex-poc: Document OpenClaw/Codex POC (12 min, risk=low) - docs-troubleshooting-note: Add troubleshooting note (8 min, risk=low) - docs-result-report: Improve result repor…\n브랜치: codex/JOB-0002-1486861488349249696-ets\n변경 파일: 없음\n테스트 결과: 미실행\n커밋 해시: 없음\n푸시 여부: 아니오\n결과 artifact 경로: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/result.md\n체크포인트 / 재개\n체크포인트: 3개\n최근 체크포인트: phase_changed\n최근 체크포인트 경로: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/checkpoints/checkpoint-0003.md\n재개 캡슐: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/resume_capsule.md\n권장 다음 행동: continue\n다음 Codex 프롬프트: 준비됨\n단일 세션 한도: 45분\n전체 작업 예산: 120분\n최근 이벤트:\n- 2026-05-22T09:18:42.459Z command: /home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/scripts/fake-codex-cli.js exec --cd /tmp/weaveflow-codex-job-JOB-0002-KwjloN/repo --sandbox workspace-write …\n- 2026-05-22T09:18:42.621Z command_completed: /home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/scripts/fake-codex-cli.js exited. (running/codex_exec)\n- 2026-05-22T09:18:42.623Z codex_finished: Codex execution finished with an error. (running/codex_exec)\n- 2026-05-22T09:18:42.623Z checkpoint_created: Checkpoint and resume capsule written. (running/codex_exec)\n- 2026-05-22T09:18:42.626Z job_failed: Codex job stopped. (failed/failed)\n실패 원인: Codex failed: exit=7 termination=exit\n다음 행동: 실패 원인과 로그를 확인한 뒤 재시도 여부를 결정하세요.\n단계별 소요 시간: 계획 36ms, Codex 170ms, 수정 0ms\n목표:\n# Goal\n\nUser request: 데이터 검증: <@1486861488349249696> 토익 단어들도 진짜 토익단어인지 여자친구용 뜻이 어색하진 않은지 단어책 뜻이 아니라 서술식으로 이상하게 되어 있다던지 ets 단어장이라도 보고 참고하라 그래 인터넷뒤져서 그거 장기작업으로 검증해\nOriginal request: <@1486861488349249696> 토익 단어들도 진짜 토익단어인지 여자친구용 뜻이 어색하진 않은지 단어책 뜻이 아니라 서술식으로 이상하게 되어 있다던지 ets 단어장이라도 보고 참고하라 그래 인터넷뒤져서 그거 장기작업으로 검증해\nAutonomy mode: timeboxed\nTime budget: 120 minutes\n\n## Repository Context\nProject type: Node package, documentation-heavy repo\nLikely checks: git diff --check, npm test\nLikely builds: none \n\n[truncated at 500 characters]\n선택된 작업 범위:\n# Selected Scope\n\n선택된 범위: 4개 항목, 예상 40분 시간 예산: 120분 선택 항목: Improve README usage notes, Document OpenClaw/Codex POC, Add troubleshooting note, Improve result report docs 보류 항목: 0개 선정 기준: 시간 예산 안에서 낮은 위험도와 검증 가능한 작업을 우선 선택했습니다.\n\n## Selected Items\n- docs-readme-usage-notes: Improve README usage notes (10 min, risk=low)\n- docs-openclaw-codex-poc: Document OpenClaw/Codex POC (12 min, risk=low)\n- docs-troubleshooting-note: Add troubleshooting note (8 min, risk=low)\n- docs-result-report: Improve result report docs (10 min, risk=low)\n\n## Deferred Items\n- None\n\nTotal estimate: 40 min\nTime budget: 120 min\n\n## Repository Context\n\n- Project types: Node package, documentation-heavy repo\n- Source dirs: none detected\n- Docs dirs: .\n- Test dirs: none detected\n- Plugin dirs: none detected\n- Likely checks: \n\n[truncated at 800 characters]\n정책:\nCodex 작업 정책\n위험도: 중간\n자율 모드: 시간 제한 자율 작업\n프로필: company\n시간 예산: 120분\n전체 작업 예산: 120분\n단일 세션 한도: 45분\n체크포인트 주기: 1분\nusage budget: medium\nquota 전략: balanced\n최대 실행 시간: 2분\n테스트 실행: 아니오\n푸시 허용: 아니오\n최대 수정 시도: 3회\n사람 검토 필요: 아니오\n정책 결정: allow_with_constraints\n실행 모드: safe_worktree\n기본 금지: push, production_deploy, secret_changes, destructive_db_migration, uncontrolled_commit\n자동 허용 작업: inspect_repo, create_worktree, edit_files, commit_changes\n자동 차단 작업: auto_merge, production_deploy, change_secrets, destructive_delete, destructive_db_migration, uncontrolled_push, uncontrolled_commit, push_branch\nUsage Limit Guard\n프로필: company\n단일 세션 한도: 0분 / 45분\n전체 작업 예산: 0분 / 120분\n체크포인트 주기: 1분\n수정 시도: 0 / 3\n반복 실패: 0 / 1\nusage budget: medium\nquota 전략: balanced\nlimit recovery: checkpoint_and_pause\npush: 허용 안 됨\n현재 판단: 계속 진행 가능\nCheckpoint / Resume\n체크포인트: 3개\n최근 체크포인트: phase_changed\n최근 체크포인트 경로: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/checkpoints/checkpoint-0003.md\n재개 캡슐: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/resume_capsule.md\n권장 다음 행동: continue\n다음 Codex 프롬프트: 준비됨\n검증 계획:\n검증 계획: none (검증 없음)\n명령 0개: 없음\n필수 명령: 0개\n경고: jobPolicy.runTests=false이므로 검증 명령 계획을 건너뜁니다.\n품질 검토\n상태: pending\n결정: pending\n품질 점수: 없음\n주요 이슈: 없음\n커밋/푸시 대기: 아니오\nartifacts: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/outcome_contract.md, /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/change_review.md, /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/quality_gate.md\n복구 진단\n복구 진단 요약\n상태 건강도: failed\nstale 감지: 아니오\nworktree 상태: committed_not_pushed\n권장 복구 행동: resume_codex\n신뢰도: medium\n힌트: 실패 원인이 기록되어 있습니다. result.md와 stderr.log를 확인하세요.\njob health: failed\npid alive: no\nstale: no\nworktree state: committed_not_pushed\nrecovery action: resume_codex\nconfidence: medium\nhint: 실패 원인이 기록되어 있습니다. result.md와 stderr.log를 확인하세요.\nartifacts: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/recovery_diagnostics.md, /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/worktree_recovery.md, /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/recovery_plan.md\n최근 로그:\nevents:\n{\"timestamp\":\"2026-05-22T09:18:42.453Z\",\"time\":\"2026-05-22T09:18:42.453Z\",\"message\":\"Codex execution started.\",\"event\":\"codex_started\",\"type\":\"codex_started\",\"status\":\"running\",\"current_step\":\"codex_exec\",\"sandboxMode\":\"workspace-write\"}\n{\"timestamp\":\"2026-05-22T09:18:42.458Z\",\"time\":\"2026-05-22T09:18:42.458Z\",\"message\":\"Starting Codex execution.\",\"event\":\"codex_exec\",\"type\":\"codex_exec\",\"status\":\"running\",\"current_step\":\"codex_exec\",\"attempt\":\"initial\",\"attemptDir\":\"/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/attempts/attempt-0001\",\"sandboxMode\":\"workspace-write\"}\n{\"timestamp\":\"2026-05-22T09:18:42.459Z\",\"time\":\"2026-05-22T09:18:42.459Z\",\"message\":\"/home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/scripts/fake-codex-cli.js exec --cd /tmp/weaveflow-codex-job-JOB-0002-KwjloN/repo --sandbox workspace-write --output-last-message /tmp/w\n\n[truncated at 900 characters]"
+    },
+    {
+      "label": "promptB.recover",
+      "text": "Weaveflow Codex 작업 복구 계획: dry-run\n\n실제 job state, git, worktree는 변경하지 않았습니다.\n\n복구 진단 요약\n상태 건강도: failed\nstale 감지: 아니오\nworktree 상태: committed_not_pushed\n권장 복구 행동: resume_codex\n신뢰도: medium\n힌트: 실패 원인이 기록되어 있습니다. result.md와 stderr.log를 확인하세요.\n\n복구 계획: Codex 재개 권고\n신뢰도: 보통\n사유: stale_job_with_recoverable_work / fix_attempts_remaining\n선행 조건: worktree의 현재 diff를 보존해야 합니다. / resume prompt를 사람이 검토한 뒤 별도 실행 단계에서만 사용해야 합니다.\n차단 요인: 없음\n미리 볼 명령: cd /tmp/weaveflow-codex-job-JOB-0002-KwjloN/repo / git status --short / git show --stat --oneline d7e085183468031b6f03127324bd0fbde022e7d5 / # Use resume_prompt with a separate Codex execution step; this planner does not run Codex.\n보존 파일: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/job.yaml / /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/events.jsonl / /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/result.md / worktree:/tmp/weaveflow-codex-job-JOB-0002-KwjloN/repo\n갱신 후보 파일: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/job.yaml / /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/events.jsonl\ncleanup 권고: cleanup은 명시적으로 허용되지 않았으므로 보류합니다.\n다음 행동: resume prompt를 검토한 뒤 별도 실행 단계에서만 사용하세요.\n재개 캡슐: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/resume_capsule.md\n권장 다음 행동: continue\n다음 Codex 프롬프트: 준비됨\n다음 segment를 시작할 수 있습니다.\n- 이유: recoverable_checkpoint\n- 다음 segment: 2\n- profile: company\n재개 캡슐\n사용한 캡슐: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/resume_capsule.md\n권장 다음 행동: continue\n다음 Codex 프롬프트: 준비됨\n프롬프트:\nContinue Weaveflow Codex job JOB-0002 from the resume capsule. Latest checkpoint reason: phase_changed. Read resume_capsule.md, resume_capsule.json, the latest checkpoint file, job.yaml, result.md, diff.patch, stdout.log, stderr.log, and test_output.log before changing files. Current objective: 데이터 검증: <@1486861488349249696> 토익 단어들도 진짜 토익단어인지 여자친구용 뜻이 어색하진 않은지 단어책 뜻이 아니라 서술식으로 이상하게 되어 있다던지 ets 단어장이라도 보고 참고하라 그래 인터넷뒤져서 그거 장기작업으로 검증해. Recommended next action: continue. Keep the next session small. Preserve existing work. Run only relevant checks. Do not deploy, change secrets, run destructive DB migrations, or push unless allowPush is explicitly true.\n다음 segment를 시작할 수 있습니다.\n- 이유: recoverable_checkpoint\n- 다음 segment: 2\n- profile: company"
+    },
+    {
+      "label": "morningReview",
+      "text": "Morning review를 생성했습니다.\n\n- 기간: 24h\n- jobs: 2개\n- chains: 2개\n- 진행 중: 0개\n- 검토 가능: 0개\n- 이어가기 가능: 1개\n- 확인 필요: 0개\n\n가장 먼저 볼 것:\n1. CHAIN-0002: 이어가기 가능 - resume capsule 확인 후 recover로 다음 segment를 준비하세요.\n   - action: weaveflow_operator_action action=prepare_recover chainId=CHAIN-0002 confirm=true actionToken=ACTION-20260522-181842-3e5e606d\n\n보고서:\n/tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/operator_reviews/morning_review-20260522-181842.md"
+    },
+    {
+      "label": "operatorAction",
+      "text": "CHAIN-0002에 대해 가능한 작업입니다.\n\n상태:\n- chain 상태: failed\n- liveness: unknown\n- 이유: 기록 없음\n- resume capsule: 준비됨\n- 권장 다음 행동: recover\n\n바로 가능한 작업:\n1. inspect\n   - 현재 job/chain artifact를 읽어서 상태를 자세히 봅니다.\n   - 위험도: read_only\n   - token: ACTION-20260522-181842-02341234\n   - 명령: weaveflow_operator_action action=inspect chainId=CHAIN-0002 actionToken=ACTION-20260522-181842-02341234\n2. check\n   - 기존 check 진실성 규칙으로 running/stale/dead/blocked/completed를 확인합니다.\n   - 위험도: read_only\n   - token: ACTION-20260522-181842-221b3601\n   - 명령: weaveflow_operator_action action=check chainId=CHAIN-0002 actionToken=ACTION-20260522-181842-221b3601\n3. open_report\n   - report 파일을 실제로 열지 않고 path와 요약을 보여줍니다.\n   - 위험도: read_only\n   - token: ACTION-20260522-181842-8fa7caef\n   - 명령: weaveflow_operator_action action=open_report chainId=CHAIN-0002 actionToken=ACTION-20260522-181842-8fa7caef\n4. show_next_prompt\n   - resume capsule의 next prompt를 보여줍니다.\n   - 위험도: read_only\n   - token: ACTION-20260522-181842-c2110a11\n   - 명령: weaveflow_operator_action action=show_next_prompt chainId=CHAIN-0002 actionToken=ACTION-20260522-181842-c2110a11\n\n확인 후 가능한 작업:\n5. prepare_recover\n   - resume capsule/checkpoint/session tail 기반 복구 계획을 artifact로 준비합니다.\n   - 위험도: safe_mutation\n   - 필요: confirm=true 또는 actionToken\n   - token: ACTION-20260522-181842-8f6d7dba\n   - 명령: weaveflow_operator_action action=prepare_recover chainId=CHAIN-0002 confirm=true actionToken=ACTION-20260522-181842-8f6d7dba\n6. recover\n   - runtime/worker preflight를 다시 거쳐 새 Codex segment를 시작합니다.\n   - 위험도: controlled_worker_start\n   - 필요: confirm=true + actionToken\n   - token: ACTION-20260522-181842-b06c9ea1\n   - 명령: weaveflow_operator_action action=recover chainId=CHAIN-0002 confirm=true actionToken=ACTION-20260522-181842-b06c9ea1\n7. continue_next_segment\n   - chain continuation 조건을 다시 확인하고 다음 segment를 시작합니다.\n   - 위험도: controlled_worker_start\n   - 필요: confirm=true + actionToken\n   - token: ACTION-20260522-181842-c85e6190\n   - 명령: weaveflow_operator_action action=continue_next_segment chainId=CHAIN-0002 confirm=true actionToken=ACTION-20260522-181842-c85e6190\n8. pause_chain\n   - 새 segment 자동 시작을 중단합니다. running worker는 자동으로 멈추지 않습니다.\n   - 위험도: safe_mutation\n   - 필요: confirm=true 또는 actionToken\n   - token: ACTION-20260522-181842-c3e5786f\n   - 명령: weaveflow_operator_action action=pause_chain chainId=CHAIN-0002 confirm=true actionToken=ACTION-20260522-181842-c3e5786f\n9. cancel_chain\n   - chain을 cancelled로 기록하고 current job cancel request를 남깁니다.\n   - 위험도: safe_mutation\n   - 필요: confirm=true 또는 actionToken\n   - token: ACTION-20260522-181842-0aa0585c\n   - 명령: weaveflow_operator_action action=cancel_chain chainId=CHAIN-0002 confirm=true actionToken=ACTION-20260522-181842-0aa0585c\n10. mark_reviewed\n   - operator review marker만 남기고 core task status는 바꾸지 않습니다.\n   - 위험도: safe_mutation\n   - 필요: confirm=true 또는 actionToken\n   - token: ACTION-20260522-181842-07eca60a\n   - 명령: weaveflow_operator_action action=mark_reviewed chainId=CHAIN-0002 confirm=true actionToken=ACTION-20260522-181842-07eca60a\n\n금지:\n- push/deploy/secret 변경/DB migration은 이 메뉴에서 실행하지 않습니다.\nrecover는 확인이 필요합니다.\n\n- action: recover\n- 대상: CHAIN-0002\n- 위험도: controlled_worker_start\n- 필요한 입력: confirm=true + actionToken\n- preview: weaveflow_operator_action action=recover chainId=CHAIN-0002 confirm=true actionToken=<ACTION_TOKEN>\n\n아직 worker는 시작되지 않았습니다.\n복구 계획을 준비했습니다.\n\n- job: JOB-0002\n- chain: CHAIN-0002\n- recovery plan: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/recovery_plan.md\n- json: /tmp/weaveflow-integration-target-8bg6M5/.weaveflow/jobs/JOB-0002/recovery_plan.json\n- 다음 명령: weaveflow_operator_action action=recover chainId=CHAIN-0002 confirm=true actionToken=<ACTION_TOKEN>\n\n아직 worker는 시작되지 않았습니다.\n이 action은 실행하지 않습니다.\n\n- action: push\n- 이유: 이 action은 기본 deny 대상입니다.\n- 필요한 처리: 사용자가 별도 수동 검토 후 직접 수행해야 합니다."
+    }
+  ],
+  "recommendedNextAction": "B. Heartbeat/watchdog contract부터 고쳐야 함",
+  "error": null,
+  "artifactPaths": {
+    "jsonPath": "/home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/reports/integration_harness_report.json",
+    "markdownPath": "/home/robros0/Desktop/ws/weaveflow/integrations/openclaw-weaveflow-stdio-poc/reports/integration_harness_report.md"
+  }
+}

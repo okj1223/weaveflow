@@ -565,6 +565,7 @@ Run from the repository root:
 ```bash
 npm test --prefix integrations/openclaw-weaveflow-stdio-poc
 npm run smoke --prefix integrations/openclaw-weaveflow-stdio-poc
+npm run integration:harness --prefix integrations/openclaw-weaveflow-stdio-poc
 ```
 
 The default smoke command creates a temporary Weaveflow workspace and does not
@@ -576,6 +577,36 @@ To point the smoke script at an existing initialized Weaveflow workspace:
 WEAVEFLOW_POC_WORKSPACE_ROOT=/path/to/workspace \
 npm run smoke --prefix integrations/openclaw-weaveflow-stdio-poc
 ```
+
+## Targeted Integration Harness
+
+`npm run integration:harness` verifies the runner lifecycle without spending a
+real Codex/API session. It creates a temporary git repo, points
+`WEAVEFLOW_CODEX_COMMAND` at `scripts/fake-codex-cli.js`, starts real
+`weaveflow_start_codex_job` flows for the regression prompts, and checks the
+same artifacts the OpenClaw tools use:
+
+- `.weaveflow/jobs/JOB-*/start_outcome.json`
+- `.weaveflow/jobs/JOB-*/worker_start.json`
+- `.weaveflow/jobs/JOB-*/cancel_request.json`
+- `.weaveflow/jobs/JOB-*/recovery_plan.json`
+- `.weaveflow/jobs/operator_reviews/*.md`
+- `.weaveflow/jobs/operator_reviews/*.json`
+
+The fake CLI supports deterministic `success`, `fail`, `sleep`,
+`write-output`, `usage-limit`, and `exit-fast` modes through environment
+variables. The harness is not a new feature surface; it is a contract check for
+start/check/cancel/recover/morning-review/operator-action behavior before a
+live OpenClaw pilot.
+
+Harness reports are written to:
+
+- `integrations/openclaw-weaveflow-stdio-poc/reports/integration_harness_report.md`
+- `integrations/openclaw-weaveflow-stdio-poc/reports/integration_harness_report.json`
+
+If no `heartbeat.json`, `job_status.json`, or `session_log.jsonl` writer exists
+in the current worker path, the harness reports truthfulness as partial rather
+than pretending the dashboard has full heartbeat coverage.
 
 ## OpenClaw Validation
 

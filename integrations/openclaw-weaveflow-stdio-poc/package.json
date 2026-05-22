@@ -10,6 +10,7 @@
     ]
   },
   "scripts": {
+    "integration:harness": "node scripts/integration-harness.js",
     "smoke": "node scripts/smoke.js",
     "test": "node --test tests/*.test.js"
   }
