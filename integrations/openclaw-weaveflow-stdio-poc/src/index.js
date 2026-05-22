@@ -165,6 +165,10 @@ export default definePluginEntry({
           additionalProperties: false,
           required: ["userRequest"],
           properties: {
+            workspaceRoot: {
+              type: "string",
+              description: "Workspace root for .weaveflow job artifacts. Defaults to repoRoot."
+            },
             repoRoot: {
               type: "string",
               description: "Git repository root. Defaults to the current Weaveflow repo."
@@ -295,6 +299,7 @@ export default definePluginEntry({
 
           try {
             const summary = await startWeaveflowCodexJob({
+              workspaceRoot: readOptionalString(params, "workspaceRoot"),
               repoRoot: readOptionalString(params, "repoRoot"),
               userRequest,
               timeBudgetMinutes: readOptionalNumber(params, "timeBudgetMinutes"),
@@ -601,20 +606,30 @@ function failedCodexToolResult(message) {
   };
 }
 
-function failedCodexJobToolResult(message) {
+function failedCodexJobToolResult(message, options = {}) {
   const details = {
     ok: false,
     jobId: null,
     taskId: null,
-    status: "failed",
-    currentStep: "tool_validation",
+    actionOutcome: options.actionOutcome || "job_created_worker_start_failed",
+    status: options.status || "failed",
+    currentStep: options.currentStep || "tool_validation",
+    blockedReason: options.blockedReason || null,
+    startFailureReason: options.status === "start_failed" ? message : null,
     errors: [message]
   };
   return {
     content: [
       {
         type: "text",
-        text: `Weaveflow Codex 작업: 실패\n오류: ${message}`
+        text: [
+          "Weaveflow Codex 작업: 시작 실패",
+          "아직 Codex job은 시작되지 않았습니다.",
+          `status: ${details.status}`,
+          `reason: ${message}`,
+          "missing requirement: 유효한 tool 입력 또는 Codex job worker",
+          "next action: reason을 해결한 뒤 weaveflow_start_codex_job을 다시 호출하세요."
+        ].join("\n")
       }
     ],
     details

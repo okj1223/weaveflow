@@ -77,6 +77,7 @@ Historical stdio POC constraints:
 - no persistent sessions
 - no process supervision
 - no verification, report, attachment, or memory flow
+- no production deploy, secret mutation, destructive DB migration, or push
 - no external APIs
 
 Current personal automation constraints:
@@ -235,6 +236,59 @@ The direction is to improve job start/check/cancel/recover UX, overnight or
 company-time unattended runs, Usage Limit Guard visibility, repeated failure
 detection, quality gates, commit/push policy, and concise human-review reports.
 
+## Long Work Autostart Contract
+
+OpenClaw long-running repair/stabilization requests must route to
+`weaveflow_start_codex_job` when this integration is available. Broad or
+high-risk work is not an automatic job-start rejection. Instead, the job starts
+as `safe_worktree` with policy outcome `allow_with_constraints`, and dangerous
+actions are denied per action.
+
+Denied actions include push, production deploy, secret changes, destructive DB
+migration, uncontrolled commit, merge/rebase, force push, and non-fast-forward
+git pull. Safe constrained actions include `git status`, `git pull --ff-only`
+only when the repo is clean, creating an isolated worktree, inspecting files,
+scoped edits, tests, lint, build, report writing, checkpoints, and recovery.
+
+The long work profiles are:
+
+- `company`: default profile for checkpoint-based long work.
+- `overnight`: selected only when the request explicitly says overnight,
+  all night, 자는 동안, 밤새, or an equivalent long unattended window.
+
+The integration must not fall back to general Codex when Weaveflow is
+available. If a job cannot start, the tool returns a concrete
+`blocked_*`, `start_failed`, or `job_created_worker_start_failed` outcome with a
+reason and recovery/check guidance. "범위가 커서" is not a valid block reason.
+
+Every created job writes startup artifacts under
+`.weaveflow/jobs/JOB-*/`:
+
+- `job_request.json`
+- `policy_decision.json`
+- `phase_plan.json`
+- `phase_plan.md`
+- `initial_prompt.md`
+- `start_outcome.json`
+
+The repair/stabilization phase plan is:
+
+1. `preflight_git_sync`
+2. `bug_inventory`
+3. `root_cause_pass`
+4. `minimal_fix_pass`
+5. `regression_pass`
+6. `verification_pass`
+7. `korean_report`
+
+The initial prompt preserves the original user request and explicitly includes
+the clean `git pull --ff-only` preflight, no merge/rebase, flicker/locale flash,
+TOEIC/folder/set scroll-top reset, mobile/PWA/Safari state restoration,
+Smart/badge/progress/sync checks if found, no UI redesign, no feature flip, no
+unrelated refactor, minimal targeted fixes, verification plan, stop conditions,
+`allowPush=false`, no deploy/secret/destructive DB migration, and Korean final
+report requirements.
+
 ## Tool Input
 
 ```json
@@ -290,8 +344,11 @@ allowing `weaveflow_stdio_poc` in OpenClaw tool configuration.
 - It assumes the workspace root is already initialized when invoked as a tool.
 - The original stdio smoke POC is still one-shot, but the current branch also
   includes background Codex job tools.
-- It does not define enterprise-grade logging, auth, RBAC, or process
-  supervision.
+- It does not prove real chat-channel invocation yet.
+- It does not define production logging, auth, RBAC, or process supervision.
+- Long-work autostart is still a POC runner: it records artifacts and starts a
+  local worker, but production-grade supervision and real OpenClaw channel
+  validation remain separate work.
 
 ## Still Needs Real OpenClaw Verification
 

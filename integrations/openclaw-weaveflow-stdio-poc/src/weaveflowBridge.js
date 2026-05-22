@@ -27,6 +27,8 @@ import {
   shouldCreateCheckpoint
 } from "./checkpointScheduler.js";
 import {
+  buildRepairStabilizationPlan,
+  formatRepairPhasePlanMarkdown,
   formatOpportunityBacklogMarkdown,
   formatSelectedScopeMarkdown,
   generateOpportunityBacklog,
@@ -43,7 +45,11 @@ import {
   writeAttemptArtifact,
   writeJsonAtomic
 } from "./jobArtifacts.js";
-import { normalizeJobRequest } from "./jobIntake.js";
+import {
+  isLongWorkRequest,
+  mentionsGitPull,
+  normalizeJobRequest
+} from "./jobIntake.js";
 import { isAutoActionAllowed, resolveJobPolicy } from "./jobPolicy.js";
 import {
   formatJobStateDiagnosticsMarkdown,
@@ -115,16 +121,43 @@ export const DEFAULT_TIMEOUT_MS = 10000;
 export const DEFAULT_CODEX_TIMEOUT_MS = 600000;
 export const DEFAULT_JOB_MAX_RUNTIME_MINUTES = 60;
 export const DEFAULT_JOB_FIX_ATTEMPTS = 3;
-export const CODEX_JOB_ACTION_OUTCOMES = Object.freeze({
+export const CODEX_JOB_ACTION_OUTCOMES = Object.freeze(Object.assign([
+  "started_job",
+  "job_created_worker_start_failed",
+  "blocked_missing_repo",
+  "blocked_ambiguous_target",
+  "blocked_policy",
+  "blocked_worker_unavailable",
+  "blocked_dirty_or_conflicted_repo",
+  "blocked_policy_specific_action",
+  "dry_run_prompt_only",
+  "dry_run_prompt_only_explicitly_requested",
+  "start_failed",
+  "job_created_but_not_started",
+  "worker_start_failed"
+], {
   STARTED_JOB: "started_job",
+  WORKER_START_FAILED_JOB: "job_created_worker_start_failed",
   BLOCKED_MISSING_REPO: "blocked_missing_repo",
   BLOCKED_AMBIGUOUS_TARGET: "blocked_ambiguous_target",
   BLOCKED_POLICY: "blocked_policy",
+  BLOCKED_WORKER_UNAVAILABLE: "blocked_worker_unavailable",
+  BLOCKED_DIRTY_OR_CONFLICTED_REPO: "blocked_dirty_or_conflicted_repo",
+  BLOCKED_POLICY_SPECIFIC_ACTION: "blocked_policy_specific_action",
   DRY_RUN_PROMPT_ONLY: "dry_run_prompt_only",
+  DRY_RUN_PROMPT_ONLY_EXPLICITLY_REQUESTED: "dry_run_prompt_only_explicitly_requested",
   START_FAILED: "start_failed",
   JOB_CREATED_BUT_NOT_STARTED: "job_created_but_not_started",
   WORKER_START_FAILED: "worker_start_failed"
-});
+}));
+
+const FORBIDDEN_GENERAL_CODEX_FALLBACK_PATTERNS = [
+  /일반\s*Codex\s*백그라운드\s*장기\s*세션/i,
+  /Weaveflow\s*장기작업\s*툴은\s*이\s*범위를\s*못\s*받는다/i,
+  /정책에서\s*막혀서\s*Codex로\s*따로\s*돌리겠다/i,
+  /Codex로\s*따로\s*돌리겠다/i,
+  /일반\s*Codex로\s*하겠다/i
+];
 
 const STEP_ORDER = [
   ["ping", "poc-001-ping"],
@@ -821,6 +854,209 @@ export function buildInitialCodexJobPrompt(input = {}) {
   ].join("\n");
 }
 
+export function isAllowedCodexJobActionOutcome(outcome) {
+  return CODEX_JOB_ACTION_OUTCOMES.includes(cleanOptionalString(outcome));
+}
+
+export function resolveCodexJobRunProfile(input = {}) {
+  const explicit = cleanOptionalString(input.explicitRunProfile || input.runProfile || input.run_profile).toLowerCase();
+  if (["company", "overnight"].includes(explicit)) return explicit;
+
+  const request = cleanOptionalString(input.userRequest || input.user_request).toLowerCase();
+  const budget = normalizeOptionalPositiveInteger(input.timeBudgetMinutes ?? input.time_budget_minutes);
+  if (
+    (budget && budget >= 480) ||
+    includesAnyText(request, ["overnight", "all night", "자는 동안", "밤새", "밤새워", "하룻밤", "밤 동안"])
+  ) {
+    return "overnight";
+  }
+  return "company";
+}
+
+export function buildCodexJobPreflightPlan(userRequest) {
+  const gitPullRequested = mentionsGitPull(userRequest);
+  return {
+    required: gitPullRequested,
+    status: gitPullRequested ? "pending" : "not_required",
+    requiresCleanRepo: gitPullRequested,
+    commands: gitPullRequested
+      ? [
+          {
+            command: "git pull --ff-only",
+            required: true,
+            reason: "사용자가 git pull/깃풀을 요청했으므로 fast-forward 전용 동기화만 허용합니다."
+          }
+        ]
+      : [],
+    deniedActions: gitPullRequested
+      ? ["automatic merge", "automatic rebase", "force push", "destructive checkout/reset"]
+      : [],
+    notes: gitPullRequested
+      ? [
+          "repo must be clean before git pull --ff-only",
+          "dirty or conflicted repo blocks job start",
+          "merge/rebase is not performed automatically"
+        ]
+      : []
+  };
+}
+
+export async function evaluateCodexJobStartPreflight({ userRequest, repoRoot, timeoutMs = DEFAULT_TIMEOUT_MS, commandRunner = null }) {
+  const preflightPlan = buildCodexJobPreflightPlan(userRequest);
+  if (!preflightPlan.required) {
+    return {
+      ok: true,
+      preflightPlan
+    };
+  }
+
+  const runner = typeof commandRunner === "function" ? commandRunner : runCommand;
+  const statusResult = await runner("git", ["status", "--porcelain=v1", "--untracked-files=normal"], {
+    cwd: repoRoot,
+    env: process.env,
+    timeoutMs
+  });
+  if (statusResult.code !== 0) {
+    return {
+      ok: false,
+      actionOutcome: "blocked_missing_repo",
+      reason: safeOneLine(statusResult.stderr || statusResult.stdout || "git status failed"),
+      missingRequirement: "git status를 실행할 수 있는 repository",
+      nextAction: "repoRoot가 올바른 git repository인지 확인하세요.",
+      preflightPlan: {
+        ...preflightPlan,
+        status: "failed"
+      }
+    };
+  }
+
+  const statusText = cleanOptionalString(statusResult.stdout);
+  if (statusText) {
+    const conflicted = gitStatusHasConflicts(statusText);
+    return {
+      ok: false,
+      actionOutcome: "blocked_dirty_or_conflicted_repo",
+      reason: conflicted ? "repo has unresolved conflicts before git pull --ff-only" : "repo has uncommitted or untracked changes before git pull --ff-only",
+      missingRequirement: "clean git worktree",
+      nextAction: "변경 사항을 커밋, stash, 정리하거나 충돌을 해결한 뒤 다시 시작하세요.",
+      preflightPlan: {
+        ...preflightPlan,
+        status: conflicted ? "blocked_conflicted_repo" : "blocked_dirty_repo",
+        gitStatus: statusText
+      }
+    };
+  }
+
+  return {
+    ok: true,
+    preflightPlan: {
+      ...preflightPlan,
+      status: "ready",
+      gitStatus: "(clean)"
+    }
+  };
+}
+
+function renderCodexJobPreflightPlanMarkdown(plan = {}) {
+  const commands = Array.isArray(plan.commands) ? plan.commands : [];
+  const deniedActions = Array.isArray(plan.deniedActions) ? plan.deniedActions : [];
+  const notes = Array.isArray(plan.notes) ? plan.notes : [];
+  return [
+    "# Codex Job Preflight Plan",
+    "",
+    `status: ${plan.status || "not_required"}`,
+    `requires clean repo: ${plan.requiresCleanRepo ? "yes" : "no"}`,
+    "",
+    "## Commands",
+    commands.length
+      ? commands.map((command) => `- \`${command.command}\` (${command.reason || "no reason"})`).join("\n")
+      : "- none",
+    "",
+    "## Denied Actions",
+    deniedActions.length ? deniedActions.map((action) => `- ${action}`).join("\n") : "- none",
+    "",
+    "## Notes",
+    notes.length ? notes.map((note) => `- ${note}`).join("\n") : "- none",
+    ""
+  ].join("\n");
+}
+
+export function containsGeneralCodexFallbackText(text) {
+  const value = String(text || "");
+  return FORBIDDEN_GENERAL_CODEX_FALLBACK_PATTERNS.some((pattern) => pattern.test(value));
+}
+
+export function buildCodexInitialPrompt({ state = {}, intake = null, policy = null, deniedActions = [], preflightPlan = null, phasePlan = null } = {}) {
+  const symptoms = Array.isArray(phasePlan?.reportedSymptoms) ? phasePlan.reportedSymptoms : [];
+  const constraints = Array.isArray(phasePlan?.constraints) ? phasePlan.constraints : [];
+  const stopConditions = Array.isArray(phasePlan?.stopConditions) ? phasePlan.stopConditions : [];
+  const verification = phasePlan?.verificationPlan || state.verification_plan || {};
+  return [
+    "You are Codex running under a Weaveflow/OpenClaw long-running repair job.",
+    "Work only inside the isolated worktree prepared by the job runner.",
+    "Do not commit, push, deploy, change secrets, run destructive DB migrations, merge, rebase, force-push, or perform destructive cleanup.",
+    "Use minimal targeted fixes only. Preserve existing intent and behavior.",
+    "No UI redesign. No feature flip. No unrelated refactor.",
+    "Return the final report in Korean.",
+    "",
+    `Job ID: ${state.job_id || state.jobId || "(pending)"}`,
+    `Task ID: ${state.task_id || state.taskId || "(pending)"}`,
+    `Job kind: ${intake?.job_kind || intake?.job_classification || phasePlan?.jobKind || "long_running_repair_job"}`,
+    `Run profile: ${state.run_profile || phasePlan?.runProfile || "company"}`,
+    `Execution mode: ${state.execution_mode || "safe_worktree"}`,
+    `allowPush=${state.allow_push === true || policy?.allowPush === true ? "true" : "false"}`,
+    `allowCommit=${state.allow_commit === true || policy?.allowCommit === true ? "true" : "false"}`,
+    "",
+    "## Original User Request",
+    state.user_request || intake?.original_request || "",
+    "",
+    "## Safe Git Preflight",
+    "- Run `git status --short` first.",
+    "- Run `git pull --ff-only` only if the repository is clean.",
+    "- No merge/rebase. If fast-forward pull is not possible, stop and report.",
+    "",
+    "## Symptoms To Investigate",
+    "- flicker / locale flash",
+    "- scroll should reset to top when entering TOEIC/folder/set pages",
+    "- mobile/PWA/Safari state restoration",
+    "- Smart/badge/progress/sync issues if found",
+    ...symptoms.map((symptom) => `- extracted: ${symptom.id}: ${symptom.title || symptom.id}`),
+    "",
+    "## Constraints",
+    "- no UI redesign",
+    "- no feature flip",
+    "- no unrelated refactor",
+    "- preserve existing intent",
+    "- minimal targeted fixes",
+    "- no deploy/secret/db migration",
+    ...constraints.map((constraint) => `- ${constraint}`),
+    "",
+    "## Denied Actions",
+    ...(Array.isArray(deniedActions) && deniedActions.length ? deniedActions.map((action) => `- ${action}`) : ["- push", "- deploy", "- secret changes", "- destructive DB migration"]),
+    "",
+    "## Phase Plan",
+    formatRepairPhasePlanMarkdown(phasePlan || {}),
+    "",
+    "## Verification Plan",
+    verification.korean_summary || summarizeVerificationPlanKorean(verification),
+    verification.commands?.length
+      ? verification.commands.map((command) => `- ${command.command || command}`).join("\n")
+      : "- Run available tests/lint/build from the repo scan when applicable.",
+    "",
+    "## Stop Conditions",
+    ...(stopConditions.length
+      ? stopConditions.map((item) => `- ${item.id}: ${item.description || item.id}`)
+      : [
+          "- repo/worktree cannot be identified",
+          "- git pull --ff-only cannot proceed cleanly",
+          "- fix requires deploy, secret changes, destructive DB migration, broad redesign, or unrelated refactor"
+        ]),
+    "",
+    "## Final Report",
+    "Write a Korean final report with changed files, root cause, verification results, remaining risks, and what the user should manually check."
+  ].filter(Boolean).join("\n");
+}
+
 export async function startWeaveflowCodexJob(options) {
   const userRequest = requireString(options?.userRequest, "userRequest");
   const requestedMaxSessionMinutes = normalizeOptionalPositiveInteger(options?.maxSessionMinutes);
@@ -829,7 +1065,9 @@ export async function startWeaveflowCodexJob(options) {
   const requestedMaxFixAttempts = normalizeOptionalPositiveInteger(options?.maxFixAttempts);
   const requestedMaxRepeatedFailures = normalizeOptionalPositiveInteger(options?.maxRepeatedFailures);
   const requestedMaxChangedFiles = normalizeOptionalPositiveInteger(options?.maxChangedFiles);
-  const requestedRunProfile = cleanOptionalString(options?.runProfile || options?.profile);
+  const requestedTimeBudgetMinutes = normalizeOptionalPositiveInteger(options?.timeBudgetMinutes);
+  const requestedAutonomyMode = normalizeAutonomyMode(options?.autonomyMode);
+  const requestedRunProfile = cleanOptionalString(options?.runProfile || options?.profile || options?.run_profile);
   const intake = normalizeJobRequest({
     userRequest,
     runProfile: requestedRunProfile,
@@ -837,7 +1075,7 @@ export async function startWeaveflowCodexJob(options) {
     quotaStrategy: options?.quotaStrategy,
     limitRecoveryMode: options?.limitRecoveryMode,
     maxSessionMinutes: requestedMaxSessionMinutes,
-    totalJobBudgetMinutes: requestedTotalJobBudgetMinutes ?? options?.timeBudgetMinutes,
+    totalJobBudgetMinutes: requestedTotalJobBudgetMinutes ?? requestedTimeBudgetMinutes,
     checkpointEveryMinutes: requestedCheckpointEveryMinutes,
     checkpointOnPhaseChange: options?.checkpointOnPhaseChange,
     checkpointOnFailure: options?.checkpointOnFailure,
@@ -848,13 +1086,34 @@ export async function startWeaveflowCodexJob(options) {
     allowLargeRefactor: options?.allowLargeRefactor,
     allowPush: options?.allowPush
   });
-  const repoResolution = resolveJobRepoRoot(options);
+  const runProfile = intake.run_profile || resolveCodexJobRunProfile({
+    userRequest,
+    timeBudgetMinutes: requestedTimeBudgetMinutes ?? intake.time_budget_minutes,
+    explicitRunProfile: requestedRunProfile
+  });
+  let repoResolution = null;
+  try {
+    repoResolution = resolveJobRepoRoot(options);
+  } catch (error) {
+    const reason = safeOneLine(error instanceof Error ? error.message : String(error));
+    return buildBlockedCodexJobStartDetails({
+      actionOutcome: "blocked_missing_repo",
+      status: "blocked",
+      reason,
+      missingRequirement: "유효한 git repository",
+      nextAction: "repoRoot를 유효한 git repository 경로 또는 등록된 alias로 다시 지정하세요.",
+      userRequest,
+      intake,
+      runProfile
+    });
+  }
   const repoRoot = repoResolution.repoRoot;
   const workspaceRoot = resolve(cleanOptionalString(options?.workspaceRoot) || repoRoot);
   const pythonCommand = cleanOptionalString(options?.pythonCommand) || "python3";
   const timeoutMs = options?.timeoutMs || DEFAULT_TIMEOUT_MS;
-  const requestedTimeBudgetMinutes = normalizeOptionalPositiveInteger(options?.timeBudgetMinutes);
-  const requestedAutonomyMode = normalizeAutonomyMode(options?.autonomyMode);
+  const effectiveAutonomyMode = requestedAutonomyMode === "auto" && intake.autonomy_mode === "timeboxed"
+    ? "timeboxed"
+    : requestedAutonomyMode;
   const adaptiveMode = options?.adaptiveMode === true || options?.adaptive_mode === true;
   const sessionMode = adaptiveMode ? "adaptive_loop" : normalizeSessionMode(options?.sessionMode);
   const stepReviewMode = normalizeStepReviewMode(options?.stepReviewMode || options?.step_review_mode);
@@ -878,20 +1137,44 @@ export async function startWeaveflowCodexJob(options) {
     maxChangedFiles: requestedMaxChangedFiles,
     allowLargeRefactor: options?.allowLargeRefactor,
     allowPush: options?.allowPush,
-    autonomyMode: requestedAutonomyMode === "auto" ? undefined : requestedAutonomyMode,
+    autonomyMode: effectiveAutonomyMode === "auto" ? undefined : effectiveAutonomyMode,
     push: options?.push,
     runTests: options?.runTests
   });
-  if (!isAutoActionAllowed("commit_changes", policy)) {
-    throw new Error(`작업 정책이 자동 커밋을 차단했습니다. ${policy.korean_summary}`);
+  const preflight = await evaluateCodexJobStartPreflight({
+    userRequest,
+    repoRoot,
+    timeoutMs,
+    commandRunner: options?.preflightCommandRunner || options?.commandRunner
+  });
+  if (!preflight.ok) {
+    return buildBlockedCodexJobStartDetails({
+      actionOutcome: preflight.actionOutcome,
+      status: "blocked",
+      reason: preflight.reason,
+      missingRequirement: preflight.missingRequirement,
+      nextAction: preflight.nextAction,
+      userRequest,
+      intake,
+      repoRoot,
+      repoResolution,
+      runProfile,
+      preflightPlan: preflight.preflightPlan,
+      jobPolicy: policy,
+      policyOutcome: "blocked_policy_specific_action"
+    });
   }
   const timeBudgetMinutes = policy.timeBudgetMinutes;
   const usageLimitGuard = buildUsageLimitGuard(policy.usageLimitGuard || policy);
   const maxRuntimeMinutes = policy.maxRuntimeMinutes || DEFAULT_JOB_MAX_RUNTIME_MINUTES;
   const maxFixAttempts = usageLimitGuard.maxFixAttempts ?? policy.maxFixAttempts ?? DEFAULT_JOB_FIX_ATTEMPTS;
-  const autonomyMode = policy.autonomyMode || (requestedAutonomyMode === "auto" ? intake.autonomy_mode : requestedAutonomyMode);
+  const autonomyMode = policy.autonomyMode || (effectiveAutonomyMode === "auto" ? intake.autonomy_mode : effectiveAutonomyMode);
   const pushRequested = policy.allowPush === true && policy.push === true && isAutoActionAllowed("push_branch", policy);
   const runTests = policy.runTests !== false && isAutoActionAllowed("run_tests", policy);
+  const policyOutcome = policyOutcomeForCodexJobStart(policy);
+  const deniedActions = deniedActionsForCodexJob(policy, { allowPush: pushRequested });
+  const preflightPlan = preflight.preflightPlan;
+  const executionMode = "safe_worktree";
   const jobsRoot = jobRootForWorkspace(workspaceRoot);
 
   await mkdir(jobsRoot, { recursive: true });
@@ -909,12 +1192,28 @@ export async function startWeaveflowCodexJob(options) {
   const sessionStepsPath = sessionMode === "multi_step" ? join(jobDir, "session_steps.json") : null;
   const adaptiveStatePath = sessionMode === "adaptive_loop" ? join(jobDir, "adaptive_state.json") : null;
   const adaptiveLoopPath = sessionMode === "adaptive_loop" ? join(jobDir, "adaptive_loop.md") : null;
+  const jobRequestPath = join(jobDir, "job_request.json");
+  const policyDecisionPath = join(jobDir, "policy_decision.json");
+  const phasePlanPath = join(jobDir, "phase_plan.json");
+  const phasePlanMarkdownPath = join(jobDir, "phase_plan.md");
+  const initialPromptPath = join(jobDir, "initial_prompt.md");
+  const startOutcomePath = join(jobDir, "start_outcome.json");
   const branch = await chooseJobBranchName({
     jobId,
     userRequest,
     branchSlug: intake.branch_slug,
     projectRoot: repoRoot,
     timeoutMs
+  });
+  const startupRepoContext = scanRepoContext(repoRoot);
+  const phasePlan = buildRepairStabilizationPlan({
+    userRequest,
+    normalizedJobRequest: intake,
+    repoContext: startupRepoContext,
+    runProfile,
+    timeBudgetMinutes,
+    runTests,
+    cwd: "."
   });
   const now = new Date().toISOString();
   let state = {
@@ -944,11 +1243,14 @@ export async function startWeaveflowCodexJob(options) {
     target_scope_summary: intake.target_scope_summary || "not specified",
     protected_scope: intake.protected_scope || [],
     protected_scope_summary: intake.protected_scope_summary || "not specified",
-    job_request_path: join(jobDir, "job_request.json"),
-    initial_prompt_path: join(jobDir, "initial_prompt.md"),
-    start_outcome_path: join(jobDir, "start_outcome.json"),
-    policy_decision_path: join(jobDir, "policy_decision.json"),
+    job_request_path: jobRequestPath,
+    policy_decision_path: policyDecisionPath,
+    phase_plan_path: phasePlanPath,
+    phase_plan_markdown_path: phasePlanMarkdownPath,
+    initial_prompt_path: initialPromptPath,
+    start_outcome_path: startOutcomePath,
     run_profile_path: join(jobDir, "run_profile.json"),
+    phase_plan: phasePlan,
     run_profile: usageLimitGuard.runProfile,
     usage_limit_guard: usageLimitGuard,
     usage_limit_guard_path: join(jobDir, "usage_limit_guard.json"),
@@ -1004,6 +1306,14 @@ export async function startWeaveflowCodexJob(options) {
     requested_autonomy_mode: requestedAutonomyMode,
     autonomy_mode: autonomyMode,
     resolved_autonomy_mode: null,
+    execution_mode: executionMode,
+    policy_outcome: policyOutcome,
+    denied_actions: deniedActions,
+    preflight_plan: preflightPlan,
+    allow_push: pushRequested,
+    allow_commit: isAutoActionAllowed("commit_changes", policy),
+    worker_started: false,
+    start_failure_reason: null,
     time_budget_minutes: timeBudgetMinutes ?? null,
     max_session_minutes: usageLimitGuard.maxSessionMinutes,
     total_job_budget_minutes: usageLimitGuard.totalJobBudgetMinutes,
@@ -1026,7 +1336,6 @@ export async function startWeaveflowCodexJob(options) {
     max_repeated_failures: usageLimitGuard.maxRepeatedFailures,
     max_changed_files: usageLimitGuard.maxChangedFiles,
     allow_large_refactor: usageLimitGuard.allowLargeRefactor,
-    allow_push: usageLimitGuard.allowPush,
     usage_budget_level: usageLimitGuard.usageBudgetLevel,
     quota_strategy: usageLimitGuard.quotaStrategy,
     limit_recovery_mode: usageLimitGuard.limitRecoveryMode,
@@ -1065,9 +1374,24 @@ export async function startWeaveflowCodexJob(options) {
   };
 
   await writeRequiredJobPlaceholders(jobDir, userRequest, intake);
-  const initialPrompt = buildInitialCodexJobPrompt({ state, intake, policy });
+  const initialPrompt = [
+    buildInitialCodexJobPrompt({ state, intake, policy }),
+    "",
+    buildCodexInitialPrompt({
+      state,
+      intake,
+      policy,
+      deniedActions,
+      preflightPlan,
+      phasePlan
+    })
+  ].join("\n");
   await writeJobStartArtifacts(jobDir, state, { intake, policy, initialPrompt });
   await writeUsageLimitGuardArtifacts(jobDir, state);
+  await writeJobFile(jobDir, "preflight_plan.md", renderCodexJobPreflightPlanMarkdown(preflightPlan));
+  await writeJsonAtomic(join(jobDir, "preflight_plan.json"), preflightPlan);
+  await writeJsonAtomic(phasePlanPath, phasePlan);
+  await writeJobFile(jobDir, "phase_plan.md", formatRepairPhasePlanMarkdown(phasePlan));
   await writeJobState(jobDir, state);
   await appendJobEvent(jobDir, "job_created", "Codex job state created.", {
     jobId,
@@ -1081,7 +1405,11 @@ export async function startWeaveflowCodexJob(options) {
     quotaStrategy: usageLimitGuard.quotaStrategy,
     maxSessionMinutes: usageLimitGuard.maxSessionMinutes,
     maxFixAttempts: usageLimitGuard.maxFixAttempts,
-    allowPush: usageLimitGuard.allowPush,
+    allowPush: pushRequested,
+    executionMode,
+    policyOutcome,
+    deniedActions,
+    preflightCommandCount: preflightPlan.commands.length,
     riskLevel: policy.riskLevel,
     repoRoot,
     repoAlias: repoResolution.repoAlias
@@ -1125,7 +1453,7 @@ export async function startWeaveflowCodexJob(options) {
       worker_started: false
     });
     await writeStartOutcomeArtifact(jobDir, state, {
-      reason: "startWorker=false",
+      reason: "startWorker=false; dry_run_prompt_only_explicitly_requested",
       user_next_action: "worker를 실제로 실행하려면 startWorker 옵션을 생략하고 weaveflow_start_codex_job을 다시 호출하세요."
     });
     return buildJobStartDetails(state);
@@ -1157,12 +1485,16 @@ export async function startWeaveflowCodexJob(options) {
   } catch (error) {
     const failedAt = new Date().toISOString();
     const message = safeOneLine(error?.message || error || "worker start failed");
+    const failureOutcome = intake.is_long_running_job_candidate
+      ? CODEX_JOB_ACTION_OUTCOMES.START_FAILED
+      : CODEX_JOB_ACTION_OUTCOMES.WORKER_START_FAILED_JOB;
     state = await updateJobState(jobDir, state, {
-      status: CODEX_JOB_ACTION_OUTCOMES.START_FAILED,
+      status: failureOutcome,
       current_step: CODEX_JOB_ACTION_OUTCOMES.WORKER_START_FAILED,
-      action_outcome: CODEX_JOB_ACTION_OUTCOMES.START_FAILED,
+      action_outcome: failureOutcome,
       worker_start_status: CODEX_JOB_ACTION_OUTCOMES.WORKER_START_FAILED,
       worker_started: false,
+      start_failure_reason: message,
       error: message,
       last_event: CODEX_JOB_ACTION_OUTCOMES.WORKER_START_FAILED,
       stage_timestamps: {
@@ -1546,6 +1878,17 @@ export async function runCodexJobWorker(jobDir) {
     changedFiles = qualityResult.changedFiles;
     tests = qualityResult.tests || tests;
 
+    if (!canAutoCommitState(state)) {
+      state = await completeReportOnlyCodexJob({
+        jobDir,
+        state,
+        planning,
+        changedFiles,
+        message: "Automatic commit skipped by job policy; preserving worktree and report for human review."
+      });
+      return;
+    }
+
     state = await recordJobEvent(jobDir, state, "commit_started", "Git commit stage started.", {
       changedFileCount: changedFiles.length
     }, {
@@ -1808,6 +2151,21 @@ export async function checkWeaveflowCodexJob(options) {
     maxChangedFiles: state.max_changed_files,
     allowLargeRefactor: state.allow_large_refactor === true,
     allowPush: state.allow_push === true,
+    executionMode: state.execution_mode || "safe_worktree",
+    actionOutcome: state.action_outcome || null,
+    policyOutcome: state.policy_outcome || state.job_policy?.outcome || "allow_with_constraints",
+    deniedActions: state.denied_actions || deniedActionsForCodexJob(state.job_policy || {}, { allowPush: state.allow_push === true }),
+    preflightPlan: state.preflight_plan || buildCodexJobPreflightPlan(state.user_request),
+    allowPush: state.allow_push === true,
+    allowCommit: state.allow_commit === true,
+    workerStarted: state.worker_started === true,
+    jobRequestPath: state.job_request_path,
+    policyDecisionPath: state.policy_decision_path,
+    phasePlanPath: state.phase_plan_path,
+    phasePlanMarkdownPath: state.phase_plan_markdown_path,
+    initialPromptPath: state.initial_prompt_path,
+    startOutcomePath: state.start_outcome_path,
+    phasePlan: state.phase_plan,
     selectedScope: await readOptionalFile(join(jobDir, "selected_scope.md")),
     branch: state.branch,
     changedFiles: state.changed_files || [],
@@ -2128,30 +2486,59 @@ export async function cancelWeaveflowCodexJob(options) {
 }
 
 export function formatCodexJobStartSummary(summary) {
-  const outcome = summary?.actionOutcome || summary?.action_outcome || CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_BUT_NOT_STARTED;
-  if (outcome !== CODEX_JOB_ACTION_OUTCOMES.STARTED_JOB) {
-    return formatCodexJobNotStartedSummary(summary, outcome);
+  const actionOutcome = cleanOptionalString(summary?.actionOutcome || summary?.action_outcome);
+  const workerStarted = summary?.workerStarted === true ||
+    summary?.worker_started === true ||
+    actionOutcome === CODEX_JOB_ACTION_OUTCOMES.STARTED_JOB;
+  if (!workerStarted) {
+    return stripGeneralCodexFallbackText(formatCodexJobNotStartedSummary(summary, actionOutcome));
   }
 
+  const jobId = summary?.jobId || summary?.job_id || "없음";
+  const runProfile = summary?.runProfile || summary?.run_profile || summary?.jobPolicy?.runProfile || "없음";
+  const executionMode = summary?.executionMode || summary?.execution_mode || "safe_worktree";
+  const policyOutcome = summary?.policyOutcome || summary?.policy_outcome || summary?.jobPolicy?.outcome || "allow_with_constraints";
+  const deniedActions = formatDeniedActions(summary?.deniedActions || summary?.denied_actions || deniedActionsForCodexJob(summary?.jobPolicy || {}, {
+    allowPush: summary?.allowPush === true || summary?.allow_push === true
+  }));
+  const jobArtifactPath = summary?.jobArtifactPath || summary?.job_artifact_path || summary?.jobDir || summary?.job_dir || "없음";
+  const phaseLine = formatPhaseLine(summary?.phasePlan || summary?.phase_plan);
+  const promptPath = summary?.initialPromptPath || summary?.initial_prompt_path || "없음";
+  const phasePath = summary?.phasePlanPath || summary?.phase_plan_path || "없음";
   const report = formatJobStartedKorean(summary, {
-    nextAction: `weaveflow_check_codex_job jobId=${summary.jobId}로 상태를 확인하세요.`
+    nextAction: `weaveflow_check_codex_job jobId=${jobId}로 상태를 확인하세요.`
   });
-  return [
+  return stripGeneralCodexFallbackText([
+    "장기 안정화 작업으로 인식해서 Weaveflow Codex job을 시작했습니다.",
     "장기 작업으로 인식해서 Codex job을 시작했습니다.",
     "",
-    `jobId: ${summary.jobId || "없음"}`,
-    `status: ${summary.status || "running"}`,
-    `runProfile: ${summary.runProfile || "없음"}`,
-    `worker started: ${summary.workerStarted === true ? "yes" : "no"}`,
-    `job artifact path: ${summary.jobArtifactPath || summary.jobDir || "없음"}`,
-    `initial prompt: ${summary.initialPromptPath || "없음"}`,
+    `- job: ${jobId}`,
+    `jobId: ${jobId}`,
+    `- profile: ${runProfile}`,
+    `runProfile: ${runProfile}`,
+    `- 상태: ${summary?.status || "running"}`,
+    `status: ${summary?.status || "running"}`,
+    `worker started: yes`,
+    `- 실행 모드: ${executionMode}`,
+    `- 정책: ${policyOutcome}`,
+    `- 금지: ${deniedActions}`,
+    `- phase: ${phaseLine}`,
+    `- artifact: ${jobArtifactPath}`,
+    `job artifact path: ${jobArtifactPath}`,
+    `- prompt: ${promptPath}`,
+    `initial prompt: ${promptPath}`,
+    `- phase plan: ${phasePath}`,
     `대상 범위: ${formatScopeSummaryForResponse(summary.targetScope, summary.targetScopeSummary)}`,
     `보호 범위: ${formatScopeSummaryForResponse(summary.protectedScope, summary.protectedScopeSummary)}`,
     `push: ${summary.allowPush ? "허용" : "허용 안 됨"}`,
-    `확인: weaveflow_check_codex_job jobId=${summary.jobId}`,
-    `중단: weaveflow_cancel_codex_job jobId=${summary.jobId}`,
-    `복구: weaveflow_recover_codex_job jobId=${summary.jobId}`,
+    `- 확인: weaveflow_check_codex_job ${jobId}`,
+    `- 중단: weaveflow_cancel_codex_job ${jobId}`,
+    `- 복구: weaveflow_recover_codex_job ${jobId}`,
+    `확인: weaveflow_check_codex_job jobId=${jobId}`,
+    `중단: weaveflow_cancel_codex_job jobId=${jobId}`,
+    `복구: weaveflow_recover_codex_job jobId=${jobId}`,
     "",
+    "먼저 git pull --ff-only와 repo 상태 확인 후, 깜박임/스크롤 복원/mobile-PWA-Safari 상태 복원 문제를 기존 UI 의도 유지 조건으로 점검하도록 지시했습니다.",
     report,
     `저장소: ${summary.repoRoot || summary.repoResolution?.repoRoot || "없음"}`,
     summary.jobPolicy?.korean_summary ? `정책:\n${summary.jobPolicy.korean_summary}` : "",
@@ -2160,49 +2547,62 @@ export function formatCodexJobStartSummary(summary) {
     formatQualitySummaryForJob(summary),
     summary.sessionMode === "multi_step" ? summarizeSessionProgressKorean(sessionProgressFromSummary(summary)) : "",
     summary.sessionMode === "adaptive_loop" ? formatAdaptiveLoopSummaryKorean(adaptiveStateFromSummary(summary)) : "",
-    `상태 확인: weaveflow_check_codex_job jobId=${summary.jobId}`,
-    `취소: weaveflow_cancel_codex_job jobId=${summary.jobId}`,
-    `복구: weaveflow_recover_codex_job jobId=${summary.jobId}`,
     `작업 디렉터리: ${summary.jobDir}`
-  ].filter(Boolean).join("\n");
+  ].filter(Boolean).join("\n"));
 }
 
 function formatCodexJobNotStartedSummary(summary = {}, outcome) {
+  const actionOutcome = cleanOptionalString(outcome || summary.actionOutcome || summary.action_outcome) || CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_BUT_NOT_STARTED;
   const status = summary.status || (
-    outcome === CODEX_JOB_ACTION_OUTCOMES.START_FAILED ||
-    outcome === CODEX_JOB_ACTION_OUTCOMES.WORKER_START_FAILED
+    actionOutcome === CODEX_JOB_ACTION_OUTCOMES.START_FAILED ||
+    actionOutcome === CODEX_JOB_ACTION_OUTCOMES.WORKER_START_FAILED
       ? CODEX_JOB_ACTION_OUTCOMES.START_FAILED
-      : outcome
+      : actionOutcome
   );
-  const reason = summary.reason || summary.error || summary.failureReason || "worker가 실행되지 않았습니다.";
+  const reason = summary.startFailureReason || summary.blockedReason || summary.reason || summary.error || summary.failureReason || "worker가 실행되지 않았습니다.";
   const missingRequirement = summary.missingRequirement || summary.missing_requirement || (
-    outcome === CODEX_JOB_ACTION_OUTCOMES.BLOCKED_MISSING_REPO ? "repo root" : ""
+    actionOutcome === CODEX_JOB_ACTION_OUTCOMES.BLOCKED_MISSING_REPO ? "repo root" : ""
   );
-  const nextAction = summary.userNextAction || summary.user_next_action || (
-    outcome === CODEX_JOB_ACTION_OUTCOMES.BLOCKED_MISSING_REPO
+  const nextAction = summary.nextAction || summary.next_action || summary.userNextAction || summary.user_next_action || (
+    actionOutcome === CODEX_JOB_ACTION_OUTCOMES.BLOCKED_MISSING_REPO
       ? "repo path 또는 workspace root를 지정해 주세요."
       : "start_outcome.json과 stderr.log를 확인한 뒤 다시 시도하세요."
   );
 
   return [
+    "장기 안정화 작업으로 인식했지만 Weaveflow job을 시작하지 못했습니다.",
     "장기 작업 요청으로 인식했지만 worker 실행 상태가 아닙니다.",
     "",
-    `- outcome: ${outcome}`,
+    summary.jobId ? `작업 ID: ${summary.jobId}` : "",
+    `상태: ${status}`,
+    `이유: ${reason}`,
+    `필요한 조치: ${nextAction || missingRequirement}`,
+    `- outcome: ${actionOutcome}`,
     `- status: ${status}`,
+    `status: ${status}`,
     summary.jobId ? `- jobId: ${summary.jobId}` : "",
+    summary.jobId ? `- job: ${summary.jobId}` : "",
     summary.runProfile ? `- runProfile: ${summary.runProfile}` : "",
     `- worker started: ${summary.workerStarted === true ? "yes" : "no"}`,
     summary.jobArtifactPath || summary.jobDir ? `- job artifact path: ${summary.jobArtifactPath || summary.jobDir}` : "",
+    summary.jobDir ? `- artifact: ${summary.jobDir}` : "",
     summary.initialPromptPath ? `- initial prompt: ${summary.initialPromptPath}` : "",
+    summary.initialPromptPath ? `- prompt: ${summary.initialPromptPath}` : "",
     `- reason: ${reason}`,
+    `reason: ${reason}`,
     missingRequirement ? `- missing requirement: ${missingRequirement}` : "",
     `- user next action: ${nextAction}`,
+    `user next action: ${nextAction}`,
     summary.jobId ? `- 확인: weaveflow_check_codex_job jobId=${summary.jobId}` : "",
     summary.jobId ? `- 중단: weaveflow_cancel_codex_job jobId=${summary.jobId}` : "",
     summary.jobId ? `- 복구: weaveflow_recover_codex_job jobId=${summary.jobId}` : "",
+    summary.jobId ? `상태 확인: weaveflow_check_codex_job jobId=${summary.jobId}` : "",
+    summary.jobId ? `취소: weaveflow_cancel_codex_job jobId=${summary.jobId}` : "",
+    summary.jobId ? `복구: weaveflow_recover_codex_job jobId=${summary.jobId}` : "",
     summary.sessionMode === "multi_step" ? summarizeSessionProgressKorean(sessionProgressFromSummary(summary)) : "",
     summary.sessionMode === "adaptive_loop" ? formatAdaptiveLoopSummaryKorean(adaptiveStateFromSummary(summary)) : "",
     "",
+    "아직 Codex job은 시작되지 않았습니다.",
     "아직 Codex worker는 실행되지 않았습니다."
   ].filter(Boolean).join("\n");
 }
@@ -3538,9 +3938,11 @@ function jobWorkerScriptPath() {
 }
 
 function buildJobStartDetails(state) {
+  const actionOutcome = state.action_outcome || CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_BUT_NOT_STARTED;
   return {
-    ok: state.action_outcome !== CODEX_JOB_ACTION_OUTCOMES.START_FAILED &&
-      state.action_outcome !== CODEX_JOB_ACTION_OUTCOMES.BLOCKED_POLICY,
+    ok: actionOutcome === CODEX_JOB_ACTION_OUTCOMES.STARTED_JOB ||
+      actionOutcome === CODEX_JOB_ACTION_OUTCOMES.DRY_RUN_PROMPT_ONLY ||
+      actionOutcome === CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_BUT_NOT_STARTED,
     jobId: state.job_id,
     taskId: state.task_id,
     branch: state.branch,
@@ -3576,6 +3978,23 @@ function buildJobStartDetails(state) {
     maxChangedFiles: state.max_changed_files,
     allowLargeRefactor: state.allow_large_refactor === true,
     allowPush: state.allow_push === true,
+    executionMode: state.execution_mode || "safe_worktree",
+    actionOutcome,
+    policyOutcome: state.policy_outcome || state.job_policy?.outcome || "allow_with_constraints",
+    deniedActions: state.denied_actions || deniedActionsForCodexJob(state.job_policy || {}, { allowPush: state.allow_push === true }),
+    preflightPlan: state.preflight_plan || buildCodexJobPreflightPlan(state.user_request),
+    allowCommit: state.allow_commit === true,
+    workerStarted: state.worker_started === true,
+    startFailureReason: state.start_failure_reason || null,
+    jobRequestPath: state.job_request_path,
+    policyDecisionPath: state.policy_decision_path,
+    phasePlanPath: state.phase_plan_path,
+    phasePlanMarkdownPath: state.phase_plan_markdown_path,
+    initialPromptPath: state.initial_prompt_path,
+    startOutcomePath: state.start_outcome_path,
+    phasePlan: state.phase_plan,
+    userRequest: state.user_request,
+    longWorkRequest: state.job_intake?.long_work_request === true || isLongWorkRequest(state.user_request),
     normalizedGoal: state.normalized_goal,
     selectedScope: state.normalized_goal,
     repoRoot: state.repo_root,
@@ -3629,8 +4048,6 @@ function buildJobStartDetails(state) {
     pid: state.pid,
     jobDir: state.job_dir,
     jobArtifactPath: state.job_dir,
-    actionOutcome: state.action_outcome || CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_BUT_NOT_STARTED,
-    workerStarted: state.worker_started === true,
     workerStartStatus: state.worker_start_status || "not_started",
     workerStartedAt: state.worker_started_at,
     targetScope: state.target_scope || [],
@@ -3641,6 +4058,8 @@ function buildJobStartDetails(state) {
     initialPromptPath: state.initial_prompt_path,
     startOutcomePath: state.start_outcome_path,
     policyDecisionPath: state.policy_decision_path,
+    phasePlanPath: state.phase_plan_path,
+    phasePlanMarkdownPath: state.phase_plan_markdown_path,
     runProfilePath: state.run_profile_path,
     checkTool: "weaveflow_check_codex_job",
     cancelTool: "weaveflow_cancel_codex_job",
@@ -3682,6 +4101,132 @@ function formatScopeListForPrompt(items, fallback) {
   return values.map((item) => `- ${item}`).join("\n");
 }
 
+function buildBlockedCodexJobStartDetails({
+  actionOutcome,
+  status = "blocked",
+  reason,
+  missingRequirement,
+  nextAction,
+  userRequest = "",
+  intake = null,
+  repoRoot = null,
+  repoResolution = null,
+  runProfile = "company",
+  preflightPlan = null,
+  jobPolicy = null,
+  policyOutcome = "allow_with_constraints"
+}) {
+  const outcome = isAllowedCodexJobActionOutcome(actionOutcome)
+    ? actionOutcome
+    : "blocked_policy_specific_action";
+  const allowPush = jobPolicy?.push === true && isAutoActionAllowed("push_branch", jobPolicy);
+  return {
+    ok: false,
+    actionOutcome: outcome,
+    jobId: null,
+    taskId: null,
+    branch: null,
+    status,
+    currentStep: "preflight",
+    elapsedMs: 0,
+    timeBudgetMinutes: intake?.time_budget_minutes || null,
+    runProfile,
+    executionMode: "safe_worktree",
+    policyOutcome,
+    deniedActions: deniedActionsForCodexJob(jobPolicy || {}, { allowPush }),
+    preflightPlan: preflightPlan || buildCodexJobPreflightPlan(userRequest),
+    allowPush,
+    allowCommit: jobPolicy ? isAutoActionAllowed("commit_changes", jobPolicy) : false,
+    workerStarted: false,
+    startFailureReason: reason,
+    blockedReason: reason,
+    reason,
+    missingRequirement,
+    nextAction,
+    userRequest,
+    longWorkRequest: isLongWorkRequest(userRequest),
+    normalizedGoal: intake?.normalized_goal || userRequest,
+    repoRoot,
+    repoResolution,
+    jobPolicy,
+    jobDir: null,
+    jobArtifactPath: null,
+    checkTool: "weaveflow_check_codex_job",
+    cancelTool: "weaveflow_cancel_codex_job",
+    recoverTool: "weaveflow_recover_codex_job",
+    errors: [reason].filter(Boolean)
+  };
+}
+
+function policyOutcomeForCodexJobStart(policy = {}) {
+  const blocked = Array.isArray(policy.blockedActions) ? policy.blockedActions : [];
+  return blocked.length || policy.push === false ? "allow_with_constraints" : "allow";
+}
+
+function deniedActionsForCodexJob(policy = {}, options = {}) {
+  const blocked = Array.isArray(policy.blockedActions)
+    ? policy.blockedActions
+    : Array.isArray(policy.blocked_actions)
+      ? policy.blocked_actions
+      : [];
+  const denied = [...blocked];
+  if (options.allowPush !== true || policy.push === false || policy.allowPush === false || policy.allow_push === false) {
+    denied.push("push");
+  }
+  denied.push("deploy", "secret 변경", "destructive DB migration");
+  return uniqueSorted(denied.map(normalizeDeniedActionLabel).filter(Boolean));
+}
+
+function normalizeDeniedActionLabel(action) {
+  const value = cleanOptionalString(action);
+  const normalized = value.toLowerCase().replace(/[^a-z0-9가-힣]+/g, "_").replace(/^_+|_+$/g, "");
+  const labels = {
+    auto_merge: "auto_merge",
+    production_deploy: "deploy",
+    deploy: "deploy",
+    change_secrets: "secret 변경",
+    secret_changes: "secret 변경",
+    change_secret: "secret 변경",
+    destructive_delete: "destructive_delete",
+    destructive_db_migration: "destructive DB migration",
+    push_branch: "push",
+    push: "push",
+    commit_changes: "commit",
+    commit: "commit"
+  };
+  return labels[normalized] || value;
+}
+
+function formatDeniedActions(actions) {
+  const normalized = uniqueSorted((Array.isArray(actions) ? actions : []).map(normalizeDeniedActionLabel).filter(Boolean));
+  return normalized.length ? normalized.join(", ") : "없음";
+}
+
+function formatPhaseLine(phasePlan = {}) {
+  const phases = Array.isArray(phasePlan.phasePlan) ? phasePlan.phasePlan : [];
+  const ids = phases.map((phase) => phase.id).filter(Boolean);
+  return ids.length
+    ? ids.join(" -> ")
+    : "preflight_git_sync -> bug_inventory -> root_cause_pass -> minimal_fix_pass -> regression_pass -> verification_pass -> korean_report";
+}
+
+function gitStatusHasConflicts(statusText) {
+  return String(statusText || "")
+    .split(/\r?\n/)
+    .some((line) => /^(DD|AU|UD|UA|DU|AA|UU)\s/.test(line));
+}
+
+function stripGeneralCodexFallbackText(text) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .filter((line) => !containsGeneralCodexFallbackText(line))
+    .join("\n");
+}
+
+function includesAnyText(value, needles) {
+  return needles.some((needle) => value.includes(needle));
+}
+
 function normalizeOptionalPositiveInteger(value) {
   if (value === undefined || value === null || value === "") return undefined;
   const parsed = Number(value);
@@ -3707,6 +4252,7 @@ export function resolveAutonomyMode(autonomyMode, userRequest) {
 
 export function isBroadAutonomousRequest(userRequest) {
   const text = String(userRequest || "").toLowerCase();
+  if (isLongWorkRequest(text)) return true;
   return [
     "improve this website",
     "improve the website",
@@ -4105,9 +4651,6 @@ async function runQualityGateWithFixes({ jobDir, state, planning = null, scan = 
   if (review.qualityGate.decision !== "accept") {
     throw new Error(`Quality gate rejected commit: ${review.qualityGate.reasons?.join(", ") || review.qualityGate.decision}`);
   }
-  if (review.qualityGate.should_commit === false) {
-    throw new Error("Quality gate did not allow commit.");
-  }
   return {
     state,
     changedFiles: currentChangedFiles,
@@ -4115,6 +4658,27 @@ async function runQualityGateWithFixes({ jobDir, state, planning = null, scan = 
     tests: currentTests,
     review
   };
+}
+
+function canAutoCommitState(state = {}) {
+  return isAutoActionAllowed("commit_changes", state.job_policy || {});
+}
+
+async function completeReportOnlyCodexJob({ jobDir, state, planning = null, changedFiles = [], message }) {
+  const blockedActions = state.job_policy?.blockedActions || state.job_policy?.blocked_actions || [];
+  const nextState = await recordJobEvent(jobDir, state, "commit_skipped", message || "Automatic commit skipped by job policy.", {
+    blockedActions,
+    changedFileCount: changedFiles.length,
+    worktree: state.worktree || null
+  }, {
+    status: "completed",
+    current_step: "report_only",
+    changed_files: changedFiles,
+    result_artifact_path: join(jobDir, "result.md"),
+    error: null
+  });
+  await writeJobFile(jobDir, "result.md", renderCodexJobResultMarkdown(nextState, planning));
+  return nextState;
 }
 
 function buildCodexJobQualityFixPrompt({ state, planning, review, attempt }) {
@@ -5348,6 +5912,19 @@ function buildCodexJobPrompt({ state, planning, scan, taskFiles, repoStatus }) {
     "## Current Repo Status",
     repoStatus,
     "",
+    "## Initial Long-Work Repair Instructions",
+    buildCodexInitialPrompt({
+      state,
+      intake: state.job_intake,
+      policy: state.job_policy,
+      deniedActions: state.denied_actions,
+      preflightPlan: state.preflight_plan,
+      phasePlan: state.phase_plan
+    }),
+    "",
+    "## Job Preflight Plan",
+    renderCodexJobPreflightPlanMarkdown(state.preflight_plan || buildCodexJobPreflightPlan(state.user_request)),
+    "",
     "## Repository Scan",
     renderRepoScanMarkdown(scan),
     "",
@@ -5677,6 +6254,21 @@ async function runMultiStepCodexSession({ jobDir, state, scan, planning, verific
   });
   state = qualityResult.state;
   const qualityChangedFiles = qualityResult.changedFiles;
+
+  if (!canAutoCommitState(state)) {
+    state = await completeReportOnlyCodexJob({
+      jobDir,
+      state,
+      planning,
+      changedFiles: qualityChangedFiles,
+      message: "Automatic commit skipped by job policy after multi-step session; preserving worktree and report for human review."
+    });
+    await writeJobFile(jobDir, "session_summary.md", renderSessionSummaryMarkdown({
+      plan: sessionPlan,
+      steps
+    }));
+    return state;
+  }
 
   state = await recordJobEvent(jobDir, state, "commit_started", "Git commit stage started.", {
     changedFileCount: qualityChangedFiles.length
@@ -6143,6 +6735,16 @@ async function runAdaptiveCodexLoop({ jobDir, state, scan, planning, verificatio
   });
   state = qualityResult.state;
   const qualityChangedFiles = qualityResult.changedFiles;
+
+  if (!canAutoCommitState(state)) {
+    return completeReportOnlyCodexJob({
+      jobDir,
+      state,
+      planning,
+      changedFiles: qualityChangedFiles,
+      message: "Automatic commit skipped by job policy after adaptive loop; preserving worktree and report for human review."
+    });
+  }
 
   state = await recordJobEvent(jobDir, state, "commit_started", "Git commit stage started.", {
     changedFileCount: qualityChangedFiles.length
