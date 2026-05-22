@@ -20,11 +20,14 @@ stays separate from the core Weaveflow CLI kernel.
 The current plugin surface includes:
 
 - `weaveflow_stdio_poc`
+- `weaveflow_runtime_doctor`
 - `weaveflow_codex_auto_run`
 - `weaveflow_start_codex_job`
 - `weaveflow_check_codex_job`
 - `weaveflow_cancel_codex_job`
 - `weaveflow_recover_codex_job`
+- `weaveflow_morning_review`
+- `weaveflow_operator_action`
 
 The personal automation goals are:
 
@@ -54,18 +57,36 @@ Start responses distinguish:
   created for inspection, but no worker process is running.
 - `blocked_missing_repo`, `blocked_ambiguous_target`, `blocked_policy`: the
   request was recognized but a required condition prevents a safe start.
+- `blocked_weaveflow_runtime_unavailable`: the request was recognized, but the
+  plugin could not bootstrap the Python package that provides `weaveflow`.
+- `blocked_codex_command_unavailable`: the request was recognized and runtime
+  bootstrap passed, but the Codex worker command could not be found.
+- `blocked_target_workspace_missing`,
+  `blocked_target_workspace_not_git_repo`, `blocked_git_preflight_failed`,
+  `blocked_worker_script_missing`, `blocked_worker_unavailable`: runtime
+  bootstrap passed, but a concrete worker preflight requirement failed.
 - `start_failed`: artifacts were created where possible, but the worker process
   failed to start.
+- `job_created_worker_start_failed`: the job record and start artifacts exist,
+  but the Node worker process did not start.
 
 Blocked or failed responses must include the reason, missing requirement where
 known, and the user's next action. They must explicitly say that no worker is
-running.
+running. The plugin must not fall back to a general Codex long-running session
+when Weaveflow runtime bootstrap fails.
 
 For protected-scope bulk requests, the runner fixes the extracted target and
 protected scopes into `job_request.json` and `initial_prompt.md` before any
 worker mutation. For example, "내거는 그대로 두고 여자친구 단어세트들만 바꿔줘"
 is treated as a long-running bulk edit with target scope "여자친구 단어세트" and
 protected scope "사용자/KJ 본인 단어세트".
+
+Broad repair or data-review requests are not rejected for being broad. They are
+started as `safe_worktree` jobs with `policyDecision=allow_with_constraints`.
+The default denied actions are `push`, production deploys, secret changes,
+destructive DB migrations, and uncontrolled commits. File inspection, scoped
+edits, test/lint/build checks, reports, checkpoints, and recovery planning are
+allowed inside the job runner's worktree boundary.
 
 ## Scope Boundaries
 
@@ -100,10 +121,82 @@ The plugin follows the native OpenClaw plugin shape:
 - The plugin registers optional tools for the stdio smoke POC and the current
   Codex job runner experiment.
 
-When `weaveflow_stdio_poc` runs, it spawns:
+Before any Python bridge or Weaveflow service command runs, the plugin resolves
+two different roots:
+
+- `targetWorkspaceRoot`: the repo or workspace where the user's job artifacts
+  and task files are written.
+- `weaveflowRuntimeRoot`: the Weaveflow source repo that contains
+  `pyproject.toml` and `src/weaveflow`.
+
+These roots may be different. The Python module is loaded from
+`weaveflowRuntimeRoot/src`; the bridge still receives `--root
+<targetWorkspaceRoot>`.
+
+Runtime root resolution order:
+
+1. explicit tool/config value `weaveflowRuntimeRoot`
+2. `WEAVEFLOW_RUNTIME_ROOT`
+3. ancestors of `integrations/openclaw-weaveflow-stdio-poc`
+4. ancestors of `process.cwd()`
+
+Python executable resolution order:
+
+1. explicit `pythonExecutable`
+2. `WEAVEFLOW_PYTHON`
+3. `<weaveflowRuntimeRoot>/.venv/bin/python`
+4. `<weaveflowRuntimeRoot>/.venv/Scripts/python.exe`
+5. `python3`
+6. `python`
+
+The resolver validates:
 
 ```bash
-python3 -m weaveflow.adapters.stdio_bridge --root <workspaceRoot>
+python -c "import weaveflow, sys; print(weaveflow.__file__)"
+```
+
+with `PYTHONPATH=<weaveflowRuntimeRoot>/src:$PYTHONPATH`. If this fails with
+`ModuleNotFoundError: No module named 'weaveflow'`, it is a runtime bootstrap
+failure, not permission to run a separate general Codex job.
+
+`weaveflow_runtime_doctor` exposes the same runtime checks as a tool-friendly
+diagnostic surface. It reports status, runtime root, target workspace root,
+Python executable, `import weaveflow` result, module path, bridge command
+preview, errors, and suggested fix.
+
+Runtime import success is not enough to return `started_job`. For
+`weaveflow_start_codex_job`, the plugin next runs Codex worker preflight:
+
+1. resolve the Codex command from explicit `codexExecutable`, plugin config,
+   `WEAVEFLOW_CODEX_COMMAND`, `CODEX_COMMAND`, `CODEX_CLI`, then `codex`
+2. validate the command with a safe `--version` probe where possible
+3. validate that the target workspace exists, is readable, and is a git repo
+4. inspect git state without merge/rebase/force operations
+5. validate `scripts/codex-job-worker.js` and the plugin package root
+6. build the Node worker start command preview
+
+Only child process spawn success plus a valid pid produces
+`actionOutcome=started_job` and `status=running`. If the preflight blocks, the
+worker is not spawned. If the job record exists but spawn fails, the response is
+`job_created_worker_start_failed`; it must not claim the worker is running.
+
+Codex worker command configuration:
+
+```bash
+export WEAVEFLOW_CODEX_COMMAND=/path/to/codex
+# or
+export CODEX_COMMAND=/path/to/codex
+# or
+export CODEX_CLI=/path/to/codex
+```
+
+The worker process receives `WEAVEFLOW_CODEX_COMMAND` so
+`runCodexJobWorker` uses the same command that passed preflight.
+
+When `weaveflow_stdio_poc` runs after runtime validation, it spawns:
+
+```bash
+<pythonExecutable> -m weaveflow.adapters.stdio_bridge --root <targetWorkspaceRoot>
 ```
 
 Then it sends this fixed line-delimited JSON sequence:
@@ -122,6 +215,48 @@ The Codex job runner tools create job artifacts under `.weaveflow/jobs/`, use
 isolated git worktrees, plan verification commands, run checks when requested,
 record result artifacts, and render Korean status summaries for OpenClaw or
 Discord.
+
+Every job start attempt writes the start contract artifacts it can:
+
+- `.weaveflow/jobs/JOB-*/job_request.json`
+- `.weaveflow/jobs/JOB-*/initial_prompt.md`
+- `.weaveflow/jobs/JOB-*/policy_decision.json`
+- `.weaveflow/jobs/JOB-*/phase_plan.json`
+- `.weaveflow/jobs/JOB-*/runtime_diagnostics.json`
+- `.weaveflow/jobs/JOB-*/worker_preflight.json`
+- `.weaveflow/jobs/JOB-*/worker_start.json`
+- `.weaveflow/jobs/JOB-*/start_outcome.json`
+
+Repair jobs use a phase plan with `preflight_git_sync`, `bug_inventory`,
+`root_cause_pass`, `minimal_fix_pass`, `regression_pass`, `verification_pass`,
+and `korean_report`. Data-review jobs use an equivalent inventory/reference,
+meaning-quality, minimal-fix, verification, and Korean-report plan.
+
+If runtime validation fails during job start, the job is not started. The
+plugin writes:
+
+- `.weaveflow/jobs/JOB-*/runtime_diagnostics.json`
+- `.weaveflow/jobs/JOB-*/start_outcome.json`
+
+The response reports `blocked_weaveflow_runtime_unavailable` or `start_failed`,
+the checked Python executable, checked runtime root, expected module path, and
+the next action. Typical fixes are:
+
+```bash
+export WEAVEFLOW_RUNTIME_ROOT=/path/to/weaveflow
+export WEAVEFLOW_PYTHON=/path/to/weaveflow/.venv/bin/python
+python3 -m pip install -e /path/to/weaveflow
+```
+
+If worker preflight fails after runtime validation, the plugin writes:
+
+- `.weaveflow/jobs/JOB-*/worker_preflight.json`
+- `.weaveflow/jobs/JOB-*/worker_start.json`
+- `.weaveflow/jobs/JOB-*/start_outcome.json`
+
+The response reports the exact blocked/start-failed status, checked Codex
+command, target workspace root, diagnostic path, and next action. It does not
+fall back to a separate general Codex long-running session.
 
 ## Run Profiles And Usage Limit Guard v0
 
@@ -231,6 +366,176 @@ suggested prompt is always preserved in the resume capsule and
 destructive DB migrations, large uncontrolled refactors, and uncontrolled push
 are not default behavior.
 
+## Segmented Long Work Chains v0
+
+`company` and `overnight` jobs are represented as segmented chains, not one
+giant Codex session. The first job creates a `chainId` and segment 1. Later
+segments keep the same chain and point back to the previous job:
+
+- `chainId`: the whole long-running work chain, for example `CHAIN-0001`
+- `jobId`: one concrete Codex worker segment, for example `JOB-0003`
+- `rootJobId`: the first segment job in the chain
+- `parentJobId`: the previous segment job
+- `segmentIndex`: the current segment number
+
+Chain artifacts live under a shared chain directory:
+
+- `.weaveflow/jobs/chains/CHAIN-*/chain_status.json`
+- `.weaveflow/jobs/chains/CHAIN-*/segments.jsonl`
+- `.weaveflow/jobs/chains/CHAIN-*/chain_report.md`
+
+Per-segment artifacts still live under `.weaveflow/jobs/JOB-*/`, including
+`job_request.json`, `initial_prompt.md`, `policy_decision.json`,
+`phase_plan.json`, `runtime_diagnostics.json`, `worker_preflight.json`,
+`worker_start.json`, `start_outcome.json`, checkpoints, and resume capsules.
+
+`maxSessionMinutes` is a normal segment boundary. When a segment reaches this
+limit cleanly, the worker writes a checkpoint and resume capsule, records a
+`segment_completed` event, and the continuation planner may prepare or start
+the next segment if policy allows it. This is not treated as job failure.
+
+`totalJobBudgetMinutes` is the chain-level budget. Continuation stops when the
+budget is exhausted, `maxSegments` is reached, repeated failures or max fix
+attempts are hit, the target becomes ambiguous, protected scope is uncertain,
+or runtime/worker preflight is unavailable.
+
+Usage-limit signals are deliberately conservative. If Codex output indicates a
+quota/rate/try-later condition, the chain writes a checkpoint and resume
+capsule, then pauses with `checkpoint_and_pause` /
+`recover_after_limit_reset`. It does not immediately spin up another segment.
+
+`weaveflow_check_codex_job` shows the job and chain view together: chain id,
+segment index, current job id, consumed/remaining budget, latest checkpoint,
+resume capsule, and the next continuation decision. The check tool accepts
+either `jobId` or `chainId`.
+
+`weaveflow_recover_codex_job` can inspect the capsule, prepare the next prompt,
+or start the next segment with `recoveryMode=start_next_segment`. Starting a
+new segment re-runs runtime validation and Codex worker preflight, creates a new
+`JOB-*`, links `parentJobId/rootJobId/chainId`, and updates
+`chain_status.json`.
+
+`weaveflow_cancel_codex_job` accepts either `jobId` or `chainId`. Cancelling a
+chain records `cancel_request.json` for the current segment where possible and
+marks the chain `cancelled`.
+
+## Operator Dashboard And Morning Review v0
+
+`weaveflow_morning_review` is a report-only OpenClaw tool for the moment when
+the user returns in the morning or after work and needs one command to
+understand all recent long-running Codex work.
+
+The tool reads runtime artifacts from `.weaveflow/jobs/` and writes:
+
+- `.weaveflow/jobs/operator_reviews/morning_review-YYYYMMDD-HHMMSS.md`
+- `.weaveflow/jobs/operator_reviews/morning_review-YYYYMMDD-HHMMSS.json`
+
+It does not modify `.weaveflow/tasks/`, SQLite, task memory, source files, or
+job worktrees. It does not automatically recover, start, or cancel workers.
+Mutating actions must continue to go through the existing start/recover/cancel
+policy and confirmation paths.
+
+The review uses `job.yaml`, `heartbeat.json`, `job_status.json`,
+`start_outcome.json`, `worker_start.json`, `worker_preflight.json`,
+`runtime_diagnostics.json`, `chain_status.json`, `segments.jsonl`, checkpoints,
+resume capsules, result files, and reports where available. Missing or corrupt
+artifacts are reported as `unknown_needs_inspection` instead of being guessed.
+
+Operator priorities are:
+
+- `needs_attention_now`
+- `ready_for_review`
+- `can_continue`
+- `waiting_for_limit_reset`
+- `running_ok`
+- `blocked_setup`
+- `completed_ok`
+- `low_priority`
+- `unknown_needs_inspection`
+
+Truthfulness rules:
+
+- stale heartbeat or dead pid is not reported as `running_ok`
+- blocked/start-failed jobs are not reported as running
+- completed status without review evidence stays conservative
+- missing checks are rendered as `검증 미확인`
+- missing changed-file summaries are rendered as `변경 파일 요약 없음`
+- missing resume capsules are rendered as `재개 캡슐 없음`
+- web/research jobs are not assumed to have real web access unless artifacts
+  prove it
+- unknown remains unknown
+
+Chain-aware grouping is used for priorities. Chain jobs still appear in the
+full table, but top-priority sections show the chain representative so the user
+does not have to reason through every segment manually.
+
+Example OpenClaw response:
+
+```text
+Morning review를 생성했습니다.
+
+- 기간: 24h
+- jobs: 8개
+- chains: 2개
+- 진행 중: 1개
+- 검토 가능: 2개
+- 이어가기 가능: 2개
+- 확인 필요: 3개
+
+가장 먼저 볼 것:
+1. CHAIN-0003: 리밋 회복 대기 - 리밋 회복 후 recover로 이어가세요.
+
+보고서:
+.weaveflow/jobs/operator_reviews/morning_review-20260522-083000.md
+```
+
+## Operator Action Menu v0
+
+`weaveflow_operator_action` is the follow-up control surface for items shown by
+`weaveflow_morning_review` or `weaveflow_check_codex_job`. If the user passes
+only `jobId` or `chainId`, the tool returns a Korean action menu instead of
+mutating anything.
+
+Supported actions:
+
+- read-only: `inspect`, `check`, `show_next_prompt`, `open_report`
+- safe mutation: `prepare_recover`, `mark_reviewed`, `pause_chain`,
+  `cancel_job`, `cancel_chain`
+- controlled worker start: `recover`, `continue_next_segment`
+- denied: `push`, `deploy`, `secret_change`, `destructive_db_migration`,
+  `uncontrolled_commit`, `force_push`
+
+Read-only actions run without confirmation. Safe mutations require
+`confirm=true` or a valid `actionToken`. Controlled worker starts require both
+`confirm=true` and a valid `actionToken`, and they still go through runtime
+validation, worker preflight, continuation policy, and the existing
+recover/start flow. If those checks fail, the result is structured
+blocked/start-failed output and no worker is claimed as running.
+
+Action tokens are local-first replay protection artifacts, not a complete auth
+system. They reduce accidental Discord/OpenClaw misfires by binding an action to
+the intended job/chain, expiring the token, and marking it executed after use.
+Tokens live under:
+
+- `.weaveflow/jobs/operator_actions/action-YYYYMMDD-HHMMSS-*.json`
+
+Action results can write:
+
+- `.weaveflow/jobs/JOB-*/recovery_plan.md`
+- `.weaveflow/jobs/JOB-*/recovery_plan.json`
+- `.weaveflow/jobs/JOB-*/cancel_request.json`
+- `.weaveflow/jobs/operator_actions/reviewed-*.json`
+
+`open_report` returns the report path and a short summary; it does not open a
+file in the OS. `mark_reviewed` writes only operator review artifacts and does
+not touch `.weaveflow/tasks/` or the core task state. `pause_chain` stops
+automatic next-segment starts but does not kill a currently running worker; use
+`cancel_job` or `cancel_chain` for that.
+
+One-click continue/recover means the user can execute a prepared, token-bound
+control action with one OpenClaw command. It does not mean dangerous operations
+are automatically approved.
+
 The direction is to improve job start/check/cancel/recover UX, overnight or
 company-time unattended runs, Usage Limit Guard visibility, repeated failure
 detection, quality gates, commit/push policy, and concise human-review reports.
@@ -241,12 +546,17 @@ detection, quality gates, commit/push policy, and concise human-review reports.
 {
   "workspaceRoot": "/path/to/initialized/weaveflow/workspace",
   "taskText": "OpenClaw stdio bridge POC task",
-  "pythonCommand": "python3"
+  "pythonCommand": "python3",
+  "pythonExecutable": "/path/to/python",
+  "weaveflowRuntimeRoot": "/path/to/weaveflow"
 }
 ```
 
 `workspaceRoot` is required. It should point at an initialized Weaveflow
-workspace. `taskText` and `pythonCommand` are optional.
+workspace. `taskText`, `pythonCommand`, `pythonExecutable`, and
+`weaveflowRuntimeRoot` are optional. Prefer `pythonExecutable` for the
+Weaveflow runtime and keep target-repo verification commands separate from the
+runtime root.
 
 ## Local Smoke Test
 

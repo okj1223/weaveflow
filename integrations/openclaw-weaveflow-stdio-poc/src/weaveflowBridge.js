@@ -27,6 +27,12 @@ import {
   shouldCreateCheckpoint
 } from "./checkpointScheduler.js";
 import {
+  buildContinuationContext,
+  buildContinuationDecision,
+  buildContinuationPrompt,
+  continuationDecisionKorean
+} from "./continuationPlanner.js";
+import {
   formatOpportunityBacklogMarkdown,
   formatSelectedScopeMarkdown,
   generateOpportunityBacklog,
@@ -43,6 +49,16 @@ import {
   writeAttemptArtifact,
   writeJsonAtomic
 } from "./jobArtifacts.js";
+import {
+  CONTINUATION_MODES,
+  JOB_CHAIN_STATUSES,
+  appendChainEvent,
+  buildChainStateFields,
+  createOrLoadChainForJob,
+  formatChainSummaryKorean,
+  readChainStatusById,
+  updateChainFromJobState
+} from "./jobChain.js";
 import { normalizeJobRequest } from "./jobIntake.js";
 import { isAutoActionAllowed, resolveJobPolicy } from "./jobPolicy.js";
 import {
@@ -92,6 +108,17 @@ import {
   summarizeVerificationPlanKorean
 } from "./verificationPlanner.js";
 import {
+  WORKER_PREFLIGHT_STATUSES,
+  buildWorkerStartCommand,
+  runWorkerPreflight as runDefaultWorkerPreflight
+} from "./codexWorkerPreflight.js";
+import {
+  BLOCKED_WEAVEFLOW_RUNTIME_UNAVAILABLE,
+  buildWeaveflowRuntimeDiagnostics,
+  diagnoseWeaveflowRuntime,
+  validateWeaveflowRuntime
+} from "./weaveflowRuntime.js";
+import {
   buildWorkSessionPlan,
   normalizeSessionMode,
   renderSessionPlanMarkdown,
@@ -123,7 +150,17 @@ export const CODEX_JOB_ACTION_OUTCOMES = Object.freeze({
   DRY_RUN_PROMPT_ONLY: "dry_run_prompt_only",
   START_FAILED: "start_failed",
   JOB_CREATED_BUT_NOT_STARTED: "job_created_but_not_started",
-  WORKER_START_FAILED: "worker_start_failed"
+  WORKER_START_FAILED: "worker_start_failed",
+  JOB_CREATED_WORKER_START_FAILED: "job_created_worker_start_failed",
+  BLOCKED_CODEX_COMMAND_UNAVAILABLE: WORKER_PREFLIGHT_STATUSES.BLOCKED_CODEX_COMMAND_UNAVAILABLE,
+  BLOCKED_TARGET_WORKSPACE_MISSING: WORKER_PREFLIGHT_STATUSES.BLOCKED_TARGET_WORKSPACE_MISSING,
+  BLOCKED_TARGET_WORKSPACE_UNREADABLE: WORKER_PREFLIGHT_STATUSES.BLOCKED_TARGET_WORKSPACE_UNREADABLE,
+  BLOCKED_TARGET_WORKSPACE_NOT_GIT_REPO: WORKER_PREFLIGHT_STATUSES.BLOCKED_TARGET_WORKSPACE_NOT_GIT_REPO,
+  BLOCKED_GIT_PREFLIGHT_FAILED: WORKER_PREFLIGHT_STATUSES.BLOCKED_GIT_PREFLIGHT_FAILED,
+  BLOCKED_WORKER_SCRIPT_MISSING: WORKER_PREFLIGHT_STATUSES.BLOCKED_WORKER_SCRIPT_MISSING,
+  BLOCKED_WORKER_UNAVAILABLE: WORKER_PREFLIGHT_STATUSES.BLOCKED_WORKER_UNAVAILABLE,
+  BLOCKED_POLICY_SPECIFIC_ACTION: "blocked_policy_specific_action",
+  BLOCKED_WEAVEFLOW_RUNTIME_UNAVAILABLE
 });
 
 const STEP_ORDER = [
@@ -135,7 +172,25 @@ const STEP_ORDER = [
   ["shutdown", "poc-006-shutdown"]
 ];
 
-const JOB_TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled", "timeout", "limit_reached", "needs_user_review", "start_failed"]);
+const JOB_TERMINAL_STATUSES = new Set([
+  "completed",
+  "failed",
+  "cancelled",
+  "timeout",
+  "limit_reached",
+  "needs_user_review",
+  "start_failed",
+  "job_created_worker_start_failed",
+  WORKER_PREFLIGHT_STATUSES.BLOCKED_CODEX_COMMAND_UNAVAILABLE,
+  WORKER_PREFLIGHT_STATUSES.BLOCKED_TARGET_WORKSPACE_MISSING,
+  WORKER_PREFLIGHT_STATUSES.BLOCKED_TARGET_WORKSPACE_UNREADABLE,
+  WORKER_PREFLIGHT_STATUSES.BLOCKED_TARGET_WORKSPACE_NOT_GIT_REPO,
+  WORKER_PREFLIGHT_STATUSES.BLOCKED_GIT_PREFLIGHT_FAILED,
+  WORKER_PREFLIGHT_STATUSES.BLOCKED_WORKER_SCRIPT_MISSING,
+  WORKER_PREFLIGHT_STATUSES.BLOCKED_WORKER_SCRIPT_UNREADABLE,
+  WORKER_PREFLIGHT_STATUSES.BLOCKED_WORKER_UNAVAILABLE,
+  BLOCKED_WEAVEFLOW_RUNTIME_UNAVAILABLE
+]);
 const RECOVERY_EXPOSE_HEALTH = new Set([
   "stale_running",
   "invalid_state",
@@ -218,9 +273,11 @@ export function buildPocRequests(options = {}) {
 
 export async function initializeWeaveflowWorkspace(options) {
   const workspaceRoot = requireString(options?.workspaceRoot, "workspaceRoot");
-  const pythonCommand = cleanOptionalString(options.pythonCommand) || "python3";
-  const projectRoot = resolve(options.projectRoot || defaultProjectRoot());
-  const timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS;
+  const timeoutMs = options?.timeoutMs || DEFAULT_TIMEOUT_MS;
+  const runtime = await resolveRuntimeForPluginRequest(options, workspaceRoot, timeoutMs);
+  if (runtime.importOk !== true) {
+    throw new Error(formatRuntimeUnavailableError(runtime));
+  }
   const code = [
     "from pathlib import Path",
     "import sys",
@@ -229,11 +286,11 @@ export async function initializeWeaveflowWorkspace(options) {
   ].join("\n");
 
   const result = await runCommand(
-    pythonCommand,
+    runtime.pythonExecutable,
     ["-c", code, workspaceRoot],
     {
-      cwd: projectRoot,
-      env: buildPythonEnv(projectRoot),
+      cwd: runtime.runtimeRoot,
+      env: runtime.env,
       timeoutMs
     }
   );
@@ -245,14 +302,11 @@ export async function initializeWeaveflowWorkspace(options) {
 
 export async function runWeaveflowStdioPoc(options) {
   const workspaceRoot = requireString(options?.workspaceRoot, "workspaceRoot");
-  const pythonCommand = cleanOptionalString(options.pythonCommand) || "python3";
-  const projectRoot = resolve(options.projectRoot || defaultProjectRoot());
   const timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS;
-  const requests = buildPocRequests({ taskText: options.taskText });
+  const requests = buildPocRequests({ taskText: options?.taskText });
 
   const processResult = await runBridgeProcess({
-    pythonCommand,
-    projectRoot,
+    options,
     workspaceRoot,
     requests,
     timeoutMs
@@ -336,6 +390,9 @@ export function summarizeBridgeRun({ workspaceRoot, requests, processResult }) {
   );
 
   const errors = [];
+  if (processResult.runtime?.importOk === false) {
+    errors.push(processResult.runtime.reason || "Weaveflow runtime validation failed.");
+  }
   if (processResult.code !== 0) {
     errors.push(`Bridge exited with code ${processResult.code}.`);
   }
@@ -389,6 +446,7 @@ export function summarizeBridgeRun({ workspaceRoot, requests, processResult }) {
       signal: processResult.signal,
       termination: processResult.termination
     },
+    runtime: processResult.runtime || null,
     stdoutLineCount: stdoutLines.length,
     stderrLineCount: stderrLines.length
   };
@@ -452,6 +510,7 @@ export async function runWeaveflowCodexAutoRun(options) {
     resultSourcePath: null,
     worktreeRoot,
     worktreeRemoved: false,
+    runtime: null,
     shortSummary: "",
     errors: []
   };
@@ -470,14 +529,23 @@ export async function runWeaveflowCodexAutoRun(options) {
     cleanupError: ""
   };
   let taskInfo = null;
+  let runtime = null;
 
   try {
+    summary.stage = "weaveflow_runtime";
+    runtime = await resolveRuntimeForPluginRequest(options, workspaceRoot, timeoutMs);
+    summary.runtime = buildWeaveflowRuntimeDiagnostics(runtime);
+    if (runtime.importOk !== true) {
+      throw new Error(formatRuntimeUnavailableError(runtime));
+    }
+
     summary.stage = "weaveflow_task";
     taskInfo = await createAutomationTask({
       workspaceRoot,
       userRequest,
-      pythonCommand,
-      projectRoot,
+      pythonCommand: runtime.pythonExecutable,
+      pythonEnv: runtime.env,
+      projectRoot: runtime.runtimeRoot,
       timeoutMs
     });
     summary.taskId = taskInfo.taskId;
@@ -690,8 +758,9 @@ export async function runWeaveflowCodexAutoRun(options) {
           workspaceRoot,
           taskId: taskInfo.taskId,
           resultSourcePath,
-          pythonCommand,
-          projectRoot,
+          pythonCommand: runtime?.pythonExecutable || pythonCommand,
+          pythonEnv: runtime?.env,
+          projectRoot: runtime?.runtimeRoot || projectRoot,
           timeoutMs
         });
         summary.resultArtifactPath = attach.resultPath;
@@ -767,6 +836,12 @@ export function buildInitialCodexJobPrompt(input = {}) {
   const runProfile = cleanOptionalString(input.runProfile || input.run_profile || state.run_profile || intake.run_profile || policy.runProfile) || "focused";
   const usageGuard = input.usageLimitGuard || input.usage_limit_guard || state.usage_limit_guard || intake.usage_limit_guard || policy.usageLimitGuard || {};
   const allowPush = input.allowPush ?? input.allow_push ?? state.allow_push ?? intake.allow_push ?? policy.allowPush ?? false;
+  const phasePlan = normalizePhasePlan(input.phasePlan || input.phase_plan || state.phase_plan || buildLongWorkPhasePlan({ intake, policy }));
+  const specializedInstructions = buildSpecializedJobInstructions({
+    userRequest,
+    intake,
+    phasePlan
+  });
 
   return [
     "# Initial Codex Job Prompt",
@@ -787,21 +862,36 @@ export function buildInitialCodexJobPrompt(input = {}) {
     "- Inspect the repository structure before editing files.",
     "- Identify the target data/files and the protected data/files before mutation.",
     "- Do not make a premature conclusion from filenames alone.",
+    "- If the worktree is clean, run git pull --ff-only before edits.",
+    "- Do not merge or rebase.",
     "- if target cannot be identified, stop and report instead of guessing.",
+    "",
+    "## Phase Plan",
+    ...phasePlan.phases.map((phase) => `- ${phase.id}: ${phase.title}`),
+    "",
+    specializedInstructions,
     "",
     "## Mutation Rules",
     "- Change only files needed for the target scope.",
     "- Do not change protected scope files or records.",
     "- Do not make unrelated changes.",
+    "- no UI redesign",
+    "- no feature flip",
+    "- no unrelated refactor",
+    "- preserve existing intent",
+    "- minimal targeted fixes",
     "- Keep allowPush=false unless a later human-approved policy explicitly changes it.",
     "- allowPush=false",
     "- Production deploy is forbidden.",
     "- Secret changes are forbidden.",
     "- Destructive DB migration is forbidden.",
+    "- no uncontrolled push",
+    "- no deploy/secret/db migration",
     "- Do not perform destructive operations without explicit approval.",
     "",
     "## Validation Plan",
     "- Run targeted checks that fit the repository and changed files.",
+    "- Include a test/lint/build plan and execute the relevant available checks.",
     "- Prefer existing test scripts or lightweight format checks.",
     "- If no automated check exists, record the manual validation that remains.",
     "",
@@ -809,6 +899,7 @@ export function buildInitialCodexJobPrompt(input = {}) {
     "- Report what target files or datasets were found.",
     "- Report what protected files or datasets were intentionally left untouched.",
     "- Report changed files, validation commands, and residual risk in Korean.",
+    "- Korean report",
     "",
     "## Run Profile And Usage Limit Policy",
     `- runProfile=${runProfile}`,
@@ -818,6 +909,88 @@ export function buildInitialCodexJobPrompt(input = {}) {
     "- Create/checkpoint handoff artifacts when usage limit, repeated failure, max changed files, or max session guard triggers.",
     `- allowPush=${allowPush === true ? "true" : "false"}`,
     ""
+  ].join("\n");
+}
+
+export function buildLongWorkPhasePlan(input = {}) {
+  const intake = input.intake || input.job_intake || {};
+  const jobType = cleanOptionalString(input.jobType || input.job_type || intake.job_type || intake.jobType);
+  const basePhases = [
+    ["preflight_git_sync", "Run git status and git pull --ff-only only if the worktree is clean."],
+    ["bug_inventory", "Inventory the reported problems and affected routes/data before editing."],
+    ["root_cause_pass", "Trace root causes and preserve current product intent."],
+    ["minimal_fix_pass", "Apply minimal targeted fixes without UI redesign or feature flips."],
+    ["regression_pass", "Re-check the original failure cases and adjacent flows."],
+    ["verification_pass", "Run available test/lint/build checks and record limitations."],
+    ["korean_report", "Write a concise Korean result report with changed files, checks, and residual risk."]
+  ];
+  const dataReviewPhases = [
+    ["preflight_git_sync", "Run git status and git pull --ff-only only if the worktree is clean."],
+    ["target_inventory", "Identify TOEIC word sets and girlfriend zh-TW meaning data before edits."],
+    ["source_reference_pass", "Use available local/web references if available and report limitations clearly."],
+    ["meaning_quality_pass", "Check TOEIC suitability and natural Taiwanese learner gloss style."],
+    ["minimal_fix_pass", "Apply minimal data fixes without unrelated TOEFL or owner data changes."],
+    ["verification_pass", "Run available data/test/lint checks and record limitations."],
+    ["korean_report", "Write a concise Korean report with reviewed scope, changes, checks, and limitations."]
+  ];
+  const selected = jobType === "long_running_data_review_job" ? dataReviewPhases : basePhases;
+  return {
+    jobType: jobType || "long_running_job",
+    executionMode: input.policy?.executionMode || input.executionMode || "safe_worktree",
+    phases: selected.map(([id, title], index) => ({ id, title, order: index + 1 }))
+  };
+}
+
+function normalizePhasePlan(value) {
+  if (value && typeof value === "object" && Array.isArray(value.phases)) {
+    return {
+      ...value,
+      phases: value.phases.map((phase, index) => ({
+        id: cleanOptionalString(phase.id) || `phase_${index + 1}`,
+        title: cleanOptionalString(phase.title || phase.description) || "Run phase work.",
+        order: Number.isFinite(Number(phase.order)) ? Number(phase.order) : index + 1
+      }))
+    };
+  }
+  return buildLongWorkPhasePlan({});
+}
+
+function buildSpecializedJobInstructions({ userRequest, intake, phasePlan }) {
+  const request = String(userRequest || "");
+  const jobType = cleanOptionalString(intake?.job_type || phasePlan?.jobType);
+  if (jobType === "long_running_data_review_job") {
+    return [
+      "## Data Review Instructions",
+      "- verify if words are TOEIC-appropriate",
+      "- check girlfriend zh-TW meanings for natural Taiwanese learner style",
+      "- avoid overly long descriptive definitions",
+      "- prefer short vocabulary-book gloss style",
+      "- If web access is available, use it for reference; if web access is unavailable, report that limitation clearly.",
+      "- if ownership/target set cannot be identified, stop and report",
+      "- no uncontrolled push",
+      "- no deploy/secret/db migration"
+    ].join("\n");
+  }
+  if (jobType === "long_running_repair_job" || /깜박|flicker|스크롤|scroll/i.test(request)) {
+    return [
+      "## Repair Instructions",
+      "- flicker/locale flash",
+      "- scroll reset to top on entering TOEIC/folder/set pages",
+      "- mobile/PWA/Safari state restoration",
+      "- no UI redesign",
+      "- no feature flip",
+      "- no unrelated refactor",
+      "- preserve existing intent",
+      "- minimal targeted fixes",
+      "- test/lint/build plan",
+      "- Korean report"
+    ].join("\n");
+  }
+  return [
+    "## Long Work Instructions",
+    "- Work phase-by-phase inside the safe worktree.",
+    "- Keep edits scoped, testable, and reversible.",
+    "- Report limitations instead of guessing."
   ].join("\n");
 }
 
@@ -852,6 +1025,7 @@ export async function startWeaveflowCodexJob(options) {
   const repoRoot = repoResolution.repoRoot;
   const workspaceRoot = resolve(cleanOptionalString(options?.workspaceRoot) || repoRoot);
   const pythonCommand = cleanOptionalString(options?.pythonCommand) || "python3";
+  const runtimePythonExecutable = cleanOptionalString(options?.pythonExecutable) || cleanOptionalString(options?.pythonCommand);
   const timeoutMs = options?.timeoutMs || DEFAULT_TIMEOUT_MS;
   const requestedTimeBudgetMinutes = normalizeOptionalPositiveInteger(options?.timeBudgetMinutes);
   const requestedAutonomyMode = normalizeAutonomyMode(options?.autonomyMode);
@@ -859,6 +1033,13 @@ export async function startWeaveflowCodexJob(options) {
   const sessionMode = adaptiveMode ? "adaptive_loop" : normalizeSessionMode(options?.sessionMode);
   const stepReviewMode = normalizeStepReviewMode(options?.stepReviewMode || options?.step_review_mode);
   const maxSteps = normalizeOptionalPositiveInteger(options?.maxSteps) || null;
+  const requestedMaxSegments = normalizeOptionalPositiveInteger(options?.maxSegments);
+  const requestedSegmentIndex = normalizeOptionalPositiveInteger(options?.segmentIndex);
+  const requestedChainId = cleanOptionalString(options?.chainId);
+  const requestedRootJobId = cleanOptionalString(options?.rootJobId);
+  const requestedParentJobId = cleanOptionalString(options?.parentJobId);
+  const requestedContinuationMode = normalizeContinuationMode(options?.continuationMode);
+  const requestedAutoContinue = options?.autoContinue;
   const policy = resolveJobPolicy({
     userRequest,
     runProfile: requestedRunProfile || intake.run_profile,
@@ -885,6 +1066,7 @@ export async function startWeaveflowCodexJob(options) {
   if (!isAutoActionAllowed("commit_changes", policy)) {
     throw new Error(`작업 정책이 자동 커밋을 차단했습니다. ${policy.korean_summary}`);
   }
+  const phasePlan = buildLongWorkPhasePlan({ intake, policy });
   const timeBudgetMinutes = policy.timeBudgetMinutes;
   const usageLimitGuard = buildUsageLimitGuard(policy.usageLimitGuard || policy);
   const maxRuntimeMinutes = policy.maxRuntimeMinutes || DEFAULT_JOB_MAX_RUNTIME_MINUTES;
@@ -895,15 +1077,113 @@ export async function startWeaveflowCodexJob(options) {
   const jobsRoot = jobRootForWorkspace(workspaceRoot);
 
   await mkdir(jobsRoot, { recursive: true });
+  const jobId = await nextJobId(jobsRoot);
+  const jobDir = await ensureJobDir(jobsRoot, jobId);
+  const chain = await createOrLoadChainForJob({
+    jobsRoot,
+    chainId: requestedChainId,
+    jobId,
+    rootJobId: requestedRootJobId,
+    parentJobId: requestedParentJobId,
+    segmentIndex: requestedSegmentIndex,
+    runProfile: usageLimitGuard.runProfile,
+    continuationMode: requestedContinuationMode,
+    maxSegments: requestedMaxSegments,
+    totalJobBudgetMinutes: usageLimitGuard.totalJobBudgetMinutes || policy.totalJobBudgetMinutes || timeBudgetMinutes,
+    timeBudgetMinutes,
+    originalUserRequest: cleanOptionalString(options?.originalUserRequest) || userRequest
+  });
+  const runtime = await resolveRuntimeForPluginRequest(
+    {
+      ...options,
+      pythonExecutable: runtimePythonExecutable || undefined
+    },
+    repoRoot,
+    timeoutMs
+  );
+  if (runtime.importOk !== true) {
+    return writeRuntimeUnavailableJobStart({
+      jobDir,
+      jobId,
+      workspaceRoot,
+      repoRoot,
+      repoResolution,
+      userRequest,
+      intake,
+      policy,
+      usageLimitGuard,
+      maxRuntimeMinutes,
+      maxFixAttempts,
+      pythonCommand,
+      phasePlan,
+      runtime,
+      chain,
+      timeoutMs
+    });
+  }
+
+  let workerPreflight = null;
+  if (options?.startWorker !== false) {
+    const workerPreflightRunner = typeof options?.runWorkerPreflight === "function"
+      ? options.runWorkerPreflight
+      : runDefaultWorkerPreflight;
+    workerPreflight = await workerPreflightRunner({
+      request: options?.request || options,
+      pluginConfig: options?.pluginConfig || options?.config,
+      env: buildPythonEnv(repoRoot),
+      targetWorkspaceRoot: repoRoot,
+      runtimeRoot: runtime.runtimeRoot,
+      codexExecutable: cleanOptionalString(options?.codexExecutable || options?.codexCommand),
+      userRequest,
+      jobId,
+      jobDir,
+      runProfile: usageLimitGuard.runProfile,
+      executionMode: policy.executionMode || "safe_worktree",
+      policyDecisionPath: join(jobDir, "policy_decision.json"),
+      initialPromptPath: join(jobDir, "initial_prompt.md"),
+      timeoutMs: options?.workerPreflightTimeoutMs || timeoutMs,
+      commandRunner: options?.workerPreflightCommandRunner,
+      codexCommandRunner: options?.codexCommandRunner,
+      gitCommandRunner: options?.gitCommandRunner,
+      workerScriptCommandRunner: options?.workerScriptCommandRunner,
+      workerScriptPath: options?.workerScriptPath,
+      bridgeCommandPreview: runtime.bridgeCommand ? {
+        command: runtime.bridgeCommand.command,
+        args: runtime.bridgeCommand.args,
+        cwd: runtime.bridgeCommand.cwd
+      } : null
+    });
+    if (workerPreflight.ok !== true) {
+      return writeWorkerPreflightBlockedJobStart({
+        jobDir,
+        jobId,
+        workspaceRoot,
+        repoRoot,
+        repoResolution,
+        userRequest,
+        intake,
+        policy,
+        usageLimitGuard,
+        maxRuntimeMinutes,
+        maxFixAttempts,
+        pythonCommand,
+        phasePlan,
+        runtime,
+        workerPreflight,
+        chain,
+        timeoutMs
+      });
+    }
+  }
+
   const taskInfo = await createAutomationTask({
     workspaceRoot,
     userRequest,
-    pythonCommand,
-    projectRoot: repoRoot,
+    pythonCommand: runtime.pythonExecutable,
+    pythonEnv: runtime.env,
+    projectRoot: runtime.runtimeRoot,
     timeoutMs
   });
-  const jobId = await nextJobId(jobsRoot);
-  const jobDir = await ensureJobDir(jobsRoot, jobId);
   const sessionPlanPath = sessionMode === "multi_step" ? join(jobDir, "session_plan.md") : null;
   const sessionSummaryPath = sessionMode === "multi_step" ? join(jobDir, "session_summary.md") : null;
   const sessionStepsPath = sessionMode === "multi_step" ? join(jobDir, "session_steps.json") : null;
@@ -920,6 +1200,8 @@ export async function startWeaveflowCodexJob(options) {
   let state = {
     job_id: jobId,
     task_id: taskInfo.taskId,
+    ...buildChainStateFields(chain),
+    auto_continue: requestedAutoContinue ?? ["company", "overnight"].includes(usageLimitGuard.runProfile),
     status: "queued",
     repo_root: repoRoot,
     workspace_root: workspaceRoot,
@@ -936,10 +1218,22 @@ export async function startWeaveflowCodexJob(options) {
     job_intake: intake,
     repo_resolution: repoResolution,
     job_policy: policy,
+    policy_decision: policy.policyDecision || "allow_with_constraints",
+    execution_mode: policy.executionMode || "safe_worktree",
+    denied_actions: policy.deniedActions || [],
+    phase_plan: phasePlan,
     action_outcome: CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_BUT_NOT_STARTED,
     worker_started: false,
     worker_start_status: "not_started",
     worker_started_at: null,
+    worker_preflight_path: join(jobDir, "worker_preflight.json"),
+    worker_start_path: join(jobDir, "worker_start.json"),
+    codex_command: workerPreflight?.codexCommand || null,
+    codex_command_status: workerPreflight?.codexCommandStatus || null,
+    codex_command_available: workerPreflight?.codexCommandAvailable === true,
+    worker_script_path: workerPreflight?.workerScriptPath || null,
+    worker_start_command: workerPreflight?.workerStartCommand?.preview || null,
+    worker_preflight_status: workerPreflight?.status || (options?.startWorker === false ? "skipped" : null),
     target_scope: intake.target_scope || [],
     target_scope_summary: intake.target_scope_summary || "not specified",
     protected_scope: intake.protected_scope || [],
@@ -947,6 +1241,8 @@ export async function startWeaveflowCodexJob(options) {
     job_request_path: join(jobDir, "job_request.json"),
     initial_prompt_path: join(jobDir, "initial_prompt.md"),
     start_outcome_path: join(jobDir, "start_outcome.json"),
+    runtime_diagnostics_path: join(jobDir, "runtime_diagnostics.json"),
+    phase_plan_path: join(jobDir, "phase_plan.json"),
     policy_decision_path: join(jobDir, "policy_decision.json"),
     run_profile_path: join(jobDir, "run_profile.json"),
     run_profile: usageLimitGuard.runProfile,
@@ -1033,6 +1329,13 @@ export async function startWeaveflowCodexJob(options) {
     push: pushRequested,
     run_tests: runTests,
     python_command: pythonCommand,
+    weaveflow_runtime_root: runtime.runtimeRoot,
+    weaveflow_runtime_python: runtime.pythonExecutable,
+    weaveflow_runtime_import_ok: runtime.importOk === true,
+    weaveflow_runtime_module_path: runtime.weaveflowModulePath,
+    weaveflow_runtime_suggested_fix: runtime.suggestedFix || "",
+    target_workspace_root: repoRoot,
+    weaveflow_bridge_workspace_root: runtime.targetWorkspaceRoot || workspaceRoot,
     current_step: "queued",
     started_at: now,
     updated_at: now,
@@ -1065,8 +1368,13 @@ export async function startWeaveflowCodexJob(options) {
   };
 
   await writeRequiredJobPlaceholders(jobDir, userRequest, intake);
-  const initialPrompt = buildInitialCodexJobPrompt({ state, intake, policy });
+  const initialPrompt = cleanOptionalString(options?.initialPrompt || options?.continuationPrompt) ||
+    buildInitialCodexJobPrompt({ state, intake, policy, phasePlan });
   await writeJobStartArtifacts(jobDir, state, { intake, policy, initialPrompt });
+  await writeRuntimeDiagnosticsArtifact(jobDir, runtime, state);
+  if (workerPreflight) {
+    await writeWorkerPreflightArtifact(jobDir, workerPreflight, state);
+  }
   await writeUsageLimitGuardArtifacts(jobDir, state);
   await writeJobState(jobDir, state);
   await appendJobEvent(jobDir, "job_created", "Codex job state created.", {
@@ -1135,7 +1443,24 @@ export async function startWeaveflowCodexJob(options) {
     const startWorkerProcess = typeof options?.startWorkerProcess === "function"
       ? options.startWorkerProcess
       : startBackgroundJobProcess;
-    const child = await startWorkerProcess({ jobDir, repoRoot });
+    const workerStartCommand = workerPreflight?.workerStartCommand || buildWorkerStartCommand({
+      jobId,
+      jobDir,
+      targetWorkspaceRoot: repoRoot,
+      runProfile: usageLimitGuard.runProfile,
+      executionMode: policy.executionMode || "safe_worktree",
+      policyDecisionPath: state.policy_decision_path,
+      initialPromptPath: state.initial_prompt_path,
+      codexCommand: state.codex_command || cleanOptionalString(options?.codexExecutable || options?.codexCommand),
+      workerScriptPath: state.worker_script_path || options?.workerScriptPath,
+      env: buildPythonEnv(repoRoot)
+    });
+    const child = await startWorkerProcess({
+      jobDir,
+      repoRoot,
+      workerPreflight,
+      workerStartCommand
+    });
     const pid = normalizeWorkerPid(child?.pid);
     const workerStartedAt = new Date().toISOString();
     state = await updateJobState(jobDir, state, {
@@ -1146,6 +1471,7 @@ export async function startWeaveflowCodexJob(options) {
       worker_start_status: "started",
       worker_started: true,
       worker_started_at: workerStartedAt,
+      worker_start_command: workerStartCommand.preview || state.worker_start_command || null,
       last_event: "worker_started",
       stage_timestamps: {
         ...(state.stage_timestamps || {}),
@@ -1153,15 +1479,25 @@ export async function startWeaveflowCodexJob(options) {
       }
     });
     await appendJobEvent(jobDir, "worker_started", "Codex background worker started.", { pid }, state, workerStartedAt);
+    await writeWorkerStartArtifact(jobDir, state, {
+      status: "started",
+      pid,
+      workerStartCommand
+    });
     await writeStartOutcomeArtifact(jobDir, state);
+    await updateChainFromJobState(jobsRoot, state, {
+      status: JOB_CHAIN_STATUSES.ACTIVE,
+      latestSegmentStatus: "running",
+      event: "segment_worker_started"
+    });
   } catch (error) {
     const failedAt = new Date().toISOString();
     const message = safeOneLine(error?.message || error || "worker start failed");
     state = await updateJobState(jobDir, state, {
-      status: CODEX_JOB_ACTION_OUTCOMES.START_FAILED,
-      current_step: CODEX_JOB_ACTION_OUTCOMES.WORKER_START_FAILED,
-      action_outcome: CODEX_JOB_ACTION_OUTCOMES.START_FAILED,
-      worker_start_status: CODEX_JOB_ACTION_OUTCOMES.WORKER_START_FAILED,
+      status: CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_WORKER_START_FAILED,
+      current_step: CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_WORKER_START_FAILED,
+      action_outcome: CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_WORKER_START_FAILED,
+      worker_start_status: CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_WORKER_START_FAILED,
       worker_started: false,
       error: message,
       last_event: CODEX_JOB_ACTION_OUTCOMES.WORKER_START_FAILED,
@@ -1173,10 +1509,21 @@ export async function startWeaveflowCodexJob(options) {
     await appendJobEvent(jobDir, CODEX_JOB_ACTION_OUTCOMES.WORKER_START_FAILED, "Codex background worker failed to start.", {
       error: message
     }, state, failedAt);
+    await writeWorkerStartArtifact(jobDir, state, {
+      status: CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_WORKER_START_FAILED,
+      reason: message,
+      workerStartCommand: state.worker_start_command ? { preview: state.worker_start_command } : null
+    });
     await writeStartOutcomeArtifact(jobDir, state, {
       reason: message,
       missing_requirement: "Codex worker process must be spawnable from this repository.",
       user_next_action: "stderr.log와 start_outcome.json을 확인한 뒤 repo path, Node 실행 환경, worker script 경로를 고쳐 다시 시작하세요."
+    });
+    await updateChainFromJobState(jobsRoot, state, {
+      status: JOB_CHAIN_STATUSES.WAITING_FOR_RECOVERY,
+      latestSegmentStatus: CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_WORKER_START_FAILED,
+      reason: message,
+      event: "segment_start_failed"
     });
   }
   return buildJobStartDetails(state);
@@ -1639,6 +1986,13 @@ export async function runCodexJobWorker(jobDir) {
       error: null
     });
     await writeJobFile(jobDir, "result.md", renderCodexJobResultMarkdown(state, planning));
+    await updateChainFromJobState(jobRootForWorkspace(state.workspace_root || state.repo_root), state, {
+      status: JOB_CHAIN_STATUSES.COMPLETED,
+      latestSegmentStatus: "completed",
+      reason: "job_completed",
+      recommendedNextAction: "review_chain_report",
+      event: "segment_completed"
+    });
   } catch (error) {
     state = await readOptionalJobState(jobDir) || state;
     if (state.session_mode === "multi_step") {
@@ -1674,14 +2028,29 @@ export async function runCodexJobWorker(jobDir) {
       error: message
     });
     await writeJobFile(jobDir, "result.md", renderCodexJobResultMarkdown(state, null));
+    await updateChainFromJobState(jobRootForWorkspace(state.workspace_root || state.repo_root), state, {
+      status: status === "timeout" ? JOB_CHAIN_STATUSES.PAUSED : JOB_CHAIN_STATUSES.FAILED,
+      latestSegmentStatus: status,
+      reason: message,
+      recommendedNextAction: "recover",
+      event: "segment_failed"
+    });
     process.exitCode = 1;
   }
 }
 
 export async function checkWeaveflowCodexJob(options) {
-  const jobId = requireString(options?.jobId, "jobId");
   const repoRoot = resolveJobRepoRoot(options).repoRoot;
   const workspaceRoot = resolve(cleanOptionalString(options?.workspaceRoot) || repoRoot);
+  const jobsRoot = jobRootForWorkspace(workspaceRoot);
+  const requestedChainId = cleanOptionalString(options?.chainId);
+  let jobId = cleanOptionalString(options?.jobId);
+  let requestedChainStatus = null;
+  if (!jobId && requestedChainId) {
+    requestedChainStatus = await readChainStatusById(jobsRoot, requestedChainId);
+    jobId = cleanOptionalString(requestedChainStatus?.currentJobId);
+  }
+  jobId = requireString(jobId, "jobId");
   const jobDir = join(jobRootForWorkspace(workspaceRoot), jobId);
   if (!existsSync(jobDir)) {
     throw new Error(`Codex job does not exist: ${jobId}`);
@@ -1767,9 +2136,28 @@ export async function checkWeaveflowCodexJob(options) {
     state,
     options
   });
+  const chainStatus = state.chain_id ? await readChainStatusById(jobsRoot, state.chain_id) : requestedChainStatus;
+  const resumeCapsule = await readResumeCapsule(jobDir, state);
+  const continuationContext = buildContinuationContext({
+    jobState: state,
+    chainStatus,
+    resumeCapsule
+  });
+  const continuationDecision = buildContinuationDecision(continuationContext);
   return {
     ok: true,
     jobId: state.job_id,
+    chainId: state.chain_id || null,
+    rootJobId: state.root_job_id || null,
+    parentJobId: state.parent_job_id || null,
+    segmentIndex: state.segment_index || 1,
+    maxSegments: state.max_segments || 1,
+    continuationMode: state.continuation_mode || null,
+    chainStatus: state.chain_status || null,
+    chainStatusPath: state.chain_status_path || null,
+    chainSegmentsPath: state.chain_segments_path || null,
+    chainReportPath: state.chain_report_path || null,
+    autoContinue: state.auto_continue === true,
     taskId: state.task_id,
     status: state.status,
     currentStep: state.current_step,
@@ -1872,9 +2260,17 @@ export async function checkWeaveflowCodexJob(options) {
 }
 
 export async function recoverWeaveflowCodexJob(options) {
-  const jobId = requireString(options?.jobId, "jobId");
   const repoRoot = resolveJobRepoRoot(options).repoRoot;
   const workspaceRoot = resolve(cleanOptionalString(options?.workspaceRoot) || repoRoot);
+  const jobsRoot = jobRootForWorkspace(workspaceRoot);
+  const requestedChainId = cleanOptionalString(options?.chainId);
+  let jobId = cleanOptionalString(options?.jobId);
+  let requestedChainStatus = null;
+  if (!jobId && requestedChainId) {
+    requestedChainStatus = await readChainStatusById(jobsRoot, requestedChainId);
+    jobId = cleanOptionalString(requestedChainStatus?.currentJobId);
+  }
+  jobId = requireString(jobId, "jobId");
   const jobDir = join(jobRootForWorkspace(workspaceRoot), jobId);
   if (!existsSync(jobDir)) {
     throw new Error(`Codex job does not exist: ${jobId}`);
@@ -1885,6 +2281,7 @@ export async function recoverWeaveflowCodexJob(options) {
   const allowCleanup = options?.allowCleanup === true;
   const allowResume = options?.allowResume !== false;
   const pythonCommand = cleanOptionalString(options?.pythonCommand) || "python3";
+  const recoveryMode = normalizeRecoveryMode(options?.recoveryMode || options?.mode || (options?.startNextSegment === true ? "start_next_segment" : ""));
   let state = await readOptionalJobState(jobDir);
   let recovery = await buildCodexJobRecoveryContext({
     jobDir,
@@ -1900,8 +2297,112 @@ export async function recoverWeaveflowCodexJob(options) {
   });
   const resumeCapsule = await readResumeCapsule(jobDir, state);
   recovery = enrichRecoveryWithResumeCapsule(recovery, resumeCapsule);
+  const chainStatus = state?.chain_id ? await readChainStatusById(jobsRoot, state.chain_id) : requestedChainStatus;
+  const continuationContext = buildContinuationContext({
+    jobState: state || {},
+    chainStatus,
+    resumeCapsule,
+    autoContinue: options?.autoContinue
+  });
+  const continuationDecision = buildContinuationDecision(continuationContext);
 
   await writeRecoveryPlanArtifacts(jobDir, recovery.plan);
+
+  if (recoveryMode === "start_next_segment") {
+    if (!state) {
+      return recoveryApplyBlockedResult({
+        jobId,
+        requestedAction,
+        recovery,
+        reason: "job_state_unreadable"
+      });
+    }
+    if (!continuationDecision.shouldContinue && options?.forceStartNextSegment !== true) {
+      await updateChainFromJobState(jobsRoot, state, {
+        status: continuationDecision.reason === "usage_limit_detected"
+          ? JOB_CHAIN_STATUSES.STOPPED_BY_USAGE_LIMIT
+          : JOB_CHAIN_STATUSES.WAITING_FOR_RECOVERY,
+        reason: continuationDecision.reason,
+        recommendedNextAction: continuationDecision.recommendedNextAction,
+        event: "continuation_blocked"
+      });
+      return {
+        ok: false,
+        applied: false,
+        dryRun: false,
+        jobId,
+        chainId: state.chain_id || null,
+        action: "start_next_segment",
+        requestedAction,
+        recoveryMode,
+        recovery,
+        resumeCapsulePath: resumeCapsule?.resume_capsule_path || null,
+        resumeCapsule,
+        continuationDecision,
+        recommendedNextAction: continuationDecision.recommendedNextAction,
+        nextSuggestedPromptReady: Boolean(resumeCapsule?.next_suggested_prompt),
+        nextSuggestedPrompt: resumeCapsule?.next_suggested_prompt || "",
+        koreanSummary: continuationDecisionKorean(continuationDecision)
+      };
+    }
+    const continuationPrompt = buildContinuationPrompt(continuationContext);
+    const nextStart = await startWeaveflowCodexJob({
+      ...options,
+      workspaceRoot,
+      repoRoot,
+      userRequest: continuationPrompt,
+      originalUserRequest: state.user_request,
+      runProfile: continuationDecision.nextRunProfile || state.run_profile,
+      chainId: state.chain_id,
+      rootJobId: state.root_job_id || state.job_id,
+      parentJobId: state.job_id,
+      segmentIndex: continuationDecision.nextSegmentIndex,
+      maxSegments: state.max_segments,
+      continuationMode: state.continuation_mode,
+      autoContinue: state.auto_continue,
+      totalJobBudgetMinutes: state.total_job_budget_minutes,
+      maxSessionMinutes: state.max_session_minutes,
+      checkpointEveryMinutes: state.checkpoint_every_minutes,
+      maxFixAttempts: state.max_fix_attempts,
+      maxRepeatedFailures: state.max_repeated_failures,
+      maxChangedFiles: state.max_changed_files,
+      allowPush: false,
+      push: false,
+      initialPrompt: continuationPrompt
+    });
+    await appendChainEvent(jobsRoot, state.chain_id, "segment_continued", {
+      fromJobId: state.job_id,
+      toJobId: nextStart.jobId,
+      segmentIndex: nextStart.segmentIndex,
+      status: nextStart.status,
+      actionOutcome: nextStart.actionOutcome
+    });
+    return {
+      ok: nextStart.actionOutcome === CODEX_JOB_ACTION_OUTCOMES.STARTED_JOB,
+      applied: true,
+      dryRun: false,
+      jobId,
+      nextJobId: nextStart.jobId,
+      chainId: state.chain_id,
+      action: "start_next_segment",
+      requestedAction,
+      recoveryMode,
+      recovery,
+      resumeCapsulePath: resumeCapsule?.resume_capsule_path || null,
+      resumeCapsule,
+      continuationDecision,
+      nextSegment: nextStart,
+      status: nextStart.status,
+      koreanSummary: [
+        "다음 Weaveflow Codex segment를 시작했습니다.",
+        `- chain: ${state.chain_id}`,
+        `- 이전 job: ${state.job_id}`,
+        `- 다음 job: ${nextStart.jobId}`,
+        `- segment: ${nextStart.segmentIndex} / ${nextStart.maxSegments}`,
+        `- 상태: ${nextStart.status}`
+      ].join("\n")
+    };
+  }
 
   if (!apply) {
     return {
@@ -1917,10 +2418,15 @@ export async function recoverWeaveflowCodexJob(options) {
       resumeCapsulePath: resumeCapsule?.resume_capsule_path || null,
       resumeCapsuleJsonPath: resumeCapsule ? join(jobDir, "resume_capsule.json") : null,
       resumeCapsule,
+      chainStatus,
+      continuationDecision,
       recommendedNextAction: resumeCapsule?.recommended_next_action || null,
       nextSuggestedPromptReady: Boolean(resumeCapsule?.next_suggested_prompt),
       nextSuggestedPrompt: resumeCapsule?.next_suggested_prompt || "",
-      koreanSummary: formatCodexRecoveryDryRunKorean(recovery),
+      koreanSummary: [
+        formatCodexRecoveryDryRunKorean(recovery),
+        continuationDecisionKorean(continuationDecision)
+      ].filter(Boolean).join("\n"),
       mutated: ["recovery_plan.md", "recovery_plan.json"]
     };
   }
@@ -2028,12 +2534,30 @@ export async function recoverWeaveflowCodexJob(options) {
 }
 
 export async function cancelWeaveflowCodexJob(options) {
-  const jobId = requireString(options?.jobId, "jobId");
   const repoRoot = resolveJobRepoRoot(options).repoRoot;
   const workspaceRoot = resolve(cleanOptionalString(options?.workspaceRoot) || repoRoot);
+  const jobsRoot = jobRootForWorkspace(workspaceRoot);
+  const requestedChainId = cleanOptionalString(options?.chainId);
+  let jobId = cleanOptionalString(options?.jobId);
+  let chainStatus = null;
+  if (!jobId && requestedChainId) {
+    chainStatus = await readChainStatusById(jobsRoot, requestedChainId);
+    jobId = cleanOptionalString(chainStatus?.currentJobId);
+  }
+  jobId = requireString(jobId, "jobId");
   const jobDir = join(jobRootForWorkspace(workspaceRoot), jobId);
   let state = await readJobState(jobDir);
   const previousStatus = state.status;
+  const cancelRequestPath = join(jobDir, "cancel_request.json");
+  await writeJsonAtomic(cancelRequestPath, {
+    schemaVersion: "weaveflow.codex_cancel_request.v0",
+    requestedAt: new Date().toISOString(),
+    jobId: state.job_id,
+    chainId: state.chain_id || requestedChainId || null,
+    statusBeforeCancel: previousStatus,
+    requestedScope: requestedChainId && !options?.jobId ? "chain_current_job" : "job",
+    reason: cleanOptionalString(options?.reason) || "user_cancelled"
+  });
   let cancelled = false;
   let signalError = "";
 
@@ -2072,14 +2596,23 @@ export async function cancelWeaveflowCodexJob(options) {
       error: signalError || null
     });
   }
+  chainStatus = state.chain_id ? await updateChainFromJobState(jobsRoot, state, {
+    status: JOB_CHAIN_STATUSES.CANCELLED,
+    reason: "user_cancelled",
+    recommendedNextAction: "cancelled",
+    event: "chain_cancelled"
+  }) : chainStatus;
   const adaptiveState = state.session_mode === "adaptive_loop" ? await readAdaptiveState(jobDir) : null;
 
   return {
     ok: true,
     jobId: state.job_id,
+    chainId: state.chain_id || requestedChainId || null,
+    chainStatus,
     previousStatus,
     status: state.status,
     cancelled,
+    cancelRequestPath,
     preservedWorktree: state.worktree,
     logPath: jobDir,
     sessionMode: state.session_mode,
@@ -2137,9 +2670,21 @@ export function formatCodexJobStartSummary(summary) {
     nextAction: `weaveflow_check_codex_job jobId=${summary.jobId}로 상태를 확인하세요.`
   });
   return [
-    "장기 작업으로 인식해서 Codex job을 시작했습니다.",
+    "Weaveflow runtime과 Codex worker preflight를 통과해서 장기 작업 job을 시작했습니다.",
+    "Codex job을 시작했습니다.",
     "",
-    `jobId: ${summary.jobId || "없음"}`,
+    `chain: ${summary.chainId || "없음"}`,
+    `segment: ${summary.segmentIndex || 1} / ${summary.maxSegments || 1}`,
+    `job: ${summary.jobId || "없음"}`,
+    `profile: ${summary.runProfile || "없음"}`,
+    `상태: ${summary.status || "running"}`,
+    `실행 모드: ${summary.executionMode || "safe_worktree"}`,
+    "worker: started",
+    `runtime: ${summary.runtime?.importOk === false ? "failed" : "ok"}`,
+    `python: ${summary.pythonExecutable || summary.runtime?.pythonExecutable || "없음"}`,
+    `workspace: ${summary.targetWorkspaceRoot || summary.repoRoot || summary.repoResolution?.repoRoot || "없음"}`,
+    `정책: ${summary.policyDecision || "allow_with_constraints"}`,
+    `금지: ${formatDeniedActionsForResponse(summary.deniedActions)}`,
     `status: ${summary.status || "running"}`,
     `runProfile: ${summary.runProfile || "없음"}`,
     `worker started: ${summary.workerStarted === true ? "yes" : "no"}`,
@@ -2148,9 +2693,11 @@ export function formatCodexJobStartSummary(summary) {
     `대상 범위: ${formatScopeSummaryForResponse(summary.targetScope, summary.targetScopeSummary)}`,
     `보호 범위: ${formatScopeSummaryForResponse(summary.protectedScope, summary.protectedScopeSummary)}`,
     `push: ${summary.allowPush ? "허용" : "허용 안 됨"}`,
-    `확인: weaveflow_check_codex_job jobId=${summary.jobId}`,
-    `중단: weaveflow_cancel_codex_job jobId=${summary.jobId}`,
-    `복구: weaveflow_recover_codex_job jobId=${summary.jobId}`,
+    `확인: weaveflow_check_codex_job ${summary.jobId}`,
+    `중단: weaveflow_cancel_codex_job ${summary.jobId}`,
+    `복구: weaveflow_recover_codex_job ${summary.jobId}`,
+    "",
+    "먼저 git pull --ff-only와 repo 상태 확인 후, phase별로 점검/수정/검증/보고하도록 지시했습니다.",
     "",
     report,
     `저장소: ${summary.repoRoot || summary.repoResolution?.repoRoot || "없음"}`,
@@ -2168,6 +2715,18 @@ export function formatCodexJobStartSummary(summary) {
 }
 
 function formatCodexJobNotStartedSummary(summary = {}, outcome) {
+  if (outcome === BLOCKED_WEAVEFLOW_RUNTIME_UNAVAILABLE) {
+    return formatRuntimeUnavailableStartSummary(summary);
+  }
+  if (isWorkerPreflightBlockedStatus(outcome) || isWorkerPreflightBlockedStatus(summary.status)) {
+    return formatWorkerPreflightBlockedSummary(summary, outcome);
+  }
+  if (summary.status === CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_WORKER_START_FAILED ||
+    outcome === CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_WORKER_START_FAILED ||
+    summary.workerStartStatus === CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_WORKER_START_FAILED) {
+    return formatWorkerStartFailedSummary(summary);
+  }
+
   const status = summary.status || (
     outcome === CODEX_JOB_ACTION_OUTCOMES.START_FAILED ||
     outcome === CODEX_JOB_ACTION_OUTCOMES.WORKER_START_FAILED
@@ -2203,7 +2762,88 @@ function formatCodexJobNotStartedSummary(summary = {}, outcome) {
     summary.sessionMode === "multi_step" ? summarizeSessionProgressKorean(sessionProgressFromSummary(summary)) : "",
     summary.sessionMode === "adaptive_loop" ? formatAdaptiveLoopSummaryKorean(adaptiveStateFromSummary(summary)) : "",
     "",
-    "아직 Codex worker는 실행되지 않았습니다."
+    "아직 Weaveflow Codex job은 시작되지 않았습니다."
+  ].filter(Boolean).join("\n");
+}
+
+function formatWorkerPreflightBlockedSummary(summary = {}, outcome) {
+  const status = summary.status || outcome || WORKER_PREFLIGHT_STATUSES.BLOCKED_WORKER_UNAVAILABLE;
+  const reason = summary.reason || summary.error || "Codex worker preflight를 통과하지 못했습니다.";
+  const nextAction = summary.userNextAction || summary.user_next_action ||
+    "WEAVEFLOW_CODEX_COMMAND를 지정하거나 repoRoot, git 상태, worker script 조건을 확인하세요.";
+  return [
+    "Weaveflow job을 시작하지 못했습니다.",
+    "",
+    `- 상태: ${status}`,
+    summary.jobId ? `- job: ${summary.jobId}` : "",
+    `- 이유: ${reason}`,
+    summary.codexCommand ? `- 확인한 command: ${summary.codexCommand}` : "",
+    summary.targetWorkspaceRoot ? `- workspace: ${summary.targetWorkspaceRoot}` : "",
+    `- 필요한 조치: ${nextAction}`,
+    `- 진단: ${summary.workerPreflightPath || summary.worker_preflight_path || "worker_preflight.json"}`,
+    "",
+    "아직 Codex worker는 실행 중이 아닙니다."
+  ].filter(Boolean).join("\n");
+}
+
+function formatWorkerStartFailedSummary(summary = {}) {
+  const reason = summary.reason || summary.error || "worker start failed";
+  const nextAction = summary.userNextAction || summary.user_next_action ||
+    "start_outcome.json과 stderr.log를 확인한 뒤 worker 실행 조건을 고쳐 다시 시도하세요.";
+  return [
+    "Weaveflow job record는 만들었지만 Codex worker를 시작하지 못했습니다.",
+    "",
+    `- 상태: ${CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_WORKER_START_FAILED}`,
+    `- job: ${summary.jobId || "없음"}`,
+    `- 이유: ${reason}`,
+    `- 진단: ${summary.startOutcomePath || summary.start_outcome_path || "start_outcome.json"}`,
+    summary.runtimeDiagnosticsPath ? `- runtime 진단: ${summary.runtimeDiagnosticsPath}` : "",
+    `- 필요한 조치: ${nextAction}`,
+    "",
+    "아직 Codex worker는 실행 중이 아닙니다."
+  ].filter(Boolean).join("\n");
+}
+
+function formatDeniedActionsForResponse(actions = []) {
+  const values = Array.isArray(actions) && actions.length
+    ? actions
+    : ["push", "production_deploy", "secret_changes", "destructive_db_migration", "uncontrolled_commit"];
+  return values
+    .map((action) => ({
+      production_deploy: "deploy",
+      secret_changes: "secret 변경",
+      destructive_db_migration: "destructive DB migration",
+      uncontrolled_commit: "uncontrolled commit"
+    }[action] || action))
+    .join(", ");
+}
+
+function formatRuntimeUnavailableStartSummary(summary = {}) {
+  const runtime = summary.runtime || {};
+  const status = summary.status || BLOCKED_WEAVEFLOW_RUNTIME_UNAVAILABLE;
+  const reason = summary.reason || summary.error || "Python에서 `weaveflow` 패키지를 import하지 못했습니다.";
+  const pythonExecutable = summary.pythonExecutable || runtime.pythonExecutable || "확인되지 않음";
+  const runtimeRoot = summary.runtimeRoot || runtime.runtimeRoot || "확인되지 않음";
+  const expectedModulePath = summary.expectedModulePath || runtime.expectedModulePath || (
+    runtimeRoot && runtimeRoot !== "확인되지 않음" ? join(runtimeRoot, "src", "weaveflow") : "확인되지 않음"
+  );
+  const nextAction = summary.userNextAction || summary.user_next_action || runtime.suggestedFix ||
+    "WEAVEFLOW_RUNTIME_ROOT를 지정하거나 python3 -m pip install -e /path/to/weaveflow 를 실행하세요.";
+
+  return [
+    "Weaveflow runtime을 시작하지 못했습니다.",
+    "",
+    `- 상태: ${status}`,
+    `- 이유: ${reason}`,
+    `- 확인한 Python: ${pythonExecutable}`,
+    `- 확인한 runtime root: ${runtimeRoot}`,
+    `- 예상 module path: ${expectedModulePath}`,
+    summary.jobId ? `- job: ${summary.jobId}` : "",
+    summary.jobArtifactPath || summary.jobDir ? `- artifact: ${summary.jobArtifactPath || summary.jobDir}` : "",
+    summary.runtimeDiagnosticsPath ? `- diagnostics: ${summary.runtimeDiagnosticsPath}` : "",
+    `- 필요한 조치: ${nextAction}`,
+    "",
+    "아직 Weaveflow Codex job은 시작되지 않았습니다."
   ].filter(Boolean).join("\n");
 }
 
@@ -2220,8 +2860,12 @@ export function formatCodexJobStatusSummary(summary) {
   const selected = summarizeMarkdown(summary.selectedScope, 800) || "아직 선택된 범위가 없습니다.";
   const logs = summarizeMarkdown(summary.recentLogs, 900) || "최근 로그가 없습니다.";
   const stageDurations = formatStageDurations(summary.stageDurations);
+  const chainSummary = summary.chainStatus
+    ? formatChainSummaryKorean(summary.chainStatus, summary.continuationDecision)
+    : "";
   const lines = [
     formatJobStatusKorean(summary, { mode: "detailed" }),
+    chainSummary ? `Chain 상태:\n${chainSummary}` : "",
     `단계별 소요 시간: ${stageDurations}`,
     "목표:",
     goal,
@@ -2248,6 +2892,8 @@ export function formatCodexJobCancelSummary(summary) {
   });
   return [
     report,
+    summary.chainId ? `chain: ${summary.chainId}` : "",
+    summary.chainStatus ? `chain 상태: ${summary.chainStatus.status}` : "",
     `이전 상태: ${summary.previousStatus}`,
     `취소 처리: ${summary.cancelled ? "예" : "아니오"}`,
     `현재 상태: ${summary.status}`,
@@ -2373,10 +3019,13 @@ function formatRecoverySummaryForJob(summary = {}) {
 
 export function formatCodexJobRecoverySummary(summary = {}) {
   const capsuleSummary = formatResumeCapsuleRecoverySummary(summary);
+  const continuationSummary = summary.continuationDecision
+    ? continuationDecisionKorean(summary.continuationDecision)
+    : "";
   if (summary.dryRun) {
-    return [summary.koreanSummary || formatCodexRecoveryDryRunKorean(summary.recovery || {}), capsuleSummary].filter(Boolean).join("\n");
+    return [summary.koreanSummary || formatCodexRecoveryDryRunKorean(summary.recovery || {}), capsuleSummary, continuationSummary].filter(Boolean).join("\n");
   }
-  return [summary.koreanSummary || formatCodexRecoveryApplyKorean(summary.recoveryResult || summary), capsuleSummary].filter(Boolean).join("\n");
+  return [summary.koreanSummary || formatCodexRecoveryApplyKorean(summary.recoveryResult || summary), capsuleSummary, continuationSummary].filter(Boolean).join("\n");
 }
 
 async function readResumeCapsule(jobDir, state = null) {
@@ -2444,8 +3093,21 @@ function formatResumeCapsuleRecoverySummary(summary = {}) {
   ].filter(Boolean).join("\n");
 }
 
-async function runBridgeProcess({ pythonCommand, projectRoot, workspaceRoot, requests, timeoutMs }) {
-  const args = [
+async function runBridgeProcess({ options = {}, workspaceRoot, requests, timeoutMs }) {
+  const runtime = await resolveRuntimeForPluginRequest(options, workspaceRoot, timeoutMs);
+  if (runtime.importOk !== true) {
+    return {
+      stdout: "",
+      stderr: runtime.stderr || runtime.reason || "",
+      code: 1,
+      signal: null,
+      termination: BLOCKED_WEAVEFLOW_RUNTIME_UNAVAILABLE,
+      runtime
+    };
+  }
+
+  const command = runtime.bridgeCommand?.command || runtime.pythonExecutable;
+  const args = runtime.bridgeCommand?.args || [
     "-m",
     "weaveflow.adapters.stdio_bridge",
     "--root",
@@ -2453,15 +3115,16 @@ async function runBridgeProcess({ pythonCommand, projectRoot, workspaceRoot, req
   ];
   const input = `${requests.map((request) => JSON.stringify(request)).join("\n")}\n`;
   const result = await runCommand(
-    pythonCommand,
+    command,
     args,
     {
-      cwd: projectRoot,
-      env: buildPythonEnv(projectRoot),
+      cwd: runtime.bridgeCommand?.cwd || runtime.runtimeRoot,
+      env: runtime.bridgeCommand?.env || runtime.env,
       input,
       timeoutMs
     }
   );
+  result.runtime = runtime;
   return result;
 }
 
@@ -2540,7 +3203,7 @@ export function formatCodexAutomationSummary(summary) {
   return lines.join("\n");
 }
 
-async function createAutomationTask({ workspaceRoot, userRequest, pythonCommand, projectRoot, timeoutMs }) {
+async function createAutomationTask({ workspaceRoot, userRequest, pythonCommand, pythonEnv = null, projectRoot, timeoutMs }) {
   const code = [
     "from pathlib import Path",
     "import json",
@@ -2566,7 +3229,7 @@ async function createAutomationTask({ workspaceRoot, userRequest, pythonCommand,
   ].join("\n");
   const result = await runCommand(pythonCommand, ["-c", code, workspaceRoot, userRequest], {
     cwd: projectRoot,
-    env: buildPythonEnv(projectRoot),
+    env: pythonEnv || buildPythonEnv(projectRoot),
     timeoutMs
   });
   if (result.code !== 0) {
@@ -2912,7 +3575,7 @@ function renderCodexAutomationResultArtifact({ summary, userRequest, artifactDat
   ].join("\n");
 }
 
-async function attachCodexResult({ workspaceRoot, taskId, resultSourcePath, pythonCommand, projectRoot, timeoutMs }) {
+async function attachCodexResult({ workspaceRoot, taskId, resultSourcePath, pythonCommand, pythonEnv = null, projectRoot, timeoutMs }) {
   const code = [
     "from pathlib import Path",
     "import json",
@@ -2934,7 +3597,7 @@ async function attachCodexResult({ workspaceRoot, taskId, resultSourcePath, pyth
     ["-c", code, workspaceRoot, taskId, resultSourcePath],
     {
       cwd: projectRoot,
-      env: buildPythonEnv(projectRoot),
+      env: pythonEnv || buildPythonEnv(projectRoot),
       timeoutMs
     }
   );
@@ -3018,6 +3681,10 @@ async function writeRequiredJobPlaceholders(jobDir, userRequest, intake = null) 
     "job_request.json": "{}\n",
     "initial_prompt.md": "# Initial Codex Job Prompt\n\n대기 중입니다.\n",
     "start_outcome.json": "{}\n",
+    "runtime_diagnostics.json": "{}\n",
+    "worker_preflight.json": "{}\n",
+    "worker_start.json": "{}\n",
+    "phase_plan.json": "{}\n",
     "policy_decision.json": "{}\n",
     "run_profile.json": "{}\n",
     "outcome_contract.md": "# Outcome Contract\n\n대기 중입니다.\n",
@@ -3065,6 +3732,7 @@ async function writeRequiredJobPlaceholders(jobDir, userRequest, intake = null) 
 async function writeJobStartArtifacts(jobDir, state, { intake, policy, initialPrompt }) {
   await writeJsonAtomic(join(jobDir, "job_request.json"), buildJobRequestArtifact(state, intake, policy));
   await writeJobFile(jobDir, "initial_prompt.md", initialPrompt || buildInitialCodexJobPrompt({ state, intake, policy }));
+  await writeJsonAtomic(join(jobDir, "phase_plan.json"), state.phase_plan || buildLongWorkPhasePlan({ intake, policy }));
   await writeJsonAtomic(join(jobDir, "policy_decision.json"), buildPolicyDecisionArtifact(state, policy));
   await writeJsonAtomic(join(jobDir, "run_profile.json"), buildRunProfileArtifact(state));
   await writeStartOutcomeArtifact(jobDir, state);
@@ -3072,6 +3740,400 @@ async function writeJobStartArtifacts(jobDir, state, { intake, policy, initialPr
 
 async function writeStartOutcomeArtifact(jobDir, state, overrides = {}) {
   await writeJsonAtomic(join(jobDir, "start_outcome.json"), buildStartOutcomeArtifact(state, overrides));
+}
+
+async function writeWorkerPreflightArtifact(jobDir, workerPreflight, state = null) {
+  await writeJsonAtomic(join(jobDir, "worker_preflight.json"), buildWorkerPreflightArtifact(workerPreflight, state));
+}
+
+async function writeWorkerStartArtifact(jobDir, state, details = {}) {
+  await writeJsonAtomic(join(jobDir, "worker_start.json"), buildWorkerStartArtifact(state, details));
+}
+
+async function writeRuntimeDiagnosticsArtifact(jobDir, runtime, state = null, overrides = {}) {
+  await writeJsonAtomic(
+    join(jobDir, "runtime_diagnostics.json"),
+    buildWeaveflowRuntimeDiagnostics(runtime, {
+      status: overrides.status || state?.status || runtime?.status,
+      reason: overrides.reason || runtime?.reason,
+      pythonExecutable: overrides.pythonExecutable || runtime?.pythonExecutable,
+      runtimeRoot: overrides.runtimeRoot || runtime?.runtimeRoot,
+      targetWorkspaceRoot: overrides.targetWorkspaceRoot || runtime?.targetWorkspaceRoot || state?.workspace_root,
+      expectedModulePath: overrides.expectedModulePath || runtime?.expectedModulePath,
+      suggestedFix: overrides.suggestedFix || runtime?.suggestedFix
+    })
+  );
+}
+
+async function resolveRuntimeForPluginRequest(options = {}, targetWorkspaceRoot, timeoutMs) {
+  const runtimeValidator = typeof options?.validateWeaveflowRuntime === "function"
+    ? options.validateWeaveflowRuntime
+    : validateWeaveflowRuntime;
+  const runtime = await runtimeValidator({
+    targetWorkspaceRoot,
+    weaveflowRuntimeRoot: cleanOptionalString(options?.weaveflowRuntimeRoot || options?.runtimeRoot),
+    pythonExecutable: cleanOptionalString(options?.pythonExecutable) || cleanOptionalString(options?.pythonCommand),
+    request: options?.request || options,
+    pluginConfig: options?.pluginConfig || options?.config,
+    env: options?.env || process.env,
+    pluginDir: options?.pluginDir,
+    cwd: options?.cwd,
+    commandRunner: options?.runtimeCommandRunner,
+    timeoutMs
+  });
+
+  return {
+    ...runtime,
+    targetWorkspaceRoot: runtime?.targetWorkspaceRoot || resolve(targetWorkspaceRoot),
+    env: runtime?.env || { PYTHONPATH: "" }
+  };
+}
+
+function formatRuntimeUnavailableError(runtime = {}) {
+  return [
+    runtime.reason || "Python에서 `weaveflow` 패키지를 import하지 못했습니다.",
+    runtime.pythonExecutable ? `python=${runtime.pythonExecutable}` : "",
+    runtime.runtimeRoot ? `runtimeRoot=${runtime.runtimeRoot}` : "",
+    runtime.expectedModulePath ? `expectedModulePath=${runtime.expectedModulePath}` : "",
+    runtime.suggestedFix ? `suggestedFix=${runtime.suggestedFix}` : ""
+  ].filter(Boolean).join(" ");
+}
+
+async function writeRuntimeUnavailableJobStart(input) {
+  const {
+    jobDir,
+    userRequest,
+    intake,
+    policy,
+    runtime
+  } = input;
+  const now = new Date().toISOString();
+  const state = buildRuntimeUnavailableJobState(input, now);
+
+  await writeRequiredJobPlaceholders(jobDir, userRequest, intake);
+  const initialPrompt = buildInitialCodexJobPrompt({ state, intake, policy, phasePlan: state.phase_plan });
+  await writeJobStartArtifacts(jobDir, state, { intake, policy, initialPrompt });
+  await writeRuntimeDiagnosticsArtifact(jobDir, runtime, state, {
+    status: BLOCKED_WEAVEFLOW_RUNTIME_UNAVAILABLE
+  });
+  await writeJobState(jobDir, state);
+  await appendJobEvent(jobDir, BLOCKED_WEAVEFLOW_RUNTIME_UNAVAILABLE, "Weaveflow runtime validation failed before worker start.", {
+    reason: runtime.reason,
+    pythonExecutable: runtime.pythonExecutable,
+    runtimeRoot: runtime.runtimeRoot,
+    targetWorkspaceRoot: runtime.targetWorkspaceRoot,
+    expectedModulePath: runtime.expectedModulePath,
+    suggestedFix: runtime.suggestedFix
+  }, state, now);
+  await writeStartOutcomeArtifact(jobDir, state, {
+    action_outcome: BLOCKED_WEAVEFLOW_RUNTIME_UNAVAILABLE,
+    status: BLOCKED_WEAVEFLOW_RUNTIME_UNAVAILABLE,
+    reason: runtime.reason,
+    missing_requirement: "Weaveflow Python runtime",
+    user_next_action: runtime.suggestedFix,
+    runtime: buildWeaveflowRuntimeDiagnostics(runtime, {
+      status: BLOCKED_WEAVEFLOW_RUNTIME_UNAVAILABLE
+    }),
+    pythonExecutable: runtime.pythonExecutable,
+    runtimeRoot: runtime.runtimeRoot,
+    targetWorkspaceRoot: runtime.targetWorkspaceRoot,
+    expectedModulePath: runtime.expectedModulePath
+  });
+  await updateChainFromJobState(jobRootForWorkspace(input.workspaceRoot), state, {
+    status: JOB_CHAIN_STATUSES.WAITING_FOR_RECOVERY,
+    latestSegmentStatus: BLOCKED_WEAVEFLOW_RUNTIME_UNAVAILABLE,
+    reason: runtime.reason,
+    event: "segment_start_blocked"
+  });
+
+  return buildJobStartDetails(state);
+}
+
+async function writeWorkerPreflightBlockedJobStart(input) {
+  const {
+    jobDir,
+    userRequest,
+    intake,
+    policy,
+    runtime,
+    workerPreflight
+  } = input;
+  const now = new Date().toISOString();
+  const state = buildWorkerPreflightBlockedJobState(input, now);
+
+  await writeRequiredJobPlaceholders(jobDir, userRequest, intake);
+  const initialPrompt = buildInitialCodexJobPrompt({ state, intake, policy, phasePlan: state.phase_plan });
+  await writeJobStartArtifacts(jobDir, state, { intake, policy, initialPrompt });
+  await writeRuntimeDiagnosticsArtifact(jobDir, runtime, state);
+  await writeWorkerPreflightArtifact(jobDir, workerPreflight, state);
+  await writeWorkerStartArtifact(jobDir, state, {
+    status: workerPreflight.status,
+    reason: workerPreflight.reason
+  });
+  await writeJobState(jobDir, state);
+  await appendJobEvent(jobDir, workerPreflight.status, "Codex worker preflight blocked worker start.", {
+    reason: workerPreflight.reason,
+    codexCommand: workerPreflight.codexCommand,
+    targetWorkspaceRoot: workerPreflight.targetWorkspaceRoot,
+    workerScriptPath: workerPreflight.workerScriptPath,
+    suggestedFix: workerPreflight.suggestedFix
+  }, state, now);
+  await writeStartOutcomeArtifact(jobDir, state, {
+    action_outcome: workerPreflight.status,
+    status: workerPreflight.status,
+    reason: workerPreflight.reason,
+    missing_requirement: "Codex worker preflight",
+    user_next_action: workerPreflight.suggestedFix,
+    workerPreflightPath: state.worker_preflight_path,
+    workerStartPath: state.worker_start_path,
+    codexCommand: workerPreflight.codexCommand,
+    targetWorkspaceRoot: workerPreflight.targetWorkspaceRoot
+  });
+  await updateChainFromJobState(jobRootForWorkspace(input.workspaceRoot), state, {
+    status: JOB_CHAIN_STATUSES.WAITING_FOR_RECOVERY,
+    latestSegmentStatus: workerPreflight.status,
+    reason: workerPreflight.reason,
+    event: "segment_start_blocked"
+  });
+
+  return buildJobStartDetails(state);
+}
+
+function buildRuntimeUnavailableJobState(input, now) {
+  const {
+    jobDir,
+    jobId,
+    workspaceRoot,
+    repoRoot,
+    repoResolution,
+    userRequest,
+    intake,
+    policy,
+    usageLimitGuard,
+    maxRuntimeMinutes,
+    maxFixAttempts,
+    pythonCommand,
+    phasePlan,
+    runtime,
+    chain
+  } = input;
+  const resolvedPhasePlan = phasePlan || buildLongWorkPhasePlan({ intake, policy });
+
+  return {
+    job_id: jobId,
+    task_id: null,
+    ...buildChainStateFields(chain),
+    auto_continue: ["company", "overnight"].includes(usageLimitGuard.runProfile),
+    status: BLOCKED_WEAVEFLOW_RUNTIME_UNAVAILABLE,
+    repo_root: repoRoot,
+    workspace_root: workspaceRoot,
+    target_workspace_root: repoRoot,
+    weaveflow_bridge_workspace_root: runtime.targetWorkspaceRoot || repoRoot,
+    job_dir: jobDir,
+    task_dir: null,
+    task_spec_path: null,
+    plan_path: null,
+    brief_path: null,
+    worktree: null,
+    branch: null,
+    pid: null,
+    user_request: userRequest,
+    normalized_goal: intake.normalized_goal,
+    job_intake: intake,
+    repo_resolution: repoResolution,
+    job_policy: policy,
+    policy_decision: policy.policyDecision || "allow_with_constraints",
+    execution_mode: policy.executionMode || "safe_worktree",
+    denied_actions: policy.deniedActions || [],
+    phase_plan: resolvedPhasePlan,
+    action_outcome: BLOCKED_WEAVEFLOW_RUNTIME_UNAVAILABLE,
+    worker_started: false,
+    worker_start_status: BLOCKED_WEAVEFLOW_RUNTIME_UNAVAILABLE,
+    worker_started_at: null,
+    target_scope: intake.target_scope || [],
+    target_scope_summary: intake.target_scope_summary || "not specified",
+    protected_scope: intake.protected_scope || [],
+    protected_scope_summary: intake.protected_scope_summary || "not specified",
+    job_request_path: join(jobDir, "job_request.json"),
+    initial_prompt_path: join(jobDir, "initial_prompt.md"),
+    start_outcome_path: join(jobDir, "start_outcome.json"),
+    runtime_diagnostics_path: join(jobDir, "runtime_diagnostics.json"),
+    phase_plan_path: join(jobDir, "phase_plan.json"),
+    policy_decision_path: join(jobDir, "policy_decision.json"),
+    run_profile_path: join(jobDir, "run_profile.json"),
+    run_profile: usageLimitGuard.runProfile,
+    usage_limit_guard: usageLimitGuard,
+    usage_limit_guard_path: join(jobDir, "usage_limit_guard.json"),
+    usage_limit_checkpoint_path: join(jobDir, "usage_limit_checkpoint.md"),
+    usage_limit_events: [],
+    usage_limit_stop_reason: null,
+    repeated_failure: null,
+    verification_plan: null,
+    outcome_contract_path: join(jobDir, "outcome_contract.md"),
+    change_review_path: join(jobDir, "change_review.md"),
+    quality_gate_path: join(jobDir, "quality_gate.md"),
+    quality_gate_decision_path: join(jobDir, "quality_gate_decision.md"),
+    quality_gate_decision: null,
+    quality_score: null,
+    quality_issues: [],
+    quality_review_status: "blocked",
+    recovery_status: null,
+    recovery_action: null,
+    recovery_plan_path: join(jobDir, "recovery_plan.md"),
+    recovery_result_path: join(jobDir, "recovery_result.md"),
+    recovery_diagnostics_path: join(jobDir, "recovery_diagnostics.md"),
+    worktree_recovery_path: join(jobDir, "worktree_recovery.md"),
+    session_mode: "single",
+    adaptive_mode: false,
+    current_session_step: null,
+    recent_session_result: null,
+    adaptive_state_path: null,
+    adaptive_loop_path: null,
+    current_adaptive_step: 0,
+    next_action: null,
+    stop_reason: BLOCKED_WEAVEFLOW_RUNTIME_UNAVAILABLE,
+    goal_progress_summary: "",
+    requested_autonomy_mode: "auto",
+    autonomy_mode: policy.autonomyMode || intake.autonomy_mode,
+    resolved_autonomy_mode: null,
+    time_budget_minutes: policy.timeBudgetMinutes ?? null,
+    max_session_minutes: usageLimitGuard.maxSessionMinutes,
+    total_job_budget_minutes: usageLimitGuard.totalJobBudgetMinutes,
+    checkpoint_every_minutes: usageLimitGuard.checkpointEveryMinutes,
+    checkpoint_on_phase_change: usageLimitGuard.checkpointOnPhaseChange,
+    checkpoint_on_failure: usageLimitGuard.checkpointOnFailure,
+    checkpoint_on_limit_signal: usageLimitGuard.checkpointOnLimitSignal,
+    checkpoint_count: 0,
+    latest_checkpoint_path: null,
+    latest_checkpoint_json_path: null,
+    latest_checkpoint_reason: null,
+    latest_checkpoint_at: null,
+    resume_capsule_path: join(jobDir, "resume_capsule.md"),
+    resume_capsule_json_path: join(jobDir, "resume_capsule.json"),
+    recommended_next_action: "fix_weaveflow_runtime",
+    next_suggested_prompt_ready: false,
+    next_suggested_prompt_path: join(jobDir, "next_suggested_prompt.md"),
+    max_runtime_minutes: maxRuntimeMinutes,
+    max_fix_attempts: maxFixAttempts,
+    max_repeated_failures: usageLimitGuard.maxRepeatedFailures,
+    max_changed_files: usageLimitGuard.maxChangedFiles,
+    allow_large_refactor: usageLimitGuard.allowLargeRefactor,
+    allow_push: usageLimitGuard.allowPush,
+    usage_budget_level: usageLimitGuard.usageBudgetLevel,
+    quota_strategy: usageLimitGuard.quotaStrategy,
+    limit_recovery_mode: usageLimitGuard.limitRecoveryMode,
+    push: false,
+    run_tests: policy.runTests !== false,
+    python_command: pythonCommand,
+    weaveflow_runtime_root: runtime.runtimeRoot || null,
+    weaveflow_runtime_python: runtime.pythonExecutable || null,
+    weaveflow_runtime_import_ok: false,
+    weaveflow_runtime_module_path: null,
+    weaveflow_runtime_suggested_fix: runtime.suggestedFix || "",
+    current_step: BLOCKED_WEAVEFLOW_RUNTIME_UNAVAILABLE,
+    started_at: now,
+    updated_at: now,
+    finished_at: now,
+    elapsed_ms: 0,
+    planning_elapsed_ms: null,
+    codex_elapsed_ms: null,
+    tests_elapsed_ms: null,
+    commit_elapsed_ms: null,
+    push_elapsed_ms: null,
+    fix_attempts_elapsed_ms: 0,
+    stage_timestamps: {
+      job_created: now,
+      runtime_validation_failed: now
+    },
+    last_event: BLOCKED_WEAVEFLOW_RUNTIME_UNAVAILABLE,
+    commit_hash: null,
+    pushed: false,
+    changed_files: [],
+    result_artifact_path: null,
+    error: runtime.reason || "Python에서 `weaveflow` 패키지를 import하지 못했습니다.",
+    codex_exit_code: null,
+    codex_termination: null,
+    codex_sandbox_mode: "workspace-write",
+    fix_attempts_used: 0,
+    tests: {
+      run: false,
+      passed: null,
+      checks: []
+    }
+  };
+}
+
+function buildWorkerPreflightBlockedJobState(input, now) {
+  const {
+    jobDir,
+    jobId,
+    workspaceRoot,
+    repoRoot,
+    repoResolution,
+    userRequest,
+    intake,
+    policy,
+    usageLimitGuard,
+    maxRuntimeMinutes,
+    maxFixAttempts,
+    pythonCommand,
+    phasePlan,
+    runtime,
+    workerPreflight
+  } = input;
+  const status = workerPreflight.status || WORKER_PREFLIGHT_STATUSES.BLOCKED_WORKER_UNAVAILABLE;
+  const base = buildRuntimeUnavailableJobState({
+    jobDir,
+    jobId,
+    workspaceRoot,
+    repoRoot,
+    repoResolution,
+    userRequest,
+    intake,
+    policy,
+    usageLimitGuard,
+    maxRuntimeMinutes,
+    maxFixAttempts,
+    pythonCommand,
+    phasePlan,
+    runtime: {
+      ...runtime,
+      reason: workerPreflight.reason || "Codex worker preflight failed.",
+      suggestedFix: workerPreflight.suggestedFix || ""
+    }
+  }, now);
+
+  return {
+    ...base,
+    status,
+    target_workspace_root: repoRoot,
+    weaveflow_bridge_workspace_root: runtime.targetWorkspaceRoot || workspaceRoot,
+    action_outcome: status,
+    worker_start_status: status,
+    worker_preflight_status: status,
+    worker_preflight_path: join(jobDir, "worker_preflight.json"),
+    worker_start_path: join(jobDir, "worker_start.json"),
+    codex_command: workerPreflight.codexCommand || null,
+    codex_command_available: workerPreflight.codexCommandAvailable === true,
+    codex_command_status: workerPreflight.codexCommandValidation?.status || workerPreflight.status || null,
+    worker_script_path: workerPreflight.workerScriptPath || null,
+    worker_start_command: workerPreflight.workerStartCommand?.preview || null,
+    weaveflow_runtime_root: runtime.runtimeRoot || null,
+    weaveflow_runtime_python: runtime.pythonExecutable || null,
+    weaveflow_runtime_import_ok: runtime.importOk === true,
+    weaveflow_runtime_module_path: runtime.weaveflowModulePath || null,
+    weaveflow_runtime_suggested_fix: "",
+    current_step: status,
+    stop_reason: status,
+    recommended_next_action: "fix_codex_worker_preflight",
+    quality_review_status: "blocked",
+    last_event: status,
+    error: workerPreflight.reason || "Codex worker preflight failed.",
+    stage_timestamps: {
+      job_created: now,
+      worker_preflight_failed: now
+    }
+  };
 }
 
 function buildJobRequestArtifact(state, intake, policy) {
@@ -3087,6 +4149,22 @@ function buildJobRequestArtifact(state, intake, policy) {
     protected_scope: normalizeScopeList(intake?.protected_scope || state.protected_scope),
     protected_scope_summary: intake?.protected_scope_summary || state.protected_scope_summary || "not specified",
     run_profile: state.run_profile || intake?.run_profile || policy?.runProfile || null,
+    job_type: intake?.job_type || state.phase_plan?.jobType || null,
+    execution_mode: state.execution_mode || policy?.executionMode || "safe_worktree",
+    policy_decision: state.policy_decision || policy?.policyDecision || "allow_with_constraints",
+    denied_actions: state.denied_actions || policy?.deniedActions || [],
+    phase_plan: state.phase_plan || null,
+    chain: {
+      chainId: state.chain_id || null,
+      rootJobId: state.root_job_id || null,
+      parentJobId: state.parent_job_id || null,
+      segmentIndex: state.segment_index || 1,
+      maxSegments: state.max_segments || 1,
+      continuationMode: state.continuation_mode || "manual",
+      autoContinue: state.auto_continue === true,
+      chainStatusPath: state.chain_status_path || null,
+      chainSegmentsPath: state.chain_segments_path || null
+    },
     allowPush: state.allow_push === true,
     safety: {
       allowPush: state.allow_push === true,
@@ -3100,8 +4178,26 @@ function buildJobRequestArtifact(state, intake, policy) {
       job_request: state.job_request_path,
       initial_prompt: state.initial_prompt_path,
       start_outcome: state.start_outcome_path,
+      runtime_diagnostics: state.runtime_diagnostics_path,
+      worker_preflight: state.worker_preflight_path || null,
+      worker_start: state.worker_start_path || null,
+      chain_status: state.chain_status_path || null,
+      chain_segments: state.chain_segments_path || null,
+      chain_report: state.chain_report_path || null,
+      phase_plan: state.phase_plan_path,
       policy_decision: state.policy_decision_path,
       run_profile: state.run_profile_path
+    },
+    runtime: {
+      targetWorkspaceRoot: state.target_workspace_root || state.workspace_root,
+      runtimeRoot: state.weaveflow_runtime_root || null,
+      pythonExecutable: state.weaveflow_runtime_python || null,
+      importOk: state.weaveflow_runtime_import_ok === true
+    },
+    worker: {
+      codexCommand: state.codex_command || null,
+      preflightStatus: state.worker_preflight_status || null,
+      workerStarted: state.worker_started === true
     }
   };
 }
@@ -3110,6 +4206,9 @@ function buildPolicyDecisionArtifact(state, policy) {
   return {
     job_id: state.job_id,
     status: state.status,
+    policyDecision: policy?.policyDecision || state.policy_decision || "allow_with_constraints",
+    executionMode: policy?.executionMode || state.execution_mode || "safe_worktree",
+    deniedActions: policy?.deniedActions || state.denied_actions || [],
     risk_level: policy?.riskLevel || null,
     runProfile: policy?.runProfile || state.run_profile || null,
     allowedActions: policy?.allowedActions || [],
@@ -3142,13 +4241,58 @@ function buildRunProfileArtifact(state) {
   };
 }
 
+function buildWorkerPreflightArtifact(workerPreflight = {}, state = null) {
+  return {
+    status: workerPreflight.status || state?.worker_preflight_status || null,
+    reason: workerPreflight.reason || "",
+    targetWorkspaceRoot: workerPreflight.targetWorkspaceRoot || state?.target_workspace_root || null,
+    runtimeRoot: workerPreflight.runtimeRoot || state?.weaveflow_runtime_root || null,
+    codexCommand: workerPreflight.codexCommand || state?.codex_command || null,
+    codexCommandAvailable: workerPreflight.codexCommandAvailable === true || state?.codex_command_available === true,
+    codexCommandStatus: workerPreflight.codexCommandStatus || workerPreflight.codexCommandValidation?.status || state?.codex_command_status || null,
+    workerScriptPath: workerPreflight.workerScriptPath || state?.worker_script_path || null,
+    gitPreflight: workerPreflight.gitPreflight || null,
+    workerStartCommandPreview: workerPreflight.workerStartCommand?.preview || state?.worker_start_command || null,
+    bridgeCommandPreview: workerPreflight.bridgeCommandPreview || null,
+    errors: workerPreflight.errors || [],
+    stdout: workerPreflight.stdout || "",
+    stderr: workerPreflight.stderr || "",
+    suggestedFix: workerPreflight.suggestedFix || "",
+    checkedAt: workerPreflight.checkedAt || new Date().toISOString()
+  };
+}
+
+function buildWorkerStartArtifact(state, details = {}) {
+  const workerStartCommand = details.workerStartCommand?.preview ||
+    details.workerStartCommand ||
+    state.worker_start_command ||
+    null;
+  return {
+    status: details.status || state.worker_start_status || "not_started",
+    jobId: state.job_id,
+    pid: details.pid || state.pid || null,
+    workerStarted: state.worker_started === true,
+    reason: details.reason || state.error || "",
+    workerStartCommandPreview: workerStartCommand,
+    targetWorkspaceRoot: state.target_workspace_root || state.repo_root || null,
+    jobDir: state.job_dir,
+    codexCommand: state.codex_command || null,
+    startedAt: state.worker_started_at || null,
+    updatedAt: state.updated_at || new Date().toISOString()
+  };
+}
+
 function buildStartOutcomeArtifact(state, overrides = {}) {
   const actionOutcome = overrides.action_outcome || state.action_outcome || CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_BUT_NOT_STARTED;
   const workerStarted = overrides.worker_started ?? state.worker_started === true;
+  const jobStarted = actionOutcome === CODEX_JOB_ACTION_OUTCOMES.STARTED_JOB ||
+    actionOutcome === CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_WORKER_START_FAILED;
   return {
     ok: actionOutcome === CODEX_JOB_ACTION_OUTCOMES.STARTED_JOB || actionOutcome === CODEX_JOB_ACTION_OUTCOMES.DRY_RUN_PROMPT_ONLY,
     action_outcome: actionOutcome,
-    status: overrides.status || state.status,
+    status: overrides.status || (
+      actionOutcome === CODEX_JOB_ACTION_OUTCOMES.STARTED_JOB ? CODEX_JOB_ACTION_OUTCOMES.STARTED_JOB : state.status
+    ),
     job_id: state.job_id,
     task_id: state.task_id,
     runProfile: state.run_profile,
@@ -3158,6 +4302,46 @@ function buildStartOutcomeArtifact(state, overrides = {}) {
     reason: overrides.reason || state.error || "",
     missing_requirement: overrides.missing_requirement || "",
     user_next_action: overrides.user_next_action || "",
+    jobStarted,
+    workerStarted,
+    jobId: state.job_id,
+    chainId: state.chain_id || null,
+    rootJobId: state.root_job_id || null,
+    parentJobId: state.parent_job_id || null,
+    segmentIndex: state.segment_index || 1,
+    maxSegments: state.max_segments || 1,
+    continuationMode: state.continuation_mode || null,
+    runProfile: state.run_profile,
+    executionMode: state.execution_mode || state.job_policy?.executionMode || "safe_worktree",
+    policyDecision: state.policy_decision || state.job_policy?.policyDecision || "allow_with_constraints",
+    deniedActions: state.denied_actions || state.job_policy?.deniedActions || [],
+    phasePlanPath: state.phase_plan_path || null,
+    runtime: overrides.runtime || {
+      importOk: state.weaveflow_runtime_import_ok === true,
+      pythonExecutable: state.weaveflow_runtime_python || null,
+      runtimeRoot: state.weaveflow_runtime_root || null,
+      targetWorkspaceRoot: state.target_workspace_root || state.workspace_root || null,
+      weaveflowModulePath: state.weaveflow_runtime_module_path || null,
+      diagnosticsPath: state.runtime_diagnostics_path || null
+    },
+    runtime_diagnostics_path: state.runtime_diagnostics_path || null,
+    runtimeDiagnosticsPath: state.runtime_diagnostics_path || null,
+    worker_preflight_path: overrides.workerPreflightPath || state.worker_preflight_path || null,
+    workerPreflightPath: overrides.workerPreflightPath || state.worker_preflight_path || null,
+    worker_start_path: overrides.workerStartPath || state.worker_start_path || null,
+    workerStartPath: overrides.workerStartPath || state.worker_start_path || null,
+    codexCommand: overrides.codexCommand || state.codex_command || null,
+    workerStartCommandPreview: state.worker_start_command || null,
+    chainStatusPath: state.chain_status_path || null,
+    chainSegmentsPath: state.chain_segments_path || null,
+    chainReportPath: state.chain_report_path || null,
+    suggestedFix: overrides.user_next_action || state.weaveflow_runtime_suggested_fix || "",
+    pythonExecutable: overrides.pythonExecutable || state.weaveflow_runtime_python || null,
+    runtimeRoot: overrides.runtimeRoot || state.weaveflow_runtime_root || null,
+    targetWorkspaceRoot: overrides.targetWorkspaceRoot || state.target_workspace_root || state.workspace_root || null,
+    expectedModulePath: overrides.expectedModulePath || (
+      state.weaveflow_runtime_root ? join(state.weaveflow_runtime_root, "src", "weaveflow") : null
+    ),
     job_artifact_path: state.job_dir,
     initial_prompt_path: state.initial_prompt_path,
     check_tool: "weaveflow_check_codex_job",
@@ -3400,6 +4584,15 @@ async function checkpointAndPauseForUsageLimit({ jobDir, state, decision, change
     action: decision.action,
     status: next.status
   }, next);
+  await updateChainFromJobState(jobRootForWorkspace(next.workspace_root || next.repo_root), next, {
+    status: reason === "max_session_minutes_reached" ? JOB_CHAIN_STATUSES.PAUSED : JOB_CHAIN_STATUSES.STOPPED_BY_USAGE_LIMIT,
+    latestSegmentStatus: reason === "max_session_minutes_reached" ? "completed_boundary" : next.status,
+    reason,
+    lastCheckpointPath: next.latest_checkpoint_path,
+    lastResumeCapsulePath: next.resume_capsule_path,
+    recommendedNextAction: reason === "max_session_minutes_reached" ? "continue" : "recover_after_limit_reset",
+    event: reason === "max_session_minutes_reached" ? "segment_completed" : "chain_paused"
+  });
   await writeJobFile(jobDir, "result.md", renderCodexJobResultMarkdown(next, null));
   return next;
 }
@@ -3515,14 +4708,18 @@ function terminalEventStatus(event) {
   }[event] || "";
 }
 
-async function startBackgroundJobProcess({ jobDir, repoRoot }) {
+async function startBackgroundJobProcess({ jobDir, repoRoot, workerStartCommand = null }) {
   const stdoutFd = openSync(join(jobDir, "stdout.log"), "a");
   const stderrFd = openSync(join(jobDir, "stderr.log"), "a");
+  const command = workerStartCommand?.command || process.execPath;
+  const args = workerStartCommand?.args || [jobWorkerScriptPath(), jobDir];
+  const cwd = workerStartCommand?.cwd || repoRoot;
+  const env = workerStartCommand?.env || buildPythonEnv(repoRoot);
   try {
-    const child = spawn(process.execPath, [jobWorkerScriptPath(), jobDir], {
-      cwd: repoRoot,
+    const child = spawn(command, args, {
+      cwd,
       detached: true,
-      env: buildPythonEnv(repoRoot),
+      env,
       stdio: ["ignore", stdoutFd, stderrFd]
     });
     child.unref();
@@ -3539,9 +4736,21 @@ function jobWorkerScriptPath() {
 
 function buildJobStartDetails(state) {
   return {
-    ok: state.action_outcome !== CODEX_JOB_ACTION_OUTCOMES.START_FAILED &&
-      state.action_outcome !== CODEX_JOB_ACTION_OUTCOMES.BLOCKED_POLICY,
+    ok: state.action_outcome === CODEX_JOB_ACTION_OUTCOMES.STARTED_JOB ||
+      state.action_outcome === CODEX_JOB_ACTION_OUTCOMES.DRY_RUN_PROMPT_ONLY,
     jobId: state.job_id,
+    chainId: state.chain_id || null,
+    rootJobId: state.root_job_id || null,
+    parentJobId: state.parent_job_id || null,
+    segmentIndex: state.segment_index || 1,
+    maxSegments: state.max_segments || 1,
+    continuationMode: state.continuation_mode || null,
+    chainStatus: state.chain_status || null,
+    chainStatusPath: state.chain_status_path || null,
+    chainSegmentsPath: state.chain_segments_path || null,
+    chainReportPath: state.chain_report_path || null,
+    autoContinue: state.auto_continue === true,
+    continuationDecision: null,
     taskId: state.task_id,
     branch: state.branch,
     status: state.status,
@@ -3581,6 +4790,11 @@ function buildJobStartDetails(state) {
     repoRoot: state.repo_root,
     repoResolution: state.repo_resolution,
     jobPolicy: state.job_policy,
+    policyDecision: state.policy_decision || state.job_policy?.policyDecision || "allow_with_constraints",
+    executionMode: state.execution_mode || state.job_policy?.executionMode || "safe_worktree",
+    deniedActions: state.denied_actions || state.job_policy?.deniedActions || [],
+    phasePlan: state.phase_plan || null,
+    phasePlanPath: state.phase_plan_path || null,
     verificationPlan: state.verification_plan,
     outcomeContractPath: state.outcome_contract_path,
     changeReviewPath: state.change_review_path,
@@ -3633,6 +4847,14 @@ function buildJobStartDetails(state) {
     workerStarted: state.worker_started === true,
     workerStartStatus: state.worker_start_status || "not_started",
     workerStartedAt: state.worker_started_at,
+    workerPreflightPath: state.worker_preflight_path || null,
+    workerStartPath: state.worker_start_path || null,
+    workerPreflightStatus: state.worker_preflight_status || null,
+    codexCommand: state.codex_command || null,
+    codexCommandStatus: state.codex_command_status || null,
+    codexCommandAvailable: state.codex_command_available === true,
+    workerScriptPath: state.worker_script_path || null,
+    workerStartCommandPreview: state.worker_start_command || null,
     targetScope: state.target_scope || [],
     targetScopeSummary: state.target_scope_summary || "not specified",
     protectedScope: state.protected_scope || [],
@@ -3642,17 +4864,54 @@ function buildJobStartDetails(state) {
     startOutcomePath: state.start_outcome_path,
     policyDecisionPath: state.policy_decision_path,
     runProfilePath: state.run_profile_path,
+    runtimeDiagnosticsPath: state.runtime_diagnostics_path,
+    runtime: {
+      importOk: state.weaveflow_runtime_import_ok === true,
+      pythonExecutable: state.weaveflow_runtime_python || null,
+      runtimeRoot: state.weaveflow_runtime_root || null,
+      targetWorkspaceRoot: state.target_workspace_root || state.workspace_root || null,
+      weaveflowModulePath: state.weaveflow_runtime_module_path || null,
+      diagnosticsPath: state.runtime_diagnostics_path || null
+    },
+    runtimeRoot: state.weaveflow_runtime_root || null,
+    pythonExecutable: state.weaveflow_runtime_python || null,
+    targetWorkspaceRoot: state.target_workspace_root || state.workspace_root || null,
+    weaveflowBridgeWorkspaceRoot: state.weaveflow_bridge_workspace_root || state.workspace_root || null,
+    expectedModulePath: state.weaveflow_runtime_root ? join(state.weaveflow_runtime_root, "src", "weaveflow") : null,
     checkTool: "weaveflow_check_codex_job",
     cancelTool: "weaveflow_cancel_codex_job",
     recoverTool: "weaveflow_recover_codex_job",
     reason: state.error || null,
-    missingRequirement: state.action_outcome === CODEX_JOB_ACTION_OUTCOMES.START_FAILED
-      ? "Codex worker process must be spawnable from this repository."
-      : null,
-    userNextAction: state.action_outcome === CODEX_JOB_ACTION_OUTCOMES.START_FAILED
-      ? "stderr.log와 start_outcome.json을 확인한 뒤 repo path, Node 실행 환경, worker script 경로를 고쳐 다시 시작하세요."
-      : null
+    missingRequirement: state.action_outcome === BLOCKED_WEAVEFLOW_RUNTIME_UNAVAILABLE
+      ? "Weaveflow Python runtime"
+      : isWorkerPreflightBlockedStatus(state.action_outcome)
+        ? "Codex worker preflight"
+        : state.action_outcome === CODEX_JOB_ACTION_OUTCOMES.START_FAILED ||
+          state.action_outcome === CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_WORKER_START_FAILED
+        ? "Codex worker process must be spawnable from this repository."
+        : null,
+    userNextAction: state.action_outcome === BLOCKED_WEAVEFLOW_RUNTIME_UNAVAILABLE
+      ? state.weaveflow_runtime_suggested_fix || "WEAVEFLOW_RUNTIME_ROOT 또는 WEAVEFLOW_PYTHON을 지정한 뒤 다시 시작하세요."
+      : isWorkerPreflightBlockedStatus(state.action_outcome)
+        ? "worker_preflight.json을 확인하고 Codex CLI, repoRoot, git 상태, worker script 조건을 고친 뒤 다시 시작하세요."
+        : state.action_outcome === CODEX_JOB_ACTION_OUTCOMES.START_FAILED ||
+          state.action_outcome === CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_WORKER_START_FAILED
+        ? "stderr.log와 start_outcome.json을 확인한 뒤 repo path, Node 실행 환경, worker script 경로를 고쳐 다시 시작하세요."
+        : null
   };
+}
+
+function isWorkerPreflightBlockedStatus(status) {
+  return [
+    WORKER_PREFLIGHT_STATUSES.BLOCKED_CODEX_COMMAND_UNAVAILABLE,
+    WORKER_PREFLIGHT_STATUSES.BLOCKED_TARGET_WORKSPACE_MISSING,
+    WORKER_PREFLIGHT_STATUSES.BLOCKED_TARGET_WORKSPACE_UNREADABLE,
+    WORKER_PREFLIGHT_STATUSES.BLOCKED_TARGET_WORKSPACE_NOT_GIT_REPO,
+    WORKER_PREFLIGHT_STATUSES.BLOCKED_GIT_PREFLIGHT_FAILED,
+    WORKER_PREFLIGHT_STATUSES.BLOCKED_WORKER_SCRIPT_MISSING,
+    WORKER_PREFLIGHT_STATUSES.BLOCKED_WORKER_SCRIPT_UNREADABLE,
+    WORKER_PREFLIGHT_STATUSES.BLOCKED_WORKER_UNAVAILABLE
+  ].includes(status);
 }
 
 function normalizeWorkerPid(value) {
@@ -3692,6 +4951,18 @@ function normalizeOptionalPositiveInteger(value) {
 function normalizeAutonomyMode(value) {
   const mode = cleanOptionalString(value);
   return ["auto", "specific", "timeboxed"].includes(mode) ? mode : "auto";
+}
+
+function normalizeContinuationMode(value) {
+  const mode = cleanOptionalString(value);
+  return Object.values(CONTINUATION_MODES).includes(mode) ? mode : "";
+}
+
+function normalizeRecoveryMode(value) {
+  const mode = cleanOptionalString(value);
+  return ["inspect_only", "prepare_next_prompt", "start_next_segment"].includes(mode)
+    ? mode
+    : "inspect_only";
 }
 
 function normalizeStepReviewMode(value) {
@@ -5779,6 +7050,13 @@ async function runMultiStepCodexSession({ jobDir, state, scan, planning, verific
     steps
   }));
   await writeJobFile(jobDir, "result.md", renderCodexJobResultMarkdown(state, planning));
+  await updateChainFromJobState(jobRootForWorkspace(state.workspace_root || state.repo_root), state, {
+    status: JOB_CHAIN_STATUSES.COMPLETED,
+    latestSegmentStatus: "completed",
+    reason: "job_completed",
+    recommendedNextAction: "review_chain_report",
+    event: "segment_completed"
+  });
   return state;
 }
 
@@ -6239,6 +7517,13 @@ async function runAdaptiveCodexLoop({ jobDir, state, scan, planning, verificatio
     error: null
   });
   await writeJobFile(jobDir, "result.md", renderCodexJobResultMarkdown(state, planning));
+  await updateChainFromJobState(jobRootForWorkspace(state.workspace_root || state.repo_root), state, {
+    status: JOB_CHAIN_STATUSES.COMPLETED,
+    latestSegmentStatus: "completed",
+    reason: "job_completed",
+    recommendedNextAction: "review_chain_report",
+    event: "segment_completed"
+  });
   return state;
 }
 
@@ -6396,7 +7681,7 @@ async function runCodexJobAttempt({ jobDir, state, worktreeRoot, prompt, attempt
   });
   const result = await runLoggedCommand({
     jobDir,
-    command: "codex",
+    command: state.codex_command || process.env.WEAVEFLOW_CODEX_COMMAND || process.env.CODEX_COMMAND || process.env.CODEX_CLI || "codex",
     args: [
       "exec",
       "--cd",

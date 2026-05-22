@@ -22,13 +22,19 @@ const ALWAYS_BLOCKED_ACTIONS = [
   "change_secrets",
   "destructive_delete",
   "destructive_db_migration",
-  "uncontrolled_push"
+  "uncontrolled_push",
+  "uncontrolled_commit"
 ];
 
-const HUMAN_REVIEW_BLOCKED_ACTIONS = [
-  "commit_changes",
-  "push_branch"
+const DEFAULT_DENIED_ACTIONS = [
+  "push",
+  "production_deploy",
+  "secret_changes",
+  "destructive_db_migration",
+  "uncontrolled_commit"
 ];
+
+const HUMAN_REVIEW_BLOCKED_ACTIONS = [];
 
 const HIGH_RISK_PATTERNS = [
   /\bdeploy(?:ment)?\b/i,
@@ -135,6 +141,9 @@ export function resolveJobPolicy(input = {}) {
     usageLimitGuard: defaults.usageLimitGuard,
     autonomyMode: defaults.autonomyMode,
     riskLevel,
+    policyDecision: "allow_with_constraints",
+    executionMode: "safe_worktree",
+    deniedActions: DEFAULT_DENIED_ACTIONS,
     allowedActions,
     blockedActions,
     requiresHumanReview,
@@ -288,12 +297,15 @@ export function summarizeJobPolicyKorean(policy) {
     `푸시 허용: ${policy?.allowPush === true && policy?.push !== false ? "예" : "아니오"}`,
     `최대 수정 시도: ${maxFixAttempts}회`,
     `사람 검토 필요: ${requiresHumanReview ? "예" : "아니오"}`,
+    `정책 결정: ${policy?.policyDecision || "allow_with_constraints"}`,
+    `실행 모드: ${policy?.executionMode || "safe_worktree"}`,
+    `기본 금지: ${(policy?.deniedActions || DEFAULT_DENIED_ACTIONS).join(", ")}`,
     `자동 허용 작업: ${allowedActions.length ? allowedActions.join(", ") : "없음"}`,
     `자동 차단 작업: ${blockedActions.length ? blockedActions.join(", ") : "없음"}`
   ].join("\n");
 }
 
-function resolveAllowedActions({ push, runTests, riskLevel, requiresHumanReview }) {
+function resolveAllowedActions({ push, runTests }) {
   const actions = new Set(BASE_ALLOWED_ACTIONS);
   if (!push) {
     actions.delete("push_branch");
@@ -301,23 +313,13 @@ function resolveAllowedActions({ push, runTests, riskLevel, requiresHumanReview 
   if (!runTests) {
     actions.delete("run_tests");
   }
-  if (riskLevel === "high" || requiresHumanReview) {
-    for (const action of HUMAN_REVIEW_BLOCKED_ACTIONS) {
-      actions.delete(action);
-    }
-  }
   return [...actions];
 }
 
-function resolveBlockedActions({ push, riskLevel, requiresHumanReview }) {
+function resolveBlockedActions({ push }) {
   const actions = new Set(ALWAYS_BLOCKED_ACTIONS);
   if (!push) {
     actions.add("push_branch");
-  }
-  if (riskLevel === "high" || requiresHumanReview) {
-    for (const action of HUMAN_REVIEW_BLOCKED_ACTIONS) {
-      actions.add(action);
-    }
   }
   return [...actions];
 }
@@ -401,6 +403,8 @@ function normalizeAction(action) {
     destructive_file_deletion: "destructive_delete",
     destructive_delete: "destructive_delete",
     delete_many_files: "destructive_delete",
+    uncontrolled_commit: "uncontrolled_commit",
+    uncontrolled_commits: "uncontrolled_commit",
     main_branch_merge: "main_branch_merge",
     push: "push_branch",
     push_branch: "push_branch",

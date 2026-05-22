@@ -10,6 +10,7 @@ import {
   buildInitialCodexJobPrompt,
   buildJobTimeline,
   buildJobPlanningArtifacts,
+  buildLongWorkPhasePlan,
   buildCodexJobQualityReview,
   buildCodexAutomationPrompt,
   buildBridgeRequest,
@@ -31,6 +32,58 @@ import {
   startWeaveflowCodexJob,
   runWeaveflowStdioPoc
 } from "../src/weaveflowBridge.js";
+
+const REGRESSION_PROMPT_A = "<@1486861488349249696> 그리고 아직도 깜박거리네 하 씨발 진짜 그리고 뭐냐 스크롤 내려서 토익 들어가봤는데 왜 거기서도 스크롤 내려가있는 상태에서 시작하냐 당연히 맨위에서 시작아니냐? 이런걸 일일이 내가 디버깅할 수가 없잖아 이개새끼야 weacflow깃풀로 당긴다음에 장기작업으로 어떻게든 고쳐내 실수없고 버그없고 갑자기 기능 바꾸고 ui뒤집어놓고 그런거 없이 알잘딱으로 알겠어? 전체 점검 대규모 점검들어가서 고쳐 일일이 꼼꼼히";
+const REGRESSION_PROMPT_B = "<@1486861488349249696> 토익 단어들도 진짜 토익단어인지 여자친구용 뜻이 어색하진 않은지 단어책 뜻이 아니라 서술식으로 이상하게 되어 있다던지 ets 단어장이라도 보고 참고하라 그래 인터넷뒤져서 그거 장기작업으로 검증해";
+const BANNED_FALLBACK_TEXT = new RegExp([
+  ["일반", "Codex", "장기", "세션"].join(" "),
+  ["일반", "Codex로", "우회"].join(" "),
+  ["Weaveflow", "장기작업", "툴은", "이", "범위를", "못", "받는다"].join(" "),
+  ["정책에서", "막혀서", "일반", "Codex로"].join(" "),
+  ["이건", "내가", "우겨서", "뚫을", "수", "없다"].join(" ")
+].join("|"));
+
+async function okWorkerPreflight(input = {}) {
+  const workerScriptPath = resolve(new URL("../scripts/codex-job-worker.js", import.meta.url).pathname);
+  return {
+    ok: true,
+    status: "ok",
+    targetWorkspaceRoot: input.targetWorkspaceRoot,
+    runtimeRoot: input.runtimeRoot,
+    codexCommand: "codex",
+    codexCommandAvailable: true,
+    codexCommandStatus: "ok",
+    workerScriptPath,
+    gitPreflight: {
+      status: "clean",
+      pullRequested: /git\s*pull|깃풀|깃\s*풀/.test(input.userRequest || ""),
+      pullMode: "ff-only"
+    },
+    workerStartCommand: {
+      command: process.execPath,
+      args: [workerScriptPath, input.jobDir],
+      cwd: input.targetWorkspaceRoot,
+      env: { ...process.env, WEAVEFLOW_CODEX_COMMAND: "codex" },
+      preview: {
+        command: process.execPath,
+        args: [workerScriptPath, input.jobDir],
+        cwd: input.targetWorkspaceRoot,
+        jobId: input.jobId,
+        targetWorkspaceRoot: input.targetWorkspaceRoot,
+        runProfile: input.runProfile,
+        executionMode: input.executionMode,
+        policyDecisionPath: input.policyDecisionPath,
+        initialPromptPath: input.initialPromptPath,
+        jobDir: input.jobDir,
+        workerScriptPath,
+        codexCommand: "codex"
+      }
+    },
+    errors: [],
+    suggestedFix: "",
+    checkedAt: "2026-05-22T00:00:00.000Z"
+  };
+}
 
 test("bridge helper builds valid requests", () => {
   const request = buildBridgeRequest("bridge-1", "ping");
@@ -372,6 +425,8 @@ test("Codex job start creates file-based state without starting worker when requ
     jobId: start.jobId
   });
   assert.equal(status.status, "queued");
+  assert.equal(status.chainId, start.chainId);
+  assert.equal(status.segmentIndex, 1);
   assert.equal(status.jobPolicy.riskLevel, "low");
   assert.equal(status.runProfile, "focused");
   assert.equal(status.checkpointCount, 1);
@@ -396,14 +451,25 @@ test("Codex job start creates file-based state without starting worker when requ
   assert.match(formatCodexJobStatusSummary(status), /최근 이벤트:/);
   assert.match(formatCodexJobStatusSummary(status), /job_created/);
 
+  const statusByChain = await checkWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    chainId: start.chainId
+  });
+  assert.equal(statusByChain.jobId, start.jobId);
+  assert.equal(statusByChain.chainId, start.chainId);
+
   const cancel = await cancelWeaveflowCodexJob({
     workspaceRoot,
     repoRoot,
-    jobId: start.jobId
+    chainId: start.chainId
   });
   assert.equal(cancel.cancelled, true);
+  assert.equal(cancel.chainId, start.chainId);
+  assert.equal(cancel.chainStatus.status, "cancelled");
   assert.match(formatCodexJobCancelSummary(cancel), /Weaveflow Codex 작업 취소/);
   assert.match(formatCodexJobCancelSummary(cancel), /취소 처리: 예/);
+  assert.equal(JSON.parse(await readFile(cancel.cancelRequestPath, "utf8")).requestedScope, "chain_current_job");
 
   const cancelledState = JSON.parse(await readFile(join(start.jobDir, "job.yaml"), "utf8"));
   assert.equal(cancelledState.status, "cancelled");
@@ -484,12 +550,16 @@ test("Codex job start reports started_job only when worker process starts", asyn
     userRequest: toeflRequest,
     runTests: true,
     push: false,
+    runWorkerPreflight: okWorkerPreflight,
     startWorkerProcess: async () => ({ pid: 12345 })
   });
 
   assert.equal(started.actionOutcome, CODEX_JOB_ACTION_OUTCOMES.STARTED_JOB);
   assert.equal(started.status, "running");
   assert.equal(started.workerStarted, true);
+  assert.match(started.chainId, /^CHAIN-\d{4}$/);
+  assert.equal(started.segmentIndex, 1);
+  assert.equal(started.continuationMode, "auto_after_clean_segment");
   assert.equal(started.runProfile, "company");
   assert.equal(started.allowPush, false);
   assert.equal(started.protectedScope.some((scope) => /사용자\/KJ 본인/.test(scope)), true);
@@ -497,6 +567,8 @@ test("Codex job start reports started_job only when worker process starts", asyn
 
   const startedText = formatCodexJobStartSummary(started);
   assert.match(startedText, /Codex job을 시작했습니다/);
+  assert.match(startedText, /Codex worker preflight/);
+  assert.match(startedText, new RegExp(started.chainId));
   assert.match(startedText, new RegExp(started.jobId));
   assert.match(startedText, /runProfile: company/);
   assert.match(startedText, /worker started: yes/);
@@ -505,6 +577,7 @@ test("Codex job start reports started_job only when worker process starts", asyn
   assert.match(startedText, /weaveflow_recover_codex_job/);
   assert.match(startedText, /initial prompt:/);
   assert.equal(JSON.parse(await readFile(join(started.jobDir, "start_outcome.json"), "utf8")).action_outcome, CODEX_JOB_ACTION_OUTCOMES.STARTED_JOB);
+  assert.equal(JSON.parse(await readFile(started.chainStatusPath, "utf8")).chainId, started.chainId);
   assert.match(await readFile(join(started.jobDir, "initial_prompt.md"), "utf8"), /if target cannot be identified, stop and report/);
 
   const failed = await startWeaveflowCodexJob({
@@ -512,21 +585,222 @@ test("Codex job start reports started_job only when worker process starts", asyn
     repoRoot,
     userRequest: "다 변경해. 내거는 그대로 두고 여자친구 단어세트들만 바꿔줘",
     push: false,
+    runWorkerPreflight: okWorkerPreflight,
     startWorkerProcess: async () => {
       throw new Error("spawn denied");
     }
   });
 
-  assert.equal(failed.actionOutcome, CODEX_JOB_ACTION_OUTCOMES.START_FAILED);
-  assert.equal(failed.status, CODEX_JOB_ACTION_OUTCOMES.START_FAILED);
+  assert.equal(failed.actionOutcome, CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_WORKER_START_FAILED);
+  assert.equal(failed.status, CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_WORKER_START_FAILED);
   assert.equal(failed.workerStarted, false);
 
   const failedText = formatCodexJobStartSummary(failed);
   assert.doesNotMatch(failedText, /Codex에 맡겼|Codex에 맡길게|작업 맡길게|진행시킬게|바로 돌릴게|백그라운드로 진행할게|시작했습니다/);
-  assert.match(failedText, /status: start_failed/);
-  assert.match(failedText, /reason: spawn denied/);
-  assert.match(failedText, /user next action:/);
-  assert.equal(JSON.parse(await readFile(join(failed.jobDir, "start_outcome.json"), "utf8")).action_outcome, CODEX_JOB_ACTION_OUTCOMES.START_FAILED);
+  assert.match(failedText, /job_created_worker_start_failed/);
+  assert.match(failedText, /이유: spawn denied/);
+  assert.match(failedText, /필요한 조치:/);
+  assert.equal(JSON.parse(await readFile(join(failed.jobDir, "start_outcome.json"), "utf8")).action_outcome, CODEX_JOB_ACTION_OUTCOMES.JOB_CREATED_WORKER_START_FAILED);
+  assert.equal(JSON.parse(await readFile(join(failed.jobDir, "worker_start.json"), "utf8")).workerStarted, false);
+});
+
+test("Codex job start blocks before spawn when worker preflight fails", async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "weaveflow-worker-preflight-blocked-"));
+  const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
+  let spawnAttempted = false;
+  const blocked = await startWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    userRequest: "장기작업으로 README 점검해줘",
+    push: false,
+    runWorkerPreflight: async (input) => ({
+      ok: false,
+      status: CODEX_JOB_ACTION_OUTCOMES.BLOCKED_CODEX_COMMAND_UNAVAILABLE,
+      reason: "codex command not found",
+      targetWorkspaceRoot: input.targetWorkspaceRoot,
+      runtimeRoot: input.runtimeRoot,
+      codexCommand: "codex",
+      codexCommandAvailable: false,
+      workerScriptPath: resolve(new URL("../scripts/codex-job-worker.js", import.meta.url).pathname),
+      errors: ["codex command not found"],
+      suggestedFix: "Set WEAVEFLOW_CODEX_COMMAND or install/configure Codex CLI",
+      checkedAt: "2026-05-22T00:00:00.000Z"
+    }),
+    startWorkerProcess: async () => {
+      spawnAttempted = true;
+      return { pid: 99999 };
+    }
+  });
+
+  assert.equal(spawnAttempted, false);
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.actionOutcome, CODEX_JOB_ACTION_OUTCOMES.BLOCKED_CODEX_COMMAND_UNAVAILABLE);
+  assert.equal(blocked.status, CODEX_JOB_ACTION_OUTCOMES.BLOCKED_CODEX_COMMAND_UNAVAILABLE);
+  assert.equal(blocked.workerStarted, false);
+  assert.equal(blocked.codexCommand, "codex");
+  assert.equal(blocked.targetWorkspaceRoot, repoRoot);
+
+  const text = formatCodexJobStartSummary(blocked);
+  assert.match(text, /Weaveflow job을 시작하지 못했습니다/);
+  assert.match(text, /blocked_codex_command_unavailable/);
+  assert.match(text, /아직 Codex worker는 실행 중이 아닙니다/);
+  assert.doesNotMatch(text, BANNED_FALLBACK_TEXT);
+  assert.doesNotMatch(text, /시작했습니다|진행 중입니다|맡겼습니다|돌리고 있습니다/);
+
+  const workerPreflight = JSON.parse(await readFile(join(blocked.jobDir, "worker_preflight.json"), "utf8"));
+  const startOutcome = JSON.parse(await readFile(join(blocked.jobDir, "start_outcome.json"), "utf8"));
+  assert.equal(workerPreflight.status, CODEX_JOB_ACTION_OUTCOMES.BLOCKED_CODEX_COMMAND_UNAVAILABLE);
+  assert.equal(startOutcome.jobStarted, false);
+  assert.equal(startOutcome.workerStarted, false);
+});
+
+test("Recover can start the next chain segment from a resume capsule", async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "weaveflow-chain-recover-next-"));
+  const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
+  const first = await startWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    userRequest: "회사에 있는 동안 README와 OpenClaw 문서를 장기작업으로 점검해줘.",
+    runProfile: "company",
+    push: false,
+    startWorker: false
+  });
+
+  const next = await recoverWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    jobId: first.jobId,
+    recoveryMode: "start_next_segment",
+    runWorkerPreflight: okWorkerPreflight,
+    startWorkerProcess: async () => ({ pid: 42345 })
+  });
+
+  assert.equal(next.ok, true);
+  assert.equal(next.action, "start_next_segment");
+  assert.equal(next.chainId, first.chainId);
+  assert.equal(next.nextSegment.actionOutcome, CODEX_JOB_ACTION_OUTCOMES.STARTED_JOB);
+  assert.equal(next.nextSegment.parentJobId, first.jobId);
+  assert.equal(next.nextSegment.rootJobId, first.jobId);
+  assert.equal(next.nextSegment.segmentIndex, 2);
+  assert.match(next.nextSegment.initialPromptPath, /initial_prompt\.md/);
+
+  const prompt = await readFile(next.nextSegment.initialPromptPath, "utf8");
+  assert.match(prompt, /Continue Weaveflow Codex Job Chain/);
+  assert.match(prompt, new RegExp(first.chainId));
+
+  const chainStatus = JSON.parse(await readFile(first.chainStatusPath, "utf8"));
+  assert.equal(chainStatus.currentJobId, next.nextJobId);
+  assert.equal(chainStatus.segmentIndex, 2);
+});
+
+test("Regression A starts as safe-worktree repair job with phase plan and scoped prompt", async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "weaveflow-regression-a-start-"));
+  const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
+  const start = await startWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    userRequest: REGRESSION_PROMPT_A,
+    push: false,
+    runWorkerPreflight: okWorkerPreflight,
+    startWorkerProcess: async () => ({ pid: 22345 })
+  });
+
+  assert.equal(start.actionOutcome, CODEX_JOB_ACTION_OUTCOMES.STARTED_JOB);
+  assert.equal(start.status, "running");
+  assert.match(start.chainId, /^CHAIN-\d{4}$/);
+  assert.equal(start.segmentIndex, 1);
+  assert.equal(start.runProfile, "company");
+  assert.equal(start.policyDecision, "allow_with_constraints");
+  assert.equal(start.executionMode, "safe_worktree");
+  assert.deepEqual(start.deniedActions, [
+    "push",
+    "production_deploy",
+    "secret_changes",
+    "destructive_db_migration",
+    "uncontrolled_commit"
+  ]);
+
+  const phasePlan = JSON.parse(await readFile(join(start.jobDir, "phase_plan.json"), "utf8"));
+  const startOutcome = JSON.parse(await readFile(join(start.jobDir, "start_outcome.json"), "utf8"));
+  const chainStatus = JSON.parse(await readFile(start.chainStatusPath, "utf8"));
+  assert.equal(startOutcome.status, CODEX_JOB_ACTION_OUTCOMES.STARTED_JOB);
+  assert.equal(chainStatus.currentJobId, start.jobId);
+  assert.equal(chainStatus.runProfile, "company");
+  assert.equal(startOutcome.jobStarted, true);
+  assert.equal(startOutcome.workerStarted, true);
+  assert.equal(startOutcome.executionMode, "safe_worktree");
+  assert.deepEqual(phasePlan.phases.map((phase) => phase.id), [
+    "preflight_git_sync",
+    "bug_inventory",
+    "root_cause_pass",
+    "minimal_fix_pass",
+    "regression_pass",
+    "verification_pass",
+    "korean_report"
+  ]);
+
+  const initialPrompt = await readFile(join(start.jobDir, "initial_prompt.md"), "utf8");
+  assert.match(initialPrompt, new RegExp(REGRESSION_PROMPT_A.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(initialPrompt, /git pull --ff-only/);
+  assert.match(initialPrompt, /Do not merge or rebase/);
+  assert.match(initialPrompt, /flicker\/locale flash/);
+  assert.match(initialPrompt, /scroll reset to top on entering TOEIC\/folder\/set pages/);
+  assert.match(initialPrompt, /mobile\/PWA\/Safari state restoration/);
+  assert.match(initialPrompt, /no UI redesign/);
+  assert.match(initialPrompt, /no feature flip/);
+  assert.match(initialPrompt, /no unrelated refactor/);
+  assert.match(initialPrompt, /preserve existing intent/);
+  assert.match(initialPrompt, /minimal targeted fixes/);
+  assert.match(initialPrompt, /test\/lint\/build plan/);
+  assert.match(initialPrompt, /Korean report/);
+
+  const text = formatCodexJobStartSummary(start);
+  assert.match(text, /started_job|장기 작업 job을 시작했습니다|Codex job을 시작했습니다/);
+  assert.match(text, new RegExp(start.jobId));
+  assert.match(text, /weaveflow_check_codex_job/);
+  assert.match(text, /weaveflow_cancel_codex_job/);
+  assert.match(text, /weaveflow_recover_codex_job/);
+  assert.doesNotMatch(text, BANNED_FALLBACK_TEXT);
+});
+
+test("Regression B starts as TOEIC zh-TW data review job with web limitation handling", async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "weaveflow-regression-b-start-"));
+  const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
+  const start = await startWeaveflowCodexJob({
+    workspaceRoot,
+    repoRoot,
+    userRequest: REGRESSION_PROMPT_B,
+    push: false,
+    runWorkerPreflight: okWorkerPreflight,
+    startWorkerProcess: async () => ({ pid: 32345 })
+  });
+
+  assert.equal(start.actionOutcome, CODEX_JOB_ACTION_OUTCOMES.STARTED_JOB);
+  assert.match(start.chainId, /^CHAIN-\d{4}$/);
+  assert.equal(start.runProfile, "company");
+  assert.equal(start.policyDecision, "allow_with_constraints");
+  assert.equal(start.executionMode, "safe_worktree");
+
+  const jobRequest = JSON.parse(await readFile(join(start.jobDir, "job_request.json"), "utf8"));
+  assert.equal(jobRequest.job_type, "long_running_data_review_job");
+  assert.equal(jobRequest.target_scope.includes("TOEIC word sets"), true);
+  assert.equal(jobRequest.target_scope.includes("여자친구 zh-TW 뜻"), true);
+  assert.equal(jobRequest.protected_scope.includes("owner/user/KJ data if identifiable"), true);
+
+  const initialPrompt = await readFile(join(start.jobDir, "initial_prompt.md"), "utf8");
+  assert.match(initialPrompt, new RegExp(REGRESSION_PROMPT_B.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(initialPrompt, /verify if words are TOEIC-appropriate/);
+  assert.match(initialPrompt, /check girlfriend zh-TW meanings for natural Taiwanese learner style/);
+  assert.match(initialPrompt, /avoid overly long descriptive definitions/);
+  assert.match(initialPrompt, /prefer short vocabulary-book gloss style/);
+  assert.match(initialPrompt, /If web access is available.*if web access is unavailable, report that limitation clearly/);
+  assert.match(initialPrompt, /if ownership\/target set cannot be identified, stop and report/);
+  assert.match(initialPrompt, /no uncontrolled push/);
+  assert.match(initialPrompt, /no deploy\/secret\/db migration/);
+
+  const text = formatCodexJobStartSummary(start);
+  assert.match(text, /started_job|장기 작업 job을 시작했습니다|Codex job을 시작했습니다/);
+  assert.doesNotMatch(text, BANNED_FALLBACK_TEXT);
 });
 
 test("Codex job recovery dry-run returns plan without mutating job state", async () => {

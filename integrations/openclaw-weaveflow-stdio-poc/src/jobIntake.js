@@ -56,6 +56,9 @@ const LONG_WORK_EXECUTION_KEYWORDS = [
   "변경해",
   "바꿔줘",
   "수정해",
+  "고쳐내",
+  "점검",
+  "검증해",
   "fix",
   "implement",
   "change",
@@ -79,7 +82,11 @@ const FILE_DISCOVERY_KEYWORDS = [
   "data set",
   "데이터셋",
   "단어세트",
-  "단어 세트"
+  "단어 세트",
+  "전체 점검",
+  "대규모 점검",
+  "bug inventory",
+  "root cause"
 ];
 
 const VALIDATION_KEYWORDS = [
@@ -99,6 +106,7 @@ const AWAY_OR_LONG_TIME_KEYWORDS = [
   "외출",
   "몇 시간",
   "장기 작업",
+  "장기작업",
   "long-running",
   "long running",
   "while i am away"
@@ -159,6 +167,8 @@ export function normalizeJobRequest(input) {
     allow_push: runProfile.allowPush,
     usage_limit_guard: runProfile,
     long_work: longWork,
+    job_type: longWork.job_type,
+    jobType: longWork.job_type,
     is_long_running_job_candidate: longWork.is_candidate,
     target_scope: longWork.target_scope,
     target_scope_summary: longWork.target_scope_summary,
@@ -185,6 +195,9 @@ export function classifyLongWorkRequest(input) {
   if (/(다|전부|모두|죄다|대량|bulk|all|every|entire)/i.test(request)) {
     signals.push("bulk_edit");
   }
+  if (/(전체|대규모|꼼꼼|일일이|점검|장기작업|장기\s*작업)/i.test(request)) {
+    signals.push("broad_repair_or_review");
+  }
   if (includesAny(lower, FILE_DISCOVERY_KEYWORDS)) {
     signals.push("needs_discovery");
   }
@@ -210,6 +223,7 @@ export function classifyLongWorkRequest(input) {
     uniqueSignals.includes("bulk_edit") ||
     uniqueSignals.includes("protected_scope") ||
     uniqueSignals.includes("needs_discovery") ||
+    uniqueSignals.includes("broad_repair_or_review") ||
     uniqueSignals.includes("away_or_long_time");
   const isCandidate =
     (hasExecution && strongLongWork) ||
@@ -220,6 +234,8 @@ export function classifyLongWorkRequest(input) {
   return {
     is_candidate: isCandidate,
     isCandidate,
+    job_type: inferLongWorkJobType(request, uniqueSignals),
+    jobType: inferLongWorkJobType(request, uniqueSignals),
     signals: uniqueSignals,
     target_scope: targetScope,
     targetScope,
@@ -333,6 +349,8 @@ export function suggestBranchSlug(userRequest) {
 
 function inferIntent(userRequest) {
   const request = cleanRequest(userRequest).toLowerCase();
+  if (includesAny(request, ["깜박", "flicker", "스크롤", "scroll", "버그", "bug", "고쳐", "fix"])) return "repair";
+  if (includesAny(request, ["토익", "toeic", "ets", "단어", "단어장", "zh-tw", "taiwan", "대만", "여자친구"])) return "data_review";
   if (includesAny(request, ["openclaw", "poc"])) return "openclaw_poc_docs";
   if (includesAny(request, ["문서", "docs", "documentation", "readme"])) return "documentation";
   if (includesAny(request, ["웹사이트", "website", "site", "frontend", "ui"])) return "website_improvement";
@@ -347,6 +365,25 @@ function inferRiskLevel({ userRequest, autonomyMode, inferredIntent }) {
   if (inferredIntent === "test_stability") return "medium";
   if (includesAny(request, ["delete", "remove", "삭제", "deploy", "release"])) return "high";
   return autonomyMode === "timeboxed" ? "medium" : "low";
+}
+
+function inferLongWorkJobType(request, signals = []) {
+  const lower = cleanRequest(request).toLowerCase();
+  const hasRepairTerms = includesAny(lower, ["깜박", "flicker", "스크롤", "scroll", "버그", "bug", "고쳐", "fix"]);
+  const hasDataReviewTerms = includesAny(lower, ["토익", "toeic", "ets", "단어", "단어장", "뜻", "zh-tw", "대만", "여자친구"]);
+  if (hasRepairTerms) {
+    return "long_running_repair_job";
+  }
+  if (hasDataReviewTerms) {
+    return "long_running_data_review_job";
+  }
+  if (signals.includes("broad_repair_or_review")) {
+    return "long_running_repair_job";
+  }
+  if (signals.includes("needs_validation_or_report")) {
+    return "long_running_validation_job";
+  }
+  return "long_running_job";
 }
 
 function normalizeGoal(userRequest, inferredIntent) {
@@ -390,6 +427,12 @@ export function extractProtectedScope(userRequest) {
   if (/여자친구\s*(?:것|거|단어\s*세트|단어세트).*만/.test(request) && /내/.test(request)) {
     scopes.push("사용자/KJ 본인 자료");
   }
+  if (/여자친구|girlfriend/i.test(request)) {
+    scopes.push("owner/user/KJ data if identifiable");
+  }
+  if (/(토익|TOEIC|toeic)/i.test(request)) {
+    scopes.push("unrelated TOEFL data unless request requires comparison");
+  }
 
   for (const match of request.matchAll(/([가-힣A-Za-z0-9_./ -]{1,40}?)(?:은|는)\s*그대로/g)) {
     const phrase = normalizeScopePhrase(match[1]);
@@ -415,8 +458,15 @@ export function extractTargetScope(userRequest) {
 
   if (/여자친구.{0,30}(?:단어\s*세트|단어세트)/.test(request) || /(?:단어\s*세트|단어세트).{0,30}여자친구/.test(request)) {
     scopes.push("여자친구 단어세트");
+    scopes.push("여자친구 zh-TW 뜻");
   } else if (/여자친구\s*(?:것|거)만/.test(request)) {
     scopes.push("여자친구 자료");
+  }
+  if (/여자친구|girlfriend/i.test(request) && /뜻|meaning|gloss|zh-tw|대만/i.test(request)) {
+    scopes.push("여자친구 zh-TW 뜻");
+  }
+  if (/(토익|TOEIC|toeic).{0,40}(단어|word|vocab)|(?:단어|word|vocab).{0,40}(토익|TOEIC|toeic)/i.test(request)) {
+    scopes.push("TOEIC word sets");
   }
 
   for (const match of request.matchAll(/([가-힣A-Za-z0-9_./ -]{1,50}?)(?:들)?만\s*(?:바꿔|변경|수정|고쳐|update|change|replace)/gi)) {
@@ -494,6 +544,8 @@ function replaceKoreanBranchTerms(value) {
 
 function koreanIntentLabel(intent) {
   return {
+    data_review: "데이터 검증",
+    repair: "버그 수리",
     documentation: "문서 개선",
     openclaw_poc_docs: "OpenClaw POC 문서 개선",
     website_improvement: "웹사이트 개선",

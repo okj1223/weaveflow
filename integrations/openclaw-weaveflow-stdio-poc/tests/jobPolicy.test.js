@@ -56,8 +56,17 @@ test("classifies production deploy requests as high risk and blocks automatic de
   assert.equal(policy.riskLevel, "high");
   assert.equal(policy.requiresHumanReview, true);
   assert.equal(isAutoActionAllowed("production deploy", policy), false);
-  assert.equal(isAutoActionAllowed("commit_changes", policy), false);
+  assert.equal(isAutoActionAllowed("commit_changes", policy), true);
   assert.equal(isAutoActionAllowed("push_branch", policy), false);
+  assert.equal(policy.policyDecision, "allow_with_constraints");
+  assert.equal(policy.executionMode, "safe_worktree");
+  assert.deepEqual(policy.deniedActions, [
+    "push",
+    "production_deploy",
+    "secret_changes",
+    "destructive_db_migration",
+    "uncontrolled_commit"
+  ]);
 });
 
 test("classifies secret and token changes as high risk", () => {
@@ -116,7 +125,10 @@ test("uses default policy values when input is sparse", () => {
   assert.equal(policy.blockedActions.includes("auto_merge"), true);
   assert.equal(policy.blockedActions.includes("production_deploy"), true);
   assert.equal(policy.blockedActions.includes("destructive_delete"), true);
+  assert.equal(policy.blockedActions.includes("uncontrolled_commit"), true);
   assert.equal(policy.blockedActions.includes("push_branch"), true);
+  assert.equal(policy.policyDecision, "allow_with_constraints");
+  assert.equal(policy.executionMode, "safe_worktree");
 });
 
 test("builds Korean user-facing policy summary", () => {
@@ -132,6 +144,8 @@ test("builds Korean user-facing policy summary", () => {
   assert.match(policy.korean_summary, /시간 예산: 30분/);
   assert.match(policy.korean_summary, /최대 수정 시도: 2회/);
   assert.match(policy.korean_summary, /푸시 허용: 아니오/);
+  assert.match(policy.korean_summary, /정책 결정: allow_with_constraints/);
+  assert.match(policy.korean_summary, /실행 모드: safe_worktree/);
   assert.equal(summarizeJobPolicyKorean(policy), policy.korean_summary);
 });
 

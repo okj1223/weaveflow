@@ -13,6 +13,9 @@ import {
   suggestBranchSlug
 } from "../src/jobIntake.js";
 
+const REGRESSION_PROMPT_A = "<@1486861488349249696> 그리고 아직도 깜박거리네 하 씨발 진짜 그리고 뭐냐 스크롤 내려서 토익 들어가봤는데 왜 거기서도 스크롤 내려가있는 상태에서 시작하냐 당연히 맨위에서 시작아니냐? 이런걸 일일이 내가 디버깅할 수가 없잖아 이개새끼야 weacflow깃풀로 당긴다음에 장기작업으로 어떻게든 고쳐내 실수없고 버그없고 갑자기 기능 바꾸고 ui뒤집어놓고 그런거 없이 알잘딱으로 알겠어? 전체 점검 대규모 점검들어가서 고쳐 일일이 꼼꼼히";
+const REGRESSION_PROMPT_B = "<@1486861488349249696> 토익 단어들도 진짜 토익단어인지 여자친구용 뜻이 어색하진 않은지 단어책 뜻이 아니라 서술식으로 이상하게 되어 있다던지 ets 단어장이라도 보고 참고하라 그래 인터넷뒤져서 그거 장기작업으로 검증해";
+
 test("normalizes broad Korean website improvement with hour budget", () => {
   const result = normalizeJobRequest("웹사이트 3시간 동안 강화해");
 
@@ -137,4 +140,33 @@ test("suggests stable ASCII branch slugs", () => {
   assert.equal(suggestBranchSlug("웹사이트 3시간 동안 강화해"), "website-3-improve");
   assert.equal(suggestBranchSlug("OpenClaw POC 문서 정리하고 커밋 푸시해"), "openclaw-poc-docs-cleanup-commit-push");
   assert.equal(suggestBranchSlug("!!!"), "job");
+});
+
+test("Regression A is classified as a long-running repair job", () => {
+  const result = normalizeJobRequest({
+    userRequest: REGRESSION_PROMPT_A,
+    source: "discord"
+  });
+
+  assert.equal(result.is_long_running_job_candidate, true);
+  assert.equal(result.job_type, "long_running_repair_job");
+  assert.equal(result.run_profile, "company");
+  assert.equal(result.inferred_intent, "repair");
+  assert.equal(result.long_work.signals.includes("broad_repair_or_review"), true);
+});
+
+test("Regression B is classified as a long-running TOEIC data review job", () => {
+  const result = normalizeJobRequest({
+    userRequest: REGRESSION_PROMPT_B,
+    source: "discord"
+  });
+
+  assert.equal(result.is_long_running_job_candidate, true);
+  assert.equal(result.job_type, "long_running_data_review_job");
+  assert.equal(result.run_profile, "company");
+  assert.equal(result.inferred_intent, "data_review");
+  assert.equal(result.target_scope.includes("TOEIC word sets"), true);
+  assert.equal(result.target_scope.includes("여자친구 zh-TW 뜻"), true);
+  assert.equal(result.protected_scope.includes("owner/user/KJ data if identifiable"), true);
+  assert.equal(result.protected_scope.includes("unrelated TOEFL data unless request requires comparison"), true);
 });
