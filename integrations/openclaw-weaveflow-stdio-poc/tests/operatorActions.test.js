@@ -27,12 +27,38 @@ const BANNED_FALLBACK_TEXT = new RegExp([
 
 test("operator action menu returns job and chain menus with tokens", async () => {
   const workspaceRoot = await mkWorkspace();
-  await writeJob(workspaceRoot, "JOB-0001", {
+  const runningJobDir = await writeJob(workspaceRoot, "JOB-0001", {
     job_id: "JOB-0001",
     status: "running",
     current_step: "verification_pass",
+    worker_started: true,
+    pid: process.pid,
     updated_at: NOW
   });
+  await writeJsonAtomic(join(runningJobDir, "heartbeat.json"), {
+    schemaVersion: "weaveflow.heartbeat.v0",
+    jobId: "JOB-0001",
+    status: "running",
+    currentStep: "verification_pass",
+    lastHeartbeatAt: NOW,
+    pid: process.pid
+  });
+  await writeJsonAtomic(join(runningJobDir, "job_status.json"), {
+    schemaVersion: "weaveflow.job_status.v0",
+    jobId: "JOB-0001",
+    status: "running",
+    phase: "verification_pass",
+    workerStarted: true,
+    workerExited: false,
+    updatedAt: NOW,
+    pid: process.pid
+  });
+  await writeFile(join(runningJobDir, "session_log.jsonl"), `${JSON.stringify({
+    schemaVersion: "weaveflow.session_log.v0",
+    ts: NOW,
+    event: "heartbeat",
+    jobId: "JOB-0001"
+  })}\n`, "utf8");
   await writeJob(workspaceRoot, "JOB-0002", {
     job_id: "JOB-0002",
     chain_id: "CHAIN-0001",

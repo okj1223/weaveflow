@@ -181,9 +181,37 @@ await writeSmokeJob(targetRepoRoot, "JOB-0903", {
   status: "running",
   current_step: "verification_pass",
   pid: 999999,
+  worker_started: true,
   updated_at: staleTime,
   run_profile: "company"
 });
+const staleJobDir = join(targetRepoRoot, ".weaveflow", "jobs", "JOB-0903");
+await writeJsonAtomic(join(staleJobDir, "heartbeat.json"), {
+  schemaVersion: "weaveflow.heartbeat.v0",
+  jobId: "JOB-0903",
+  status: "running",
+  phase: "verification_pass",
+  currentStep: "verification_pass",
+  lastHeartbeatAt: staleTime,
+  lastEvent: "heartbeat",
+  pid: 999999
+});
+await writeJsonAtomic(join(staleJobDir, "job_status.json"), {
+  schemaVersion: "weaveflow.job_status.v0",
+  jobId: "JOB-0903",
+  status: "running",
+  phase: "verification_pass",
+  updatedAt: staleTime,
+  workerStarted: true,
+  workerExited: false,
+  pid: 999999
+});
+await writeFile(join(staleJobDir, "session_log.jsonl"), `${JSON.stringify({
+  schemaVersion: "weaveflow.session_log.v0",
+  ts: staleTime,
+  event: "heartbeat",
+  jobId: "JOB-0903"
+})}\n`, "utf8");
 const morningReview = await buildMorningReview({
   workspaceRoot: targetRepoRoot,
   since: "24h",

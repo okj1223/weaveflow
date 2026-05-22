@@ -78,6 +78,9 @@ export async function runIntegrationHarness(options = {}) {
     chainDirs: [],
     startOutcomes: [],
     workerStarts: [],
+    heartbeats: [],
+    jobStatuses: [],
+    sessionLogs: [],
     cancelRequests: [],
     operatorReviews: [],
     recoveryPlans: [],
@@ -98,6 +101,7 @@ export async function runIntegrationHarness(options = {}) {
     responses,
     promptA: null,
     promptB: null,
+    exitFast: null,
     check: null,
     cancel: null,
     recover: null,
@@ -109,6 +113,7 @@ export async function runIntegrationHarness(options = {}) {
     context.promptA = await runPromptA(context);
     context.cancel = await runCancelCheck(context, context.promptA);
     context.promptB = await runPromptB(context);
+    context.exitFast = await runExitFastCheck(context);
     context.check = await runCheckTruthfulness(context, context.promptB);
     context.recover = await runRecoverChecks(context, context.promptB);
     context.morningReview = await runMorningReviewChecks(context);
@@ -156,6 +161,11 @@ async function runPromptA(context) {
     expectedJobType: "long_running_repair_job"
   });
   await waitForJobState(start.jobDir, (state) => state.current_step === "codex_exec" || state.current_step === "git_worktree" || state.status === "running", 20000);
+  const heartbeat = await readJson(join(start.jobDir, "heartbeat.json"));
+  addCheck(context.checks, "Prompt A sleep mode writes fresh heartbeat", isFreshTimestamp(heartbeat?.lastHeartbeatAt, 15000), {
+    heartbeatPath: join(start.jobDir, "heartbeat.json"),
+    lastHeartbeatAt: heartbeat?.lastHeartbeatAt || null
+  });
   return { start, startText };
 }
 
@@ -179,7 +189,48 @@ async function runPromptB(context) {
     expectedJobType: "long_running_data_review_job"
   });
   await waitForJobState(start.jobDir, (state) => TERMINAL_STATUSES.has(state.status), 30000);
+  const jobStatus = await readJson(join(start.jobDir, "job_status.json"));
+  const sessionLog = await readText(join(start.jobDir, "session_log.jsonl"));
+  addCheck(context.checks, "Prompt B fail mode writes failed job_status", jobStatus?.status === "failed", {
+    jobStatusPath: join(start.jobDir, "job_status.json"),
+    status: jobStatus?.status || null,
+    exitCode: jobStatus?.exitCode ?? null
+  });
+  addCheck(context.checks, "Prompt B fail mode writes worker_failed session event", sessionLog.includes("\"event\":\"worker_failed\""), {
+    sessionLogPath: join(start.jobDir, "session_log.jsonl")
+  });
   return { start, startText };
+}
+
+async function runExitFastCheck(context) {
+  setFakeCodexEnv({
+    FAKE_CODEX_MODE: "exit-fast",
+    FAKE_CODEX_SLEEP_MS: "0",
+    FAKE_CODEX_EXIT_CODE: "0",
+    FAKE_CODEX_OUTPUT_TEXT: "Fake Codex exit-fast lifecycle check."
+  });
+  const start = await startWeaveflowCodexJob(baseStartOptions(context, {
+    userRequest: "OpenClaw runner lifecycle 검증용 장기작업을 exit-fast 모드로 시작해.",
+    maxRuntimeMinutes: 2,
+    runTests: false
+  }));
+  const startText = formatCodexJobStartSummary(start);
+  context.responses.push({ label: "exitFast.start", text: startText, details: start });
+  assertNoBanned(context, "exit-fast start response", startText);
+  assertStartedJob(context, "Exit-fast", start);
+  await assertStartArtifacts(context, "Exit-fast", start);
+  await waitForJobState(start.jobDir, (state) => TERMINAL_STATUSES.has(state.status), 30000);
+  const check = await checkWeaveflowCodexJob({
+    workspaceRoot: context.targetWorkspaceRoot,
+    repoRoot: context.targetWorkspaceRoot,
+    jobId: start.jobId
+  });
+  const jobStatus = await readJson(join(start.jobDir, "job_status.json"));
+  addCheck(context.checks, "exit-fast terminal worker is not reported as running", check.status !== "running", {
+    checkStatus: check.status,
+    jobStatus: jobStatus?.status || null
+  });
+  return { start, startText, check, jobStatus };
 }
 
 async function runCancelCheck(context, promptResult) {
@@ -335,12 +386,24 @@ async function assertStartArtifacts(context, label, start, expectations = {}) {
   addCheck(context.checks, `${label} has job dir`, existsSync(start.jobDir || ""), { jobDir: start.jobDir });
   const startOutcome = await readJson(join(start.jobDir, "start_outcome.json"));
   const workerStart = await readJson(join(start.jobDir, "worker_start.json"));
+  await waitForPath(join(start.jobDir, "heartbeat.json"), 10000);
+  await waitForPath(join(start.jobDir, "job_status.json"), 10000);
+  await waitForPath(join(start.jobDir, "session_log.jsonl"), 10000);
+  const heartbeat = await readJson(join(start.jobDir, "heartbeat.json"));
+  const jobStatus = await readJson(join(start.jobDir, "job_status.json"));
+  const sessionLog = await readText(join(start.jobDir, "session_log.jsonl"));
   const policyDecision = await readJson(join(start.jobDir, "policy_decision.json"));
   const jobRequest = await readJson(join(start.jobDir, "job_request.json"));
   const initialPrompt = await readText(join(start.jobDir, "initial_prompt.md"));
   addCheck(context.checks, `${label} start_outcome.json exists`, Boolean(startOutcome), { path: join(start.jobDir, "start_outcome.json") });
   addCheck(context.checks, `${label} worker_start.json exists`, Boolean(workerStart), { path: join(start.jobDir, "worker_start.json") });
   addCheck(context.checks, `${label} start_outcome workerStarted true`, startOutcome?.workerStarted === true || startOutcome?.worker_started === true, startOutcome);
+  addCheck(context.checks, `${label} heartbeat.json exists`, Boolean(heartbeat), { path: join(start.jobDir, "heartbeat.json") });
+  addCheck(context.checks, `${label} job_status.json exists`, Boolean(jobStatus), { path: join(start.jobDir, "job_status.json") });
+  addCheck(context.checks, `${label} session_log.jsonl exists`, Boolean(sessionLog), { path: join(start.jobDir, "session_log.jsonl") });
+  addCheck(context.checks, `${label} session_log records worker_started`, sessionLog.includes("\"event\":\"worker_started\""), {
+    path: join(start.jobDir, "session_log.jsonl")
+  });
   addCheck(context.checks, `${label} pid recorded`, Number.isFinite(Number(workerStart?.pid || startOutcome?.pid || start.pid)), {
     workerStartPid: workerStart?.pid,
     startOutcomePid: startOutcome?.pid,
@@ -348,10 +411,12 @@ async function assertStartArtifacts(context, label, start, expectations = {}) {
   });
   addCheck(context.checks, `${label} policy_decision.json exists`, Boolean(policyDecision), { path: join(start.jobDir, "policy_decision.json") });
   addCheck(context.checks, `${label} initial_prompt.md exists`, Boolean(initialPrompt), { path: join(start.jobDir, "initial_prompt.md") });
-  addCheck(context.checks, `${label} expected job type`, jobRequest?.job_type === expectations.expectedJobType || (label === "Prompt B" && jobRequest?.job_type === "long_running_research_validation_job"), {
-    expected: expectations.expectedJobType,
-    actual: jobRequest?.job_type
-  });
+  if (expectations.expectedJobType) {
+    addCheck(context.checks, `${label} expected job type`, jobRequest?.job_type === expectations.expectedJobType || (label === "Prompt B" && jobRequest?.job_type === "long_running_research_validation_job"), {
+      expected: expectations.expectedJobType,
+      actual: jobRequest?.job_type
+    });
+  }
   addCheck(context.checks, `${label} profile company`, jobRequest?.run_profile === "company" || policyDecision?.runProfile === "company", {
     jobRequestRunProfile: jobRequest?.run_profile,
     policyRunProfile: policyDecision?.runProfile
@@ -387,6 +452,9 @@ async function collectArtifacts(context) {
     for (const [key, name] of [
       ["startOutcomes", "start_outcome.json"],
       ["workerStarts", "worker_start.json"],
+      ["heartbeats", "heartbeat.json"],
+      ["jobStatuses", "job_status.json"],
+      ["sessionLogs", "session_log.jsonl"],
       ["cancelRequests", "cancel_request.json"],
       ["recoveryPlans", "recovery_plan.json"],
       ["resumeCapsules", "resume_capsule.json"]
@@ -437,10 +505,15 @@ function buildReport(context) {
       status,
       promptAResult: summarizeStart(context.promptA?.start),
       promptBResult: summarizeStart(context.promptB?.start),
+      exitFastResult: summarizeStart(context.exitFast?.start),
       realSpawnedWorkerWithFakeCli: Boolean(context.promptA?.start?.workerStarted && context.promptB?.start?.workerStarted),
       workerStartJsonCreated: context.artifactsObserved.workerStarts.length > 0,
       startOutcomeWorkerStartedTrue: context.artifactsObserved.startOutcomes.length > 0,
+      heartbeatJsonCreated: context.artifactsObserved.heartbeats.length > 0,
+      jobStatusJsonCreated: context.artifactsObserved.jobStatuses.length > 0,
+      sessionLogJsonlCreated: context.artifactsObserved.sessionLogs.length > 0,
       checkTruthfulness: checkStatus(context, "terminal fake worker is not reported as running"),
+      exitFastTruthfulness: checkStatus(context, "exit-fast terminal worker is not reported as running"),
       cancelBehavior: checkStatus(context, "cancel_request.json created"),
       recoverBehavior: checkStatus(context, "recover inspect/prepare returns dryRun plan"),
       morningReviewBehavior: checkStatus(context, "morning review markdown artifact created"),
@@ -484,10 +557,15 @@ function renderHarnessReportMarkdown(report) {
     `- status: ${summary.status}`,
     `- Prompt A result: ${formatPromptSummary(summary.promptAResult)}`,
     `- Prompt B result: ${formatPromptSummary(summary.promptBResult)}`,
+    `- exit-fast result: ${formatPromptSummary(summary.exitFastResult)}`,
     `- real spawned worker with fake CLI: ${yesNo(summary.realSpawnedWorkerWithFakeCli)}`,
     `- worker_start.json created: ${yesNo(summary.workerStartJsonCreated)}`,
     `- start_outcome workerStarted true: ${yesNo(summary.startOutcomeWorkerStartedTrue)}`,
+    `- heartbeat.json created: ${yesNo(summary.heartbeatJsonCreated)}`,
+    `- job_status.json created: ${yesNo(summary.jobStatusJsonCreated)}`,
+    `- session_log.jsonl created: ${yesNo(summary.sessionLogJsonlCreated)}`,
     `- check truthfulness: ${summary.checkTruthfulness}`,
+    `- exit-fast truthfulness: ${summary.exitFastTruthfulness}`,
     `- cancel behavior: ${summary.cancelBehavior}`,
     `- recover behavior: ${summary.recoverBehavior}`,
     `- morning review behavior: ${summary.morningReviewBehavior}`,
@@ -578,6 +656,15 @@ async function waitForJobState(jobDir, predicate, timeoutMs = 10000) {
   return lastState;
 }
 
+async function waitForPath(path, timeoutMs = 10000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (existsSync(path)) return true;
+    await sleep(100);
+  }
+  return existsSync(path);
+}
+
 async function listDirs(root, pattern) {
   const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
   const dirs = [];
@@ -656,6 +743,11 @@ function artifactLines(artifacts = {}) {
 
 function yesNo(value) {
   return value ? "yes" : "no";
+}
+
+function isFreshTimestamp(value, maxAgeMs) {
+  const parsed = Date.parse(value || "");
+  return Number.isFinite(parsed) && Date.now() - parsed <= maxAgeMs;
 }
 
 function sleep(ms) {

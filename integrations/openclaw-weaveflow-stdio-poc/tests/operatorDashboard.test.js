@@ -34,8 +34,15 @@ test("operator dashboard discovers jobs and tolerates missing/corrupt artifacts"
     status: "running",
     current_step: "bug_inventory",
     pid: process.pid,
+    worker_started: true,
     updated_at: NOW,
     run_profile: "company"
+  });
+  await writeRuntimeEvidence(goodJob, "JOB-0001", {
+    status: "running",
+    currentStep: "bug_inventory",
+    lastHeartbeatAt: NOW,
+    pid: process.pid
   });
   const corruptJob = join(jobsRoot, "JOB-0002");
   await mkdir(corruptJob, { recursive: true });
@@ -66,16 +73,30 @@ test("operator priority classifies running, stale, completed, blocked, continuab
     status: "running",
     current_step: "root_cause_pass",
     pid: process.pid,
+    worker_started: true,
     updated_at: NOW,
     run_profile: "company"
+  });
+  await writeRuntimeEvidence(runningDir, "JOB-0001", {
+    status: "running",
+    currentStep: "root_cause_pass",
+    lastHeartbeatAt: NOW,
+    pid: process.pid
   });
   const staleDir = await writeJob(jobsRoot, "JOB-0002", {
     job_id: "JOB-0002",
     status: "running",
     current_step: "minimal_fix_pass",
     pid: 999999,
+    worker_started: true,
     updated_at: OLD,
     run_profile: "company"
+  });
+  await writeRuntimeEvidence(staleDir, "JOB-0002", {
+    status: "running",
+    currentStep: "minimal_fix_pass",
+    lastHeartbeatAt: OLD,
+    pid: 999999
   });
   const completedDir = await writeJob(jobsRoot, "JOB-0003", {
     job_id: "JOB-0003",
@@ -138,6 +159,57 @@ test("operator priority classifies running, stale, completed, blocked, continuab
     liveness: "stale",
     diagnosis: { health: "stale_running" }
   }), OPERATOR_PRIORITIES.NEEDS_ATTENTION_NOW);
+});
+
+test("operator dashboard prefers heartbeat and job_status truth over stale job.yaml", async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "weaveflow-operator-watchdog-"));
+  const jobsRoot = join(workspaceRoot, ".weaveflow", "jobs");
+  const jobDir = await writeJob(jobsRoot, "JOB-0007", {
+    job_id: "JOB-0007",
+    status: "running",
+    current_step: "codex_exec",
+    worker_started: true,
+    pid: process.pid,
+    updated_at: OLD,
+    run_profile: "company"
+  });
+  await writeJsonAtomic(join(jobDir, "heartbeat.json"), {
+    schemaVersion: "weaveflow.heartbeat.v0",
+    jobId: "JOB-0007",
+    pid: process.pid,
+    status: "running",
+    phase: "codex_exec",
+    currentStep: "codex_exec",
+    lastHeartbeatAt: NOW,
+    lastEvent: "heartbeat"
+  });
+  await writeJsonAtomic(join(jobDir, "job_status.json"), {
+    schemaVersion: "weaveflow.job_status.v0",
+    jobId: "JOB-0007",
+    status: "running",
+    phase: "codex_exec",
+    updatedAt: NOW,
+    workerStarted: true,
+    workerExited: false,
+    pid: process.pid
+  });
+  await writeFile(join(jobDir, "session_log.jsonl"), `${JSON.stringify({
+    schemaVersion: "weaveflow.session_log.v0",
+    ts: NOW,
+    event: "heartbeat",
+    jobId: "JOB-0007"
+  })}\n`, "utf8");
+
+  const summary = await readJobSummary(jobDir, {
+    now: NOW,
+    processChecker: async () => true
+  });
+
+  assert.equal(summary.liveness, "running");
+  assert.equal(summary.status, "running");
+  assert.equal(summary.priority, OPERATOR_PRIORITIES.RUNNING_OK);
+  assert.equal(summary.watchdog.heartbeatPresent, true);
+  assert.equal(summary.sessionLogTail.length, 1);
 });
 
 test("morning review renders Korean sections, artifacts, and chain-aware grouping", async () => {
@@ -285,4 +357,33 @@ async function writeChain(jobsRoot, chainId, status) {
   });
   await writeFile(join(chainDir, "segments.jsonl"), `${JSON.stringify({ ts: NOW, event: "chain_started", chainId })}\n`, "utf8");
   return chainDir;
+}
+
+async function writeRuntimeEvidence(jobDir, jobId, fields = {}) {
+  await writeJsonAtomic(join(jobDir, "heartbeat.json"), {
+    schemaVersion: "weaveflow.heartbeat.v0",
+    jobId,
+    status: fields.status || "running",
+    phase: fields.currentStep || "codex_exec",
+    currentStep: fields.currentStep || "codex_exec",
+    lastHeartbeatAt: fields.lastHeartbeatAt || NOW,
+    lastEvent: "heartbeat",
+    pid: fields.pid || null
+  });
+  await writeJsonAtomic(join(jobDir, "job_status.json"), {
+    schemaVersion: "weaveflow.job_status.v0",
+    jobId,
+    status: fields.status || "running",
+    phase: fields.currentStep || "codex_exec",
+    updatedAt: fields.lastHeartbeatAt || NOW,
+    workerStarted: true,
+    workerExited: false,
+    pid: fields.pid || null
+  });
+  await writeFile(join(jobDir, "session_log.jsonl"), `${JSON.stringify({
+    schemaVersion: "weaveflow.session_log.v0",
+    ts: fields.lastHeartbeatAt || NOW,
+    event: "heartbeat",
+    jobId
+  })}\n`, "utf8");
 }

@@ -59,6 +59,10 @@ import {
   readChainStatusById,
   updateChainFromJobState
 } from "./jobChain.js";
+import {
+  buildWatchdogDiagnostics,
+  readJobRuntimeState
+} from "./jobWatchdog.js";
 import { normalizeJobRequest } from "./jobIntake.js";
 import { isAutoActionAllowed, resolveJobPolicy } from "./jobPolicy.js";
 import {
@@ -1532,6 +1536,7 @@ export async function startWeaveflowCodexJob(options) {
 export async function runCodexJobWorker(jobDir) {
   let state = await readJobState(jobDir);
   const deadlineMs = Date.parse(state.started_at) + Number(state.max_runtime_minutes || DEFAULT_JOB_MAX_RUNTIME_MINUTES) * 60 * 1000;
+  const heartbeatTimer = startWorkerHeartbeatTimer(jobDir);
 
   try {
     assertJobNotTimedOut(deadlineMs);
@@ -2036,6 +2041,18 @@ export async function runCodexJobWorker(jobDir) {
       event: "segment_failed"
     });
     process.exitCode = 1;
+  } finally {
+    heartbeatTimer.stop();
+    const finalState = await readOptionalJobState(jobDir);
+    if (finalState) {
+      await safeWriteRuntimeLifecycleArtifacts(jobDir, finalState, {
+        timestamp: new Date().toISOString(),
+        event: "heartbeat",
+        message: "Worker final heartbeat.",
+        status: finalState.status,
+        current_step: finalState.current_step
+      });
+    }
   }
 }
 
@@ -2063,6 +2080,15 @@ export async function checkWeaveflowCodexJob(options) {
     stateReadError = safeOneLine(error instanceof Error ? error.message : String(error));
   }
   if (!state) {
+    const runtimeState = await readJobRuntimeState(jobDir, {
+      now: options?.recoveryNow,
+      staleAfterMs: options?.recoveryStaleAfterMs,
+      processChecker: options?.recoveryProcessChecker
+    });
+    const watchdog = buildWatchdogDiagnostics(runtimeState, {
+      now: options?.recoveryNow,
+      staleAfterMs: options?.recoveryStaleAfterMs
+    });
     const recovery = await buildCodexJobRecoveryContext({
       jobDir,
       repoRoot,
@@ -2079,8 +2105,11 @@ export async function checkWeaveflowCodexJob(options) {
       ok: false,
       jobId,
       taskId: null,
-      status: "unknown",
-      currentStep: "unknown",
+      status: watchdog.effectiveStatus || "unknown",
+      currentStep: watchdog.currentStep || "unknown",
+      liveness: watchdog.liveness,
+      watchdog,
+      runtimeState,
       elapsedSeconds: 0,
       elapsedMs: 0,
       stageDurations: jobStageDurations({}),
@@ -2138,6 +2167,15 @@ export async function checkWeaveflowCodexJob(options) {
   });
   const chainStatus = state.chain_id ? await readChainStatusById(jobsRoot, state.chain_id) : requestedChainStatus;
   const resumeCapsule = await readResumeCapsule(jobDir, state);
+  const runtimeState = await readJobRuntimeState(jobDir, {
+    now: options?.recoveryNow,
+    staleAfterMs: options?.recoveryStaleAfterMs,
+    processChecker: options?.recoveryProcessChecker
+  });
+  const watchdog = buildWatchdogDiagnostics(runtimeState, {
+    now: options?.recoveryNow,
+    staleAfterMs: options?.recoveryStaleAfterMs
+  });
   const continuationContext = buildContinuationContext({
     jobState: state,
     chainStatus,
@@ -2159,8 +2197,12 @@ export async function checkWeaveflowCodexJob(options) {
     chainReportPath: state.chain_report_path || null,
     autoContinue: state.auto_continue === true,
     taskId: state.task_id,
-    status: state.status,
-    currentStep: state.current_step,
+    status: watchdog.effectiveStatus || state.status,
+    jobStateStatus: state.status,
+    liveness: watchdog.liveness,
+    watchdog,
+    runtimeState,
+    currentStep: watchdog.currentStep || state.current_step,
     elapsedSeconds: elapsedSeconds(state.started_at, state.finished_at),
     elapsedMs: normalizedElapsedMs(state),
     stageDurations: jobStageDurations(state),
@@ -4632,6 +4674,166 @@ async function appendJobEvent(jobDir, event, message, fields = {}, state = null,
     }
   }
   await appendArtifactEvent(jobDir, payload);
+  await safeWriteRuntimeLifecycleArtifacts(jobDir, effectiveState, payload);
+}
+
+async function safeWriteRuntimeLifecycleArtifacts(jobDir, state, eventPayload = {}) {
+  try {
+    await appendSessionLogEvent(jobDir, state, eventPayload);
+    if (state?.job_id) {
+      await writeHeartbeatArtifact(jobDir, state, eventPayload);
+      await writeJobStatusArtifact(jobDir, state, eventPayload);
+    }
+  } catch {
+    // Runtime diagnostics must never take down the worker.
+  }
+}
+
+async function appendSessionLogEvent(jobDir, state, eventPayload = {}) {
+  const now = eventPayload.timestamp || new Date().toISOString();
+  const payload = {
+    schemaVersion: "weaveflow.session_log.v0",
+    ts: now,
+    event: sessionLogEventName(eventPayload.event || eventPayload.type),
+    sourceEvent: eventPayload.event || eventPayload.type || null,
+    jobId: state?.job_id || eventPayload.jobId || null,
+    pid: state?.pid || null,
+    status: state?.status || eventPayload.status || null,
+    phase: state?.current_step || eventPayload.current_step || null,
+    currentStep: state?.current_step || eventPayload.current_step || null,
+    message: summarizeLogMessage(eventPayload.message),
+    details: summarizeSessionLogDetails(eventPayload)
+  };
+  await appendFile(join(jobDir, "session_log.jsonl"), `${JSON.stringify(payload)}\n`, "utf8");
+}
+
+async function writeHeartbeatArtifact(jobDir, state, eventPayload = {}) {
+  const now = eventPayload.timestamp || new Date().toISOString();
+  const payload = {
+    schemaVersion: "weaveflow.heartbeat.v0",
+    jobId: state.job_id,
+    pid: state.pid || null,
+    status: state.status || "unknown",
+    phase: state.current_step || null,
+    currentStep: state.current_step || null,
+    workerStartedAt: state.worker_started_at || state.started_at || null,
+    lastHeartbeatAt: now,
+    lastEventAt: eventPayload.timestamp || state.updated_at || now,
+    lastEvent: eventPayload.event || state.last_event || null,
+    runProfile: state.run_profile || state.job_policy?.runProfile || null,
+    executionMode: state.execution_mode || state.job_policy?.executionMode || null,
+    logPath: jobDir
+  };
+  await writeJsonAtomic(join(jobDir, "heartbeat.json"), payload);
+}
+
+async function writeJobStatusArtifact(jobDir, state, eventPayload = {}) {
+  const now = eventPayload.timestamp || new Date().toISOString();
+  const status = state.status || eventPayload.status || "unknown";
+  const workerExited = ["completed", "failed", "timeout", "cancelled", "needs_user_review", "limit_reached"].includes(status);
+  const payload = {
+    schemaVersion: "weaveflow.job_status.v0",
+    jobId: state.job_id,
+    status,
+    phase: state.current_step || eventPayload.current_step || null,
+    currentStep: state.current_step || eventPayload.current_step || null,
+    startedAt: state.started_at || null,
+    updatedAt: now,
+    pid: state.pid || null,
+    workerStarted: state.worker_started === true,
+    workerExited,
+    exitCode: state.codex_exit_code ?? null,
+    stopReason: state.stop_reason || state.usage_limit_stop_reason || state.error || null,
+    currentJudgement: currentJudgementForStatus(status, state),
+    recommendedNextAction: state.recommended_next_action || recommendedNextActionForStatus(status)
+  };
+  await writeJsonAtomic(join(jobDir, "job_status.json"), payload);
+}
+
+function sessionLogEventName(event) {
+  return {
+    worker_started: "worker_started",
+    planning_started: "phase_started",
+    codex_started: "phase_started",
+    tests_started: "check_started",
+    tests_finished: "check_passed",
+    checkpoint_created: "checkpoint_created",
+    usage_limit_checkpoint: "usage_limit_detected",
+    job_completed: "worker_completed",
+    job_failed: "worker_failed",
+    job_timeout: "worker_failed",
+    job_cancelled: "worker_cancelled",
+    heartbeat: "heartbeat"
+  }[event] || event || "event";
+}
+
+function summarizeLogMessage(message) {
+  return safeOneLine(String(message || "")).slice(0, 500);
+}
+
+function summarizeSessionLogDetails(eventPayload = {}) {
+  const details = {};
+  for (const key of ["duration_ms", "attempt", "exitCode", "termination", "changedFileCount", "reason", "status", "current_step"]) {
+    if (eventPayload[key] !== undefined && eventPayload[key] !== null) {
+      details[key] = eventPayload[key];
+    }
+  }
+  return details;
+}
+
+function currentJudgementForStatus(status, state = {}) {
+  if (status === "completed") return "completed";
+  if (status === "failed" || status === "timeout") return "failed";
+  if (status === "cancelled") return "cancelled";
+  if (status === "needs_user_review" || status === "limit_reached") return "paused_for_review";
+  if (state.worker_started === true && ["planning", "running", "testing", "fixing", "committing", "pushing"].includes(status)) return "running";
+  return "unknown";
+}
+
+function recommendedNextActionForStatus(status) {
+  return {
+    completed: "review_result",
+    failed: "recover",
+    timeout: "recover",
+    cancelled: "restart_if_needed",
+    needs_user_review: "recover_after_review",
+    limit_reached: "recover_after_limit_reset",
+    running: "check_later",
+    planning: "check_later",
+    testing: "check_later",
+    fixing: "check_later",
+    committing: "check_later",
+    pushing: "check_later"
+  }[status] || "inspect";
+}
+
+function startWorkerHeartbeatTimer(jobDir, intervalMs = 5000) {
+  let stopped = false;
+  const tick = async () => {
+    if (stopped) return;
+    try {
+      const state = await readOptionalJobState(jobDir);
+      if (!state) return;
+      await safeWriteRuntimeLifecycleArtifacts(jobDir, state, {
+        timestamp: new Date().toISOString(),
+        event: "heartbeat",
+        message: "Worker heartbeat.",
+        status: state.status,
+        current_step: state.current_step
+      });
+    } catch {
+      // Heartbeat writes are best-effort diagnostics.
+    }
+  };
+  void tick();
+  const timer = setInterval(tick, intervalMs);
+  timer.unref?.();
+  return {
+    stop() {
+      stopped = true;
+      clearInterval(timer);
+    }
+  };
 }
 
 async function readOptionalJobState(jobDir) {

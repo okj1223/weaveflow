@@ -424,7 +424,9 @@ test("Codex job start creates file-based state without starting worker when requ
     repoRoot,
     jobId: start.jobId
   });
-  assert.equal(status.status, "queued");
+  assert.equal(status.status, "not_started");
+  assert.equal(status.jobStateStatus, "queued");
+  assert.equal(status.liveness, "not_started");
   assert.equal(status.chainId, start.chainId);
   assert.equal(status.segmentIndex, 1);
   assert.equal(status.jobPolicy.riskLevel, "low");

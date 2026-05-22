@@ -4,6 +4,10 @@ import { basename, join, resolve } from "node:path";
 
 import { readJsonSafe, writeJsonAtomic } from "./jobArtifacts.js";
 import { inspectJobDirectory } from "./jobStateDiagnostics.js";
+import {
+  buildWatchdogDiagnostics,
+  readJobRuntimeState
+} from "./jobWatchdog.js";
 import { buildOperatorActionMenu } from "./operatorActions.js";
 
 export const OPERATOR_REVIEW_SCHEMA_VERSION = "weaveflow.operator_review.v0";
@@ -75,6 +79,7 @@ export async function readJobSummary(jobDir, options = {}) {
   const state = stateRead.value || {};
   const [
     diagnosis,
+    runtimeState,
     jobRequest,
     startOutcome,
     workerStart,
@@ -98,6 +103,11 @@ export async function readJobSummary(jobDir, options = {}) {
       parse_error: safeErrorMessage(error),
       recovery_hint: "job 상태 진단 중 오류가 발생했습니다."
     })),
+    readJobRuntimeState(resolvedJobDir, {
+      now: options.now,
+      staleAfterMs: options.staleAfterMs || DEFAULT_STALE_AFTER_MS,
+      processChecker: options.processChecker
+    }),
     readJsonSafe(artifacts.jobRequestPath),
     readJsonSafe(artifacts.startOutcomePath),
     readJsonSafe(artifacts.workerStartPath),
@@ -111,7 +121,11 @@ export async function readJobSummary(jobDir, options = {}) {
     readFile(artifacts.resumeCapsulePath, "utf8").catch(() => "")
   ]);
 
-  const status = cleanString(state.status || jobStatus?.status || startOutcome?.status || diagnosis.status) || "unknown";
+  const watchdog = buildWatchdogDiagnostics(runtimeState, {
+    now: options.now,
+    staleAfterMs: options.staleAfterMs || DEFAULT_STALE_AFTER_MS
+  });
+  const status = cleanString(watchdog.effectiveStatus || jobStatus?.status || state.status || startOutcome?.status || diagnosis.status) || "unknown";
   const stopReason = cleanString(
     state.stop_reason ||
     state.usage_limit_stop_reason ||
@@ -136,7 +150,9 @@ export async function readJobSummary(jobDir, options = {}) {
     profile: cleanString(state.run_profile || startOutcome?.runProfile || policyDecision?.runProfile),
     status,
     actionOutcome: cleanString(state.action_outcome || startOutcome?.action_outcome),
-    liveness: classifyLiveness({ status, diagnosis, heartbeatInfo }),
+    liveness: watchdog.liveness,
+    watchdog,
+    sessionLogTail: runtimeState.sessionLog || [],
     priority: null,
     phase: cleanString(state.current_step || resumeCapsule?.current_phase || jobStatus?.phase || diagnosis.current_step),
     stopReason,
@@ -323,7 +339,8 @@ export function classifyOperatorPriority(item = {}) {
     item.protectedScopeUncertain === true || actionOutcome === "blocked_policy_specific_action") {
     return OPERATOR_PRIORITIES.NEEDS_ATTENTION_NOW;
   }
-  if ((item.liveness === "stale" || diagnosisHealth === "stale_running") && !hasResumeCapsule) {
+  if ((item.liveness === "stale" || item.liveness === "dead" ||
+    (item.liveness !== "running" && diagnosisHealth === "stale_running")) && !hasResumeCapsule) {
     return OPERATOR_PRIORITIES.NEEDS_ATTENTION_NOW;
   }
   if (item.liveness === "running" && (ACTIVE_STATUSES.has(status) || status === "active")) {

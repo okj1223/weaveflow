@@ -10,6 +10,10 @@ import {
   writeChainStatus
 } from "./jobChain.js";
 import { readJsonSafe, writeJsonAtomic } from "./jobArtifacts.js";
+import {
+  buildWatchdogDiagnostics,
+  readJobRuntimeState
+} from "./jobWatchdog.js";
 
 export const OPERATOR_ACTION_SCHEMA_VERSION = "weaveflow.operator_action.v0";
 
@@ -706,6 +710,15 @@ async function normalizeOperatorContext(actionRequest = {}, context = {}) {
   if (!jobId && chainStatus?.currentJobId) jobId = chainStatus.currentJobId;
   const jobDir = jobId ? join(jobsRoot, jobId) : "";
   const jobState = jobDir ? await readJsonSafe(join(jobDir, "job.yaml")) : null;
+  const runtimeState = jobDir ? await readJobRuntimeState(jobDir, {
+    now: actionRequest.now || context.now,
+    staleAfterMs: actionRequest.staleAfterMs || context.staleAfterMs,
+    processChecker: actionRequest.processChecker || context.processChecker
+  }) : null;
+  const watchdog = runtimeState ? buildWatchdogDiagnostics(runtimeState, {
+    now: actionRequest.now || context.now,
+    staleAfterMs: actionRequest.staleAfterMs || context.staleAfterMs
+  }) : null;
   const resumeCapsule = await readResumeCapsule(jobDir, jobState, providedItem, chainStatus);
   const reportPath = firstExistingPath([
     providedItem.chainReportPath,
@@ -717,6 +730,8 @@ async function normalizeOperatorContext(actionRequest = {}, context = {}) {
   ]);
   const subjectKind = chainId ? "chain" : "job";
   const itemId = cleanString(actionRequest.itemId || context.itemId || providedItem.id || chainId || jobId);
+  const jobEffectiveStatus = cleanString(watchdog?.effectiveStatus || jobState?.status);
+  const effectiveStatus = cleanString(providedItem.status || (chainId ? chainStatus?.status : "") || jobEffectiveStatus);
   return {
     ...context,
     ...providedItem,
@@ -730,11 +745,13 @@ async function normalizeOperatorContext(actionRequest = {}, context = {}) {
     chainStatus,
     jobDir,
     jobState,
-    status: cleanString(providedItem.status || chainStatus?.status || jobState?.status),
-    liveness: cleanString(providedItem.liveness),
-    phase: cleanString(providedItem.phase || jobState?.current_step),
+    runtimeState,
+    watchdog,
+    status: effectiveStatus,
+    liveness: cleanString(providedItem.liveness || watchdog?.liveness),
+    phase: cleanString(providedItem.phase || watchdog?.currentStep || jobState?.current_step),
     stopReason: cleanString(providedItem.stopReason || chainStatus?.stopReason || jobState?.stop_reason || jobState?.usage_limit_stop_reason),
-    recommendedNextAction: cleanString(providedItem.recommendedNextAction || chainStatus?.recommendedNextAction || jobState?.recommended_next_action),
+    recommendedNextAction: cleanString(providedItem.recommendedNextAction || chainStatus?.recommendedNextAction || jobState?.recommended_next_action || watchdog?.recommendedNextAction),
     resumeCapsule,
     latestCheckpointPath: cleanString(providedItem.lastCheckpointPath || providedItem.latestCheckpointPath || chainStatus?.lastCheckpointPath || jobState?.latest_checkpoint_path),
     reportPath,

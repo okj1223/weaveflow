@@ -588,6 +588,9 @@ same artifacts the OpenClaw tools use:
 
 - `.weaveflow/jobs/JOB-*/start_outcome.json`
 - `.weaveflow/jobs/JOB-*/worker_start.json`
+- `.weaveflow/jobs/JOB-*/heartbeat.json`
+- `.weaveflow/jobs/JOB-*/job_status.json`
+- `.weaveflow/jobs/JOB-*/session_log.jsonl`
 - `.weaveflow/jobs/JOB-*/cancel_request.json`
 - `.weaveflow/jobs/JOB-*/recovery_plan.json`
 - `.weaveflow/jobs/operator_reviews/*.md`
@@ -599,14 +602,32 @@ variables. The harness is not a new feature surface; it is a contract check for
 start/check/cancel/recover/morning-review/operator-action behavior before a
 live OpenClaw pilot.
 
+Worker liveness is recorded with three local artifacts:
+
+- `heartbeat.json`: latest worker heartbeat, pid, phase/current step, run
+  profile, execution mode, and last event.
+- `job_status.json`: lifecycle status, terminal exit code/stop reason, worker
+  started/exited flags, and recommended next action.
+- `session_log.jsonl`: append-only worker lifecycle events such as
+  `worker_started`, `heartbeat`, `worker_completed`, `worker_failed`, and
+  `worker_cancelled`.
+
+`weaveflow_check_codex_job`, `weaveflow_morning_review`, and
+`weaveflow_operator_action` treat terminal `job_status.json` as authoritative,
+use fresh heartbeat evidence for `running`, classify old heartbeat data as
+`stale`, and do not report blocked/start_failed or `workerStarted=false` jobs
+as running. If those artifacts are missing, the result remains
+`unknown`/`stale` rather than a fake running state.
+
 Harness reports are written to:
 
 - `integrations/openclaw-weaveflow-stdio-poc/reports/integration_harness_report.md`
 - `integrations/openclaw-weaveflow-stdio-poc/reports/integration_harness_report.json`
 
-If no `heartbeat.json`, `job_status.json`, or `session_log.jsonl` writer exists
-in the current worker path, the harness reports truthfulness as partial rather
-than pretending the dashboard has full heartbeat coverage.
+If the fake worker path fails to produce `heartbeat.json`, `job_status.json`,
+or `session_log.jsonl`, the harness reports truthfulness as partial rather than
+pretending the dashboard has full heartbeat coverage. Live OpenClaw with a real
+Codex CLI is still a separate pilot after this deterministic harness passes.
 
 ## OpenClaw Validation
 
